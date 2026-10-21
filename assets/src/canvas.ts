@@ -73,6 +73,9 @@ interface EdgeView {
   shown: boolean;
   // Around the path: to cull it.
   box: Rect;
+  // What its path and marker were last written as.
+  d: string;
+  marker: string | null;
 }
 
 interface Peer {
@@ -813,15 +816,19 @@ export class Canvas {
         node.el.removeAttribute("data-ui-culled");
         // The handles keep their places while a node is culled: a node
         // measured once is not measured again, which would lay out the page
-        // for each node that comes into view.
+        // for each node that comes into view. Nor is it news: its place,
+        // size and edges are as they were, and a change of the layout here
+        // would cull all of them again on the next frame, and the next.
         if (!node.measured) unmeasured.push(node);
-        this.touchNode(node.id);
       } else {
         this.culled.add(node.id);
         node.el.setAttribute("data-ui-culled", "");
       }
     }
-    for (const node of unmeasured) this.measureHandles(node);
+    for (const node of unmeasured) {
+      this.measureHandles(node);
+      this.touchNode(node.id);
+    }
   }
 
   // The edges that changed get their paths again; with a new view, every
@@ -842,9 +849,17 @@ export class Canvas {
       const view = this.edgeView(edge);
       const path = edgePath(edge.path, geometry.from, geometry.fromSide, geometry.to, geometry.toSide);
       view.box = grow(fromCorners(geometry.from, geometry.to), 80);
-      view.line.setAttribute("d", path.d);
-      view.hit.setAttribute("d", path.d);
-      view.line.setAttribute("marker-end", edge.marker === "none" ? "" : `url(#${this.id}-${edge.marker}${this.selectedEdges.has(id) ? "-on" : ""})`);
+      // Written only when they change: a path written again is laid out and painted again.
+      if (view.d !== path.d) {
+        view.d = path.d;
+        view.line.setAttribute("d", path.d);
+        view.hit.setAttribute("d", path.d);
+      }
+      const marker = edge.marker === "none" ? "" : `url(#${this.id}-${edge.marker}${this.selectedEdges.has(id) ? "-on" : ""})`;
+      if (view.marker !== marker) {
+        view.marker = marker;
+        view.line.setAttribute("marker-end", marker);
+      }
       toggle(view.g, "data-ui-selected", this.selectedEdges.has(id));
       const g = this.gesture;
       toggle(view.g, "data-ui-gone", this.gone.has(id) || (g?.kind === "connect" && g.reconnect === id));
@@ -886,7 +901,7 @@ export class Canvas {
       const line = svg("path", { class: "hakushi-edge-line" });
       g.append(hit, line);
       this.edgesG.append(g);
-      view = { g, line, hit, label: null, shown: true, box: { x: 0, y: 0, width: 0, height: 0 } };
+      view = { g, line, hit, label: null, shown: true, box: { x: 0, y: 0, width: 0, height: 0 }, d: "", marker: null };
       this.edgeViews.set(edge.id, view);
     }
     return view;
