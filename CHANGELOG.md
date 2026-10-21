@@ -38,6 +38,23 @@ Issho's motion, and following is the room's.
   `Hakushi.Kits.Flow` (a trigger, steps, conditions with Yes and No) and
   `Hakushi.Kits.Notes` (sticky notes in five colours, which resize).
 - `kit_items/1`: the items of kits, to drag onto a canvas or click.
+- A shared canvas in a page of another room (a canvas embedded in a
+  document): its people are its room's, wherever they are, so someone
+  reading the document and someone on the canvas's own page see each
+  other's cursors. Issho's pointers of the page's room leave the canvas
+  to its room; the canvas draws its people except those whom Issho's
+  pointers of its own room draw. Following someone into the canvas from
+  the page follows them on it, and following from the canvas's avatars
+  brings it into view. The same canvas twice on a page: the copy the
+  person uses says where they are.
+- A shared canvas that goes while its LiveView stays (an embed deleted)
+  releases its room (`Issho.Live.release/2`): its person leaves the room.
+- A read-only shared canvas is a viewer of its room (`can: :read`).
+- `user` may be the app's own struct: the canvas joins as the app's
+  `Issho.Actor` says (its key, name, avatar, colour), the same person as
+  in the page's other blocks. A person with no colour gets Issho's palette
+  colour (`--issho-person-N`), as in Issho's lists, with Hakushi's as the
+  fallback.
 - A kit's canvas (`canvas/0`): its paper, tidy up and rules, which the
   canvas's own attributes override; `background`, `grid`, `snap` and
   `layout` default to the first kit's.

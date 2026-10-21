@@ -1,3 +1,14 @@
+defmodule HakushiTest.Member do
+  @moduledoc false
+  # A user of the app's own, whose key in every room is the app's.
+  defstruct [:id, :name]
+
+  defimpl Issho.Actor do
+    def key(member), do: "member:#{member.id}"
+    def display(member), do: %{name: member.name}
+  end
+end
+
 defmodule HakushiTest.CanvasLive do
   @moduledoc "A LiveView with a canvas, for the canvas tests."
   use Phoenix.LiveView
@@ -49,11 +60,17 @@ defmodule HakushiTest.CanvasLive do
        graph: graph(),
        test: test,
        live: if(params["live"], do: {HakushiTest.Issho, "canvas:" <> params["live"]}),
-       user:
-         if(params["user"], do: %{id: params["user"], name: String.capitalize(params["user"])}),
+       user: user(params),
        readonly: params["readonly"] == "true"
      )}
   end
+
+  # ?member=true: a user of the app's own struct, whose Issho.Actor says its key.
+  defp user(%{"user" => id, "member" => "true"}),
+    do: %HakushiTest.Member{id: id, name: String.capitalize(id)}
+
+  defp user(%{"user" => id}), do: %{id: id, name: String.capitalize(id)}
+  defp user(_params), do: nil
 
   defp self_test(session),
     do: session["test"] && :erlang.binary_to_term(Base.decode64!(session["test"]))
