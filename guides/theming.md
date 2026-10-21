@@ -36,6 +36,7 @@ handles, the controls), and the default node.
 | `--hakushi-control`, `--hakushi-control-shadow` | the controls and the minimap |
 | `--hakushi-minimap-node`, `--hakushi-minimap-mask` | the nodes in the minimap, and the veil outside the view |
 | `--hakushi-radius`, `--hakushi-transition` | the controls' radius, and the speed of the small transitions |
+| `--hakushi-embed-height` | the height of an embed frame (`canvas_embed/1`) whose parent has none, `24rem` |
 
 `--hakushi-person` is a person's colour, on their avatar, their cursor
 and the ring of the nodes they selected or drag.

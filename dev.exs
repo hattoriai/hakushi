@@ -328,6 +328,156 @@ defmodule HakushiDev.Seeds do
           )
     )
   end
+
+  # The canvases of the design spec, drawn with the built-in kits.
+
+  defp col(id, name, type, key \\ nil),
+    do: %{"id" => id, "name" => name, "type" => type, "key" => key}
+
+  def spec_schema do
+    Graph.new(
+      nodes: [
+        %{
+          id: "customers",
+          type: "schema-table",
+          x: 0,
+          y: 30,
+          data: %{
+            "name" => "customers",
+            "columns" => [
+              col("c1", "id", "uuid", "pk"),
+              col("c2", "email", "text"),
+              col("c3", "name", "text")
+            ]
+          }
+        },
+        %{
+          id: "invoices",
+          type: "schema-table",
+          x: 320,
+          y: 0,
+          data: %{
+            "name" => "invoices",
+            "columns" => [
+              col("i1", "id", "uuid", "pk"),
+              col("i2", "customer_id", "uuid", "fk"),
+              col("i3", "total", "money"),
+              col("i4", "paid_at", "timestamp")
+            ]
+          }
+        },
+        %{
+          id: "lines",
+          type: "schema-table",
+          x: 640,
+          y: 50,
+          data: %{
+            "name" => "invoice_lines",
+            "columns" => [
+              col("l1", "id", "uuid", "pk"),
+              col("l2", "invoice_id", "uuid", "fk"),
+              col("l3", "sku", "text"),
+              col("l4", "amount", "money")
+            ]
+          }
+        }
+      ],
+      edges: [
+        %{
+          source: "invoices",
+          source_handle: "i2",
+          target: "customers",
+          target_handle: "c1",
+          path: :smooth
+        },
+        %{
+          source: "lines",
+          source_handle: "l2",
+          target: "invoices",
+          target_handle: "i1",
+          path: :smooth
+        }
+      ]
+    )
+  end
+
+  def spec_flow do
+    Graph.new(
+      nodes: [
+        %{
+          id: "paid",
+          type: "flow-trigger",
+          x: 0,
+          y: 70,
+          data: %{"title" => "Invoice paid", "detail" => "Stripe webhook"}
+        },
+        %{
+          id: "large",
+          type: "flow-condition",
+          x: 300,
+          y: 70,
+          data: %{"title" => "Over €1,000?", "detail" => ""}
+        },
+        %{
+          id: "review",
+          type: "flow-step",
+          x: 620,
+          y: 0,
+          data: %{"title" => "Ask finance to review", "detail" => "Slack #finance"}
+        },
+        %{
+          id: "receipt",
+          type: "flow-step",
+          x: 620,
+          y: 150,
+          data: %{"title" => "Send the receipt", "detail" => "Email"}
+        }
+      ],
+      edges: [
+        %{source: "paid", target: "large"},
+        %{source: "large", source_handle: "yes", target: "review", animated: true},
+        %{source: "large", source_handle: "no", target: "receipt"}
+      ]
+    )
+  end
+
+  def spec_notes do
+    Graph.new(
+      nodes: [
+        %{
+          id: "q1",
+          type: "note",
+          x: 0,
+          y: 0,
+          width: 200,
+          height: 140,
+          data: %{
+            "text" => "Refunds: a negative invoice, or a table of their own?",
+            "color" => "yellow"
+          }
+        },
+        %{
+          id: "q2",
+          type: "note",
+          x: 240,
+          y: 20,
+          width: 200,
+          height: 140,
+          data: %{"text" => "Taxes per line, not per invoice.", "color" => "mint"}
+        },
+        %{
+          id: "q3",
+          type: "note",
+          x: 480,
+          y: 0,
+          width: 200,
+          height: 140,
+          data: %{"text" => "Ask legal how long we keep invoices.", "color" => "rose"}
+        }
+      ],
+      edges: [%{source: "q1", target: "q2", path: :straight}]
+    )
+  end
 end
 
 defmodule HakushiDev.Store do
@@ -377,6 +527,8 @@ defmodule HakushiDev.Icons do
       ~s(<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><path d="M10 6.5h4a3 3 0 0 1 3 3V14"/>),
     "board" =>
       ~s(<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/>),
+    "spec" =>
+      ~s(<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/>),
     "scale" =>
       ~s(<circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/><circle cx="12" cy="12" r="2"/>),
     "trigger" => ~s(<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>),
@@ -471,6 +623,15 @@ defmodule HakushiDev.Layouts do
           .button.primary { background: var(--atelier-accent); border-color: transparent; color: #fff; }
           .stage { position: relative; flex: 1; min-height: 0; display: flex; }
           .stage > .hakushi { flex: 1; height: 100%; }
+          .spec { flex: 1; overflow: auto; padding: 8px 32px 120px; }
+          .spec > * { max-width: 880px; margin-left: auto; margin-right: auto; }
+          .spec h2 { margin: 32px auto 8px; font-size: 18px; }
+          .spec p { line-height: 1.6; color: var(--hakushi-text); }
+          .spec .end { color: var(--hakushi-muted); }
+          .spec-embed { height: 380px; margin-top: 16px; margin-bottom: 16px; }
+          .spec-embed.full { position: fixed; inset: 24px; z-index: 50; height: auto; max-width: none; margin: 0; }
+          .spec-embed.full .hakushi-embed { position: relative; z-index: 1; border-radius: 14px; box-shadow: 0 24px 80px rgba(0,0,0,.25); }
+          .spec-scrim { position: fixed; inset: 0; background: rgba(20,20,30,.35); backdrop-filter: blur(3px); }
           .palette { width: 13.5rem; flex: none; padding: 1rem 0.75rem; border-right: 1px solid var(--atelier-line); background: var(--atelier-bg); display: flex; flex-direction: column; gap: 0.375rem; overflow: auto; }
           .palette p { margin: 0 0 0.5rem; padding: 0 0.25rem; color: var(--atelier-muted); font-size: 0.75rem; }
           .palette .hakushi-item { display: flex; align-items: center; gap: 0.625rem; padding: 0.5rem 0.625rem; border: 1px solid var(--atelier-line); border-radius: 8px; background: var(--atelier-card); font-size: 0.8125rem; }
@@ -631,6 +792,7 @@ defmodule HakushiDev.Layouts do
       {:schema, "/", "Schema", "schema"},
       {:workflow, "/workflow", "Workflow", "workflow"},
       {:board, "/board", "Moodboard", "board"},
+      {:spec, "/spec", "Design spec", "spec"},
       {:scale, "/scale", "Two thousand nodes", "scale"}
     ]
   end
@@ -1007,6 +1169,118 @@ defmodule HakushiDev.BoardLive do
   end
 end
 
+defmodule HakushiDev.SpecLive do
+  @moduledoc """
+  A design spec: a page of text with canvases in it, each in an embed
+  frame (`canvas_embed/1`) and drawn with a built-in kit. The page scrolls
+  past them; a frame goes full screen and back.
+  """
+  use Phoenix.LiveView
+
+  import Hakushi.Components
+  import HakushiDev.Layouts, only: [app: 1]
+
+  alias Hakushi.Kits.{Flow, Notes, Schema}
+  alias Phoenix.LiveView.JS
+
+  @embeds [
+    {"spec_schema", "Billing schema", [Schema]},
+    {"spec_flow", "When an invoice is paid", [Flow]},
+    {"spec_notes", "Open questions", [Notes]}
+  ]
+
+  @impl true
+  def mount(_params, _session, socket) do
+    canvases =
+      for {name, title, kits} <- @embeds,
+          do: %{
+            name: name,
+            title: title,
+            kits: kits,
+            graph: HakushiDev.Store.get(name, socket.assigns.room)
+          }
+
+    {:ok, assign(socket, canvases: Map.new(canvases, &{&1.name, &1}), full: nil)}
+  end
+
+  def on_change(_change, %{result: result}, name, room) do
+    HakushiDev.Store.put(name, room, result)
+    :ok
+  end
+
+  @impl true
+  def handle_event("full", %{"name" => name}, socket),
+    do: {:noreply, assign(socket, full: if(socket.assigns.full == name, do: nil, else: name))}
+
+  def handle_event("restore", _params, socket), do: {:noreply, assign(socket, full: nil)}
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <.app page={:spec} me={@me} query={@query} title="Billing service" crumb="Design spec">
+      <:actions>
+        <span class="hint">Each canvas is a kit's. Draw in place; the full screen button opens one.</span>
+      </:actions>
+      <article class="spec" phx-window-keydown={@full && "restore"} phx-key="Escape">
+        <h2>Data model</h2>
+        <p>
+          A customer has invoices; an invoice has lines. Money is stored in minor units, with its
+          currency on the invoice. Draw a foreign key from a column to a column of the same type.
+        </p>
+        <.spec_embed canvas={@canvases["spec_schema"]} full={@full} readonly={@readonly} room={@room} />
+        <h2>When an invoice is paid</h2>
+        <p>
+          The payment provider calls us once per paid invoice. Large invoices wait for finance;
+          the others get their receipt at once.
+        </p>
+        <.spec_embed canvas={@canvases["spec_flow"]} full={@full} readonly={@readonly} room={@room} />
+        <h2>Open questions</h2>
+        <p>Write on a note, give it a colour, or join two with an arrow.</p>
+        <.spec_embed canvas={@canvases["spec_notes"]} full={@full} readonly={@readonly} room={@room} />
+        <p class="end">That is the whole of it, for now.</p>
+      </article>
+    </.app>
+    """
+  end
+
+  attr :canvas, :map, required: true
+  attr :full, :string, default: nil
+  attr :readonly, :boolean, default: false
+  attr :room, :string, default: nil
+
+  defp spec_embed(assigns) do
+    assigns = assign(assigns, :is_full, assigns.full == assigns.canvas.name)
+
+    ~H"""
+    <div class={["spec-embed", @is_full && "full"]}>
+      <div :if={@is_full} class="spec-scrim" phx-click="restore"></div>
+      <.canvas_embed
+        title={@canvas.title}
+        icon={hd(@canvas.kits).icon()}
+        subtitle={hd(@canvas.kits).title(Hakushi.Messages.for_locale("en"))}
+        for={@canvas.name}
+        kits={@canvas.kits}
+        readonly={@readonly}
+        full={@is_full}
+        on_full={JS.push("full", value: %{name: @canvas.name})}
+      >
+        <.canvas
+          id={@canvas.name}
+          graph={@canvas.graph}
+          kits={@canvas.kits}
+          on_change={&on_change(&1, &2, @canvas.name, @room)}
+          readonly={@readonly}
+          wheel={:scroll}
+          refit
+          minimap={@is_full}
+          label={@canvas.title}
+        />
+      </.canvas_embed>
+    </div>
+    """
+  end
+end
+
 defmodule HakushiDev.ScaleLive do
   @moduledoc "Two thousand nodes (or `?n=`), and an edge to each from its parent."
   use Phoenix.LiveView
@@ -1112,6 +1386,7 @@ defmodule HakushiDev.Router do
       live("/", HakushiDev.SchemaLive)
       live("/workflow", HakushiDev.WorkflowLive)
       live("/board", HakushiDev.BoardLive)
+      live("/spec", HakushiDev.SpecLive)
       live("/scale", HakushiDev.ScaleLive)
     end
   end

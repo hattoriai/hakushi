@@ -1,0 +1,73 @@
+defmodule Hakushi.Icons do
+  @moduledoc """
+  The icons of the kits and of the embed frame: Lucide icons
+  (https://lucide.dev, ISC licence), drawn with strokes of `currentColor`,
+  as Kotoba's toolbar draws its own.
+
+      <Hakushi.Icons.icon name="database" />
+
+  A kit's `icon/0` and its elements' icons are names of this set
+  (`names/0`).
+  """
+
+  use Phoenix.Component
+
+  @shapes %{
+    "database" =>
+      ~s(<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/>),
+    "table" =>
+      ~s(<path d="M12 3v18"/><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/>),
+    "workflow" =>
+      ~s(<rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/>),
+    "zap" =>
+      ~s(<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>),
+    "square-play" =>
+      ~s(<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 9.003a1 1 0 0 1 1.517-.859l4.997 2.997a1 1 0 0 1 0 1.718l-4.997 2.997A1 1 0 0 1 9 14.996z"/>),
+    "split" =>
+      ~s(<path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3"/><path d="m15 9 6-6"/>),
+    "sticky-note" =>
+      ~s(<path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8Z"/><path d="M15 3v4a2 2 0 0 0 2 2h4"/>),
+    "shapes" =>
+      ~s(<path d="M8.3 10a.7.7 0 0 1-.626-1.079L11.4 3a.7.7 0 0 1 1.198-.043L16.3 8.9a.7.7 0 0 1-.572 1.1Z"/><rect x="3" y="14" width="7" height="7" rx="1"/><circle cx="17.5" cy="17.5" r="3.5"/>),
+    "flag" =>
+      ~s(<path d="M4 22V4a1 1 0 0 1 .4-.8A6 6 0 0 1 8 2c3 0 5 2 7.333 2q2 0 3.067-.8A1 1 0 0 1 20 4v10a1 1 0 0 1-.4.8A6 6 0 0 1 16 16c-3 0-5-2-8-2a6 6 0 0 0-4 1.528"/>),
+    "key" =>
+      ~s(<path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4"/><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/>),
+    "link" =>
+      ~s(<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>),
+    "maximize" =>
+      ~s(<path d="M15 3h6v6"/><path d="m21 3-7 7"/><path d="m3 21 7-7"/><path d="M9 21H3v-6"/>),
+    "minimize" =>
+      ~s(<path d="m14 10 7-7"/><path d="M20 10h-6V4"/><path d="m3 21 7-7"/><path d="M4 14h6v6"/>),
+    "plus" => ~s(<path d="M5 12h14"/><path d="M12 5v14"/>),
+    "x" => ~s(<path d="M18 6 6 18"/><path d="m6 6 12 12"/>)
+  }
+
+  @doc "The names of the icons."
+  @spec names() :: [String.t()]
+  def names, do: @shapes |> Map.keys() |> Enum.sort()
+
+  @doc "Renders an icon of this set."
+  attr :name, :string, required: true, doc: "a name of `names/0`"
+  attr :size, :integer, default: 16
+  attr :class, :any, default: nil
+
+  def icon(assigns) do
+    assigns = assign(assigns, :body, Phoenix.HTML.raw(Map.fetch!(@shapes, assigns.name)))
+
+    ~H"""
+    <svg
+      class={["hakushi-icon", @class]}
+      viewBox="0 0 24 24"
+      width={@size}
+      height={@size}
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >{@body}</svg>
+    """
+  end
+end

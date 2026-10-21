@@ -13,7 +13,10 @@ a touch screen and the keyboard. (⌘ is Ctrl outside Apple's systems.)
 | 100% | ⇧0, ⌘0, or a click on the zoom in the controls |
 | Overview | a click or a drag on the minimap moves the view there |
 
-`wheel={:zoom}` makes the wheel zoom, as a map does.
+`wheel={:zoom}` makes the wheel zoom, as a map does. `wheel={:scroll}`
+leaves the wheel to the page, for a canvas in a page that scrolls: ⌘ or
+Ctrl and the wheel, or a pinch, zoom, and a drag pans (see
+[In a page](embedding.md)).
 
 ## Selecting
 

@@ -27,6 +27,37 @@ Issho's motion, and following is the room's.
 
 ### Added
 
+- Kits: a kind of canvas in a module (`Hakushi.Kit`), its nodes, how
+  people make and edit them, its paper and its rules, used in one line
+  (`kits={[Hakushi.Kits.Schema]}`): the canvas draws, makes and edits
+  their nodes by itself, and an edit is the person's change as any other
+  (checked, undone, shared). Kits are optional, and an app writes its
+  own with the same callbacks (see the [Kits](guides/kits.md) guide).
+- Three kits: `Hakushi.Kits.Schema` (tables, typed columns, primary and
+  foreign keys, a foreign key only between columns of a type),
+  `Hakushi.Kits.Flow` (a trigger, steps, conditions with Yes and No) and
+  `Hakushi.Kits.Notes` (sticky notes in five colours, which resize).
+- `kit_items/1`: the items of kits, to drag onto a canvas or click.
+- A kit's canvas (`canvas/0`): its paper, tidy up and rules, which the
+  canvas's own attributes override; `background`, `grid`, `snap` and
+  `layout` default to the first kit's.
+- Kits write their canvas as Markdown, a Mermaid diagram people read and
+  Markdown viewers draw (an ER diagram, a flowchart), and read it back,
+  each node where it was (`Hakushi.Kit.to_markdown/2`,
+  `Hakushi.Kit.from_markdown/2`); a diagram a person wrote is read too,
+  and laid out. `Hakushi.Mermaid` has the helpers for a kit of an app's.
+- `canvas_embed/1`: a canvas in a frame, for a page with other things (a
+  Kotoba embed): a title, the kits' items, the app's actions, full
+  screen (see the [In a page](guides/embedding.md) guide).
+- `wheel={:scroll}`: the wheel and one finger scroll the page around the
+  canvas; ⌘ or Ctrl and the wheel, or a pinch, zoom.
+- `refit`: the canvas shows all of its nodes again when its box changes
+  size (full screen and back).
+- `Hakushi.Test.edit/5`, `Hakushi.Icons`, the kits' words in six
+  languages, `--hakushi-embed-height`.
+- The development app's design spec (`/spec`): a page of text with a
+  canvas of each kit in it.
+
 - Following someone, from the canvas's avatars or the page's people list:
   the canvas shows what they show (their viewport, sent with their cursor
   as `view`), or keeps an agent's pointer on the screen. A wheel, a press
@@ -51,6 +82,9 @@ Issho's motion, and following is the room's.
 
 ### Fixed
 
+- A canvas's box clips what is outside it, rather than hiding it: a
+  focused node half out of the canvas no longer scrolls the canvas
+  (`overflow: clip`).
 - A canvas of many nodes mounts in linear time: the nodes are all measured
   before any is placed, rather than the page being laid out again for each
   node (seconds for two thousand nodes in Safari).

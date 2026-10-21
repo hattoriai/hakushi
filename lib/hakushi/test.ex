@@ -220,6 +220,23 @@ defmodule Hakushi.Test do
     selected(event(view, id, "hakushi:drop", payload))
   end
 
+  @doc """
+  Edits a kit's node, as its controls do (`Hakushi.Kit`): the `action`,
+  with the event's `params` (`"value"`, a column's index, ...).
+
+      edit(view, "model", "orders", "add")
+      edit(view, "model", "orders", "column", %{"column" => 1, "value" => "customer_id"})
+  """
+  @spec edit(struct(), String.t(), String.t(), String.t(), map()) :: :ok | {:error, String.t()}
+  def edit(view, id, node, action, params \\ %{}) do
+    payload =
+      params
+      |> Map.new(fn {k, v} -> {to_string(k), v} end)
+      |> Map.merge(%{"node" => node, "action" => action})
+
+    result(event(view, id, "hakushi:edit", payload))
+  end
+
   @doc "Undoes the last change of this LiveView's person, as ⌘Z does."
   @spec undo(struct(), String.t()) :: :ok | {:error, String.t()}
   def undo(view, id), do: result(event(view, id, "hakushi:undo", %{}))

@@ -78,7 +78,9 @@
 /* The canvas fills the box the app gives it: give it a height. */
 .hakushi {
   position: relative;
-  overflow: hidden;
+  /* clip, not hidden: a box that hides its overflow can still be scrolled,
+     by the focus of a node half out of it. */
+  overflow: clip;
   min-height: 16rem;
   background: var(--hakushi-background);
   color: var(--hakushi-text);
@@ -95,6 +97,17 @@
 .hakushi *::before,
 .hakushi *::after {
   box-sizing: border-box;
+}
+
+/* A canvas that leaves the wheel to the page (wheel={:scroll}) leaves it a
+   finger too: one finger scrolls the page, two pan and zoom the canvas,
+   and a node is still dragged. */
+.hakushi[data-ui-wheel="scroll"] {
+  touch-action: pan-x pan-y;
+}
+
+.hakushi[data-ui-wheel="scroll"] :is(.hakushi-node, .hakushi-handle, .hakushi-ui) {
+  touch-action: none;
 }
 
 /* The ring of the canvas, for the keyboard only: a click on the paper
@@ -815,4 +828,407 @@
 .hakushi-following-stop:focus-visible {
   background: rgba(255, 255, 255, 0.36);
   outline: none;
+}
+
+/* -- Kits (Hakushi.Kit) -------------------------------------------------- */
+
+/* A field of a kit's node: it reads as text until it is hovered or
+   focused. */
+.hakushi-kit-field {
+  min-width: 0;
+  margin: -2px -4px;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.hakushi-kit-field:hover {
+  background: var(--hakushi-surface-hover, color-mix(in oklab, var(--hakushi-text) 6%, transparent));
+}
+
+.hakushi-kit-field:focus {
+  outline: 1.5px solid var(--hakushi-accent);
+  background: var(--hakushi-surface);
+}
+
+.hakushi-kit-field::placeholder {
+  color: var(--hakushi-muted);
+  opacity: 0.7;
+}
+
+/* Schema: a table. */
+.hakushi-kit-table {
+  min-width: 13rem;
+  border: 1px solid var(--hakushi-node-border);
+  border-radius: var(--hakushi-node-radius);
+  background: var(--hakushi-node-background);
+  box-shadow: var(--hakushi-node-shadow);
+  font-size: 0.8125rem;
+}
+
+.hakushi-kit-table-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4375rem;
+  padding: 0.5625rem 0.75rem;
+  border-bottom: 1px solid var(--hakushi-node-border);
+  font-weight: 600;
+}
+
+.hakushi-kit-table-head .hakushi-icon {
+  flex: none;
+  color: var(--hakushi-accent);
+}
+
+.hakushi-kit-table-name {
+  flex: 1;
+  font-weight: 600;
+}
+
+.hakushi-kit-column {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.3125rem 0.75rem;
+}
+
+.hakushi-kit-column + .hakushi-kit-column {
+  border-top: 1px solid color-mix(in oklab, var(--hakushi-node-border) 55%, transparent);
+}
+
+.hakushi-kit-column-name {
+  flex: 1;
+  font-family: var(--hakushi-font-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: 0.75rem;
+}
+
+.hakushi-kit-key {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--hakushi-muted);
+  font: 600 0.5625rem/1 var(--hakushi-font);
+  letter-spacing: 0.03em;
+  cursor: pointer;
+}
+
+.hakushi-kit-key[data-key="pk"] { color: #c58a12; }
+.hakushi-kit-key[data-key="fk"] { color: var(--hakushi-accent); }
+.hakushi-kit-key:disabled { cursor: default; }
+.hakushi-kit-key:not(:disabled):hover { background: color-mix(in oklab, var(--hakushi-text) 7%, transparent); }
+
+.hakushi-kit-key:not([data-key="pk"]):not([data-key="fk"]):not(:disabled)::before {
+  content: "";
+  width: 0.375rem;
+  height: 0.375rem;
+  border: 1px dashed currentColor;
+  border-radius: 50%;
+  opacity: 0;
+}
+
+.hakushi-kit-column:hover .hakushi-kit-key::before { opacity: 0.6; }
+
+.hakushi-kit-type,
+.hakushi-kit-type select {
+  color: var(--hakushi-muted);
+  font-family: var(--hakushi-font-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: 0.6875rem;
+}
+
+.hakushi-kit-type { margin: 0; }
+
+.hakushi-kit-type select {
+  appearance: none;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  text-align: right;
+  cursor: pointer;
+}
+
+.hakushi-kit-type select:hover { background: color-mix(in oklab, var(--hakushi-text) 6%, transparent); color: var(--hakushi-text); }
+.hakushi-kit-type select:focus-visible { outline: 1.5px solid var(--hakushi-accent); }
+
+.hakushi-kit-remove {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  margin-right: -0.375rem;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--hakushi-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.hakushi-kit-column:hover .hakushi-kit-remove,
+.hakushi-kit-remove:focus-visible { opacity: 1; }
+.hakushi-kit-remove:hover { color: var(--hakushi-text); background: color-mix(in oklab, var(--hakushi-text) 7%, transparent); }
+
+.hakushi-kit-add {
+  display: flex;
+  align-items: center;
+  gap: 0.3125rem;
+  width: 100%;
+  padding: 0.4375rem 0.75rem;
+  border: 0;
+  border-top: 1px dashed var(--hakushi-node-border);
+  border-radius: 0 0 var(--hakushi-node-radius) var(--hakushi-node-radius);
+  background: none;
+  color: var(--hakushi-muted);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.hakushi-kit-add:hover { color: var(--hakushi-accent); background: color-mix(in oklab, var(--hakushi-text) 4%, transparent); }
+
+/* Flow: a trigger, a step or a condition. */
+.hakushi-kit-step {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-width: 13rem;
+  padding: 0.625rem 0.875rem 0.625rem 0.625rem;
+  border: 1px solid var(--hakushi-node-border);
+  border-radius: var(--hakushi-node-radius);
+  background: var(--hakushi-node-background);
+  box-shadow: var(--hakushi-node-shadow);
+}
+
+.hakushi-kit-step-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 1.875rem;
+  height: 1.875rem;
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--hakushi-accent) 12%, transparent);
+  color: var(--hakushi-accent);
+}
+
+.hakushi-kit-step[data-kind="condition"] .hakushi-kit-step-icon {
+  background: color-mix(in oklab, #c58a12 14%, transparent);
+  color: #c58a12;
+}
+
+.hakushi-kit-step-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.hakushi-kit-step-kind { color: var(--hakushi-muted); font-size: 0.6875rem; }
+.hakushi-kit-step-title { font-weight: 500; }
+.hakushi-kit-step-detail { color: var(--hakushi-muted); font-size: 0.75rem; }
+
+.hakushi-kit-ways {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  justify-content: space-around;
+  margin: -0.625rem -0.875rem -0.625rem 0;
+}
+
+.hakushi-kit-way {
+  position: relative;
+  padding: 0 0.875rem 0 0.5rem;
+  color: var(--hakushi-muted);
+  font-size: 0.6875rem;
+}
+
+/* Notes: a sticky note. */
+.hakushi-kit-note {
+  --hakushi-note: #fcd34d;
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-width: 8rem;
+  min-height: 5rem;
+  padding: 0.75rem 0.875rem;
+  border-radius: 4px 4px 12px 4px;
+  background: color-mix(in oklab, var(--hakushi-note) 42%, var(--hakushi-surface));
+  box-shadow: 0 1px 2px rgba(15, 15, 20, 0.08), 0 6px 14px -6px rgba(15, 15, 20, 0.18);
+}
+
+.hakushi-kit-note[data-color="rose"] { --hakushi-note: #fb7185; }
+.hakushi-kit-note[data-color="sky"] { --hakushi-note: #7dd3fc; }
+.hakushi-kit-note[data-color="mint"] { --hakushi-note: #6ee7b7; }
+.hakushi-kit-note[data-color="lilac"] { --hakushi-note: #c4b5fd; }
+
+.hakushi-kit-note-text {
+  flex: 1;
+  margin: 0;
+  resize: none;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.hakushi-kit-note .hakushi-kit-field:focus { background: color-mix(in oklab, var(--hakushi-surface) 60%, transparent); }
+
+.hakushi-kit-note-color {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  width: 0.875rem;
+  height: 0.875rem;
+  padding: 0;
+  border: 2px solid var(--hakushi-surface);
+  border-radius: 50%;
+  background: var(--hakushi-note);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--hakushi-text) 20%, transparent);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.hakushi-node:hover .hakushi-kit-note-color,
+.hakushi-kit-note-color:focus-visible { opacity: 1; }
+
+/* The items of kits, outside the canvas (kit_items/1). */
+.hakushi-kit-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.hakushi-kit-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.3125rem 0.625rem;
+  border: 1px solid var(--hakushi-border);
+  border-radius: 7px;
+  background: var(--hakushi-surface);
+  color: var(--hakushi-text);
+  font-size: 0.78125rem;
+  transition: background-color var(--hakushi-transition), border-color var(--hakushi-transition);
+}
+
+.hakushi-kit-item .hakushi-icon { color: var(--hakushi-accent); }
+.hakushi-kit-item:hover { border-color: color-mix(in oklab, var(--hakushi-accent) 40%, var(--hakushi-border)); background: var(--hakushi-background); }
+.hakushi-kit-item:focus-visible { outline: 2px solid var(--hakushi-accent); outline-offset: 1px; }
+
+/* -- The embed frame (canvas_embed/1) ------------------------------------ */
+
+.hakushi-embed {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: var(--hakushi-embed-height, 24rem);
+  overflow: hidden;
+  border: 1px solid var(--hakushi-border);
+  border-radius: calc(var(--hakushi-radius, 8px) + 4px);
+  background: var(--hakushi-surface);
+  color: var(--hakushi-text);
+  font-family: var(--hakushi-font);
+  font-size: var(--hakushi-font-size);
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.hakushi-embed[data-full] {
+  border: 0;
+  border-radius: 0;
+}
+
+.hakushi-embed-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  padding: 0.375rem 0.5rem 0.375rem 0.875rem;
+  border-bottom: 1px solid var(--hakushi-border);
+  background: var(--hakushi-surface);
+}
+
+.hakushi-embed-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 1.625rem;
+  height: 1.625rem;
+  border-radius: 7px;
+  background: color-mix(in oklab, var(--hakushi-accent) 12%, transparent);
+  color: var(--hakushi-accent);
+}
+
+.hakushi-embed-title {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hakushi-embed-subtitle {
+  color: var(--hakushi-muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.hakushi-embed-bar .hakushi-kit-items {
+  margin-left: 0.5rem;
+  padding-left: 0.75rem;
+  border-left: 1px solid var(--hakushi-border);
+}
+
+.hakushi-embed-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: auto;
+}
+
+.hakushi-embed-button {
+  display: inline-grid;
+  place-items: center;
+  width: 1.875rem;
+  height: 1.875rem;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--hakushi-muted);
+  cursor: pointer;
+  transition: background-color var(--hakushi-transition), color var(--hakushi-transition);
+}
+
+.hakushi-embed-button:hover { background: color-mix(in oklab, var(--hakushi-text) 7%, transparent); color: var(--hakushi-text); }
+.hakushi-embed-button:focus-visible { outline: 2px solid var(--hakushi-accent); outline-offset: 1px; }
+
+.hakushi-embed-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.hakushi-embed-body > .hakushi {
+  position: absolute;
+  inset: 0;
+  min-height: 0;
+}
+
+@media (max-width: 40rem) {
+  .hakushi-embed-subtitle { display: none; }
+  .hakushi-embed-bar { flex-wrap: wrap; }
 }

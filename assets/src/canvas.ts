@@ -365,6 +365,7 @@ export class Canvas {
     this.config = JSON.parse(this.hookEl.dataset.config || "{}") as Config;
     this.messages = new Messages(this.config.messages || {}, this.config.locale || "en");
     this.root.toggleAttribute("data-ui-readonly", this.config.readonly);
+    this.root.dataset.uiWheel = this.config.wheel;
   }
 
   // -- The server's renders -------------------------------------------------
@@ -1145,7 +1146,11 @@ export class Canvas {
     const rect = this.root.getBoundingClientRect();
     this.bounds = rect;
     const changed = rect.width !== this.size.width || rect.height !== this.size.height;
+    const resized = changed && this.size.width > 0 && rect.width > 0;
     this.size = { width: rect.width, height: rect.height };
+    // A canvas that changes its box (an embed going full screen and back)
+    // shows all of its nodes again.
+    if (resized && this.config.refit && this.nodes.size) this.view = this.fitView();
     if (changed) this.schedule();
   }
 
@@ -1579,6 +1584,9 @@ export class Canvas {
 
   private wheel(event: WheelEvent) {
     if (this.gesture?.kind === "pinch") return;
+    // A canvas in a page that scrolls (an embed) leaves the wheel to the
+    // page, and zooms with ⌘, Ctrl or a pinch.
+    if (this.config.wheel === "scroll" && !event.ctrlKey && !event.metaKey) return;
     event.preventDefault();
     const p = this.local(event);
     // A pinch on a trackpad comes as a wheel with Ctrl.

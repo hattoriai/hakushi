@@ -25,7 +25,8 @@ export interface Config {
   /** Whether a shared canvas takes part in following, the room's (false: it follows no one, and shows no one followed). */
   follow?: boolean;
   newNode: boolean;
-  wheel: "pan" | "zoom";
+  wheel: "pan" | "zoom" | "scroll";
+  refit: boolean;
   layout: "right" | "down";
   exportable: boolean;
   live: boolean;
