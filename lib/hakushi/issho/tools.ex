@@ -1,20 +1,20 @@
-if Code.ensure_loaded?(Issho.MCP.Session) do
-  defmodule Hakushi.Issho.MCP.Canvas do
+if Code.ensure_loaded?(Issho.Tool) do
+  defmodule Hakushi.Issho.Tools.Canvas do
     @moduledoc false
     # A tool call on a shared canvas, as the caller's agent: the canvas's
     # room joined, its graph, its pointer, and its changes, which go the way
     # of everyone's (the rules, the app's on_change).
 
     alias Hakushi.{Change, Graph}
-    alias Issho.MCP.Session
     alias Issho.Participant
+    alias Issho.Tool.Context
 
     defstruct [:ctx, :participant, :canvas, :graph]
 
     # A canvas someone has open: the first canvas to open it gives its
     # graph, its rules and its on_change.
     def open(ctx, canvas) do
-      with {:ok, participant} <- Session.join(ctx, canvas),
+      with {:ok, participant} <- Context.join(ctx, canvas),
            {:ok, %{"state" => %Graph{} = graph}} <- Participant.open(participant, canvas) do
         {:ok, %__MODULE__{ctx: ctx, participant: participant, canvas: canvas, graph: graph}}
       else
@@ -25,16 +25,16 @@ if Code.ensure_loaded?(Issho.MCP.Session) do
           {:error, "No one has this canvas open: open it in a browser first."}
 
         {:error, reason} ->
-          Session.error(reason)
+          Context.error(reason)
       end
     end
 
     def change(%__MODULE__{} = canvas, %Change{} = change) do
-      who = %{id: Session.key(canvas.ctx), name: "agent"}
+      who = %{id: Context.key(canvas.ctx), name: "agent"}
 
       case Participant.transact(canvas.participant, canvas.canvas, [%{change | by: who}]) do
         {:ok, _receipt} -> :ok
-        {:error, reason} -> Session.error(reason)
+        {:error, reason} -> Context.error(reason)
       end
     end
 
@@ -92,27 +92,27 @@ if Code.ensure_loaded?(Issho.MCP.Session) do
 
     defp key(key), do: key
 
-    def error({:error, reason}), do: Session.error(reason)
+    def error({:error, reason}), do: Context.error(reason)
   end
 
-  defmodule Hakushi.Issho.MCP.Read do
+  defmodule Hakushi.Issho.Tools.Read do
     @moduledoc false
-    use Sake.Tool,
+    use Issho.Tool,
       name: "read_canvas",
       description: """
       Reads a shared canvas: its nodes (id, type, place, size, data, the
       group they are in) and its edges (between nodes, from handle to
       handle). Places are in the canvas's coordinates.
       """,
-      annotations: [read_only: true, idempotent: true, open_world: false]
+      annotations: [read_only: true, idempotent: true]
 
     arg :canvas, :string, required: true, description: "The canvas's room: \"atelier:schema\""
 
     alias Hakushi.Graph
-    alias Hakushi.Issho.MCP.Canvas
+    alias Hakushi.Issho.Tools.Canvas
 
     @impl true
-    def execute(%{canvas: name}, ctx) do
+    def call(%{canvas: name}, ctx) do
       case Canvas.open(ctx, name) do
         {:ok, canvas} ->
           {:ok,
@@ -127,15 +127,15 @@ if Code.ensure_loaded?(Issho.MCP.Session) do
     end
   end
 
-  defmodule Hakushi.Issho.MCP.Point do
+  defmodule Hakushi.Issho.Tools.Point do
     @moduledoc false
-    use Sake.Tool,
+    use Issho.Tool,
       name: "point_at",
       description: """
       Moves your pointer, which the others see with your name: to a node,
       or to a point of the canvas. `select` selects nodes as well.
       """,
-      annotations: [idempotent: true, open_world: false]
+      annotations: [idempotent: true]
 
     arg :canvas, :string, required: true
     arg :node, :string, description: "A node's id"
@@ -143,10 +143,10 @@ if Code.ensure_loaded?(Issho.MCP.Session) do
     arg :y, :number
     arg :select, {:array, :string}, description: "Nodes to select, by id"
 
-    alias Hakushi.Issho.MCP.Canvas
+    alias Hakushi.Issho.Tools.Canvas
 
     @impl true
-    def execute(args, ctx) do
+    def call(args, ctx) do
       with {:ok, canvas} <- Canvas.open(ctx, args.canvas),
            {:ok, point} <- point(canvas, args),
            :ok <- Canvas.glide(canvas, point, %{"selected" => args[:select] || []}) do
@@ -163,16 +163,16 @@ if Code.ensure_loaded?(Issho.MCP.Session) do
     defp point(_canvas, _args), do: {:error, "Say where: a node, or x and y."}
   end
 
-  defmodule Hakushi.Issho.MCP.Add do
+  defmodule Hakushi.Issho.Tools.Add do
     @moduledoc false
-    use Sake.Tool,
+    use Issho.Tool,
       name: "add_node",
       description: """
       Adds a node at a place of the canvas, as a person drops one: its type
       (one the canvas draws), and its data, in the shape the canvas's other
       nodes of that type have. Your pointer goes there first.
       """,
-      annotations: [open_world: false]
+      annotations: []
 
     arg :canvas, :string, required: true
     arg :x, :number, required: true
@@ -182,10 +182,10 @@ if Code.ensure_loaded?(Issho.MCP.Session) do
     arg :parent, :string, description: "The group it goes in"
 
     alias Hakushi.{Canvas, Change}
-    alias Hakushi.Issho.MCP.Canvas, as: Shared
+    alias Hakushi.Issho.Tools.Canvas, as: Shared
 
     @impl true
-    def execute(args, ctx) do
+    def call(args, ctx) do
       id = Canvas.new_id()
 
       node = %{
@@ -208,15 +208,15 @@ if Code.ensure_loaded?(Issho.MCP.Session) do
     end
   end
 
-  defmodule Hakushi.Issho.MCP.Move do
+  defmodule Hakushi.Issho.Tools.Move do
     @moduledoc false
-    use Sake.Tool,
+    use Issho.Tool,
       name: "move_node",
       description: """
       Moves a node to a place, as a person drags it: the others see your
       pointer take it and the node go there, then it lands.
       """,
-      annotations: [idempotent: true, open_world: false]
+      annotations: [idempotent: true]
 
     arg :canvas, :string, required: true
     arg :node, :string, required: true
@@ -224,12 +224,12 @@ if Code.ensure_loaded?(Issho.MCP.Session) do
     arg :y, :number, required: true
 
     alias Hakushi.Change
-    alias Hakushi.Issho.MCP.Canvas
+    alias Hakushi.Issho.Tools.Canvas
 
     @steps 12
 
     @impl true
-    def execute(%{node: id, x: x, y: y} = args, ctx) do
+    def call(%{node: id, x: x, y: y} = args, ctx) do
       with {:ok, canvas} <- Canvas.open(ctx, args.canvas),
            {:ok, node} <- Canvas.node(canvas, id),
            :ok <- Canvas.glide(canvas, Canvas.on(node), %{"selected" => [id]}),
@@ -262,16 +262,16 @@ if Code.ensure_loaded?(Issho.MCP.Session) do
     end
   end
 
-  defmodule Hakushi.Issho.MCP.Connect do
+  defmodule Hakushi.Issho.Tools.Connect do
     @moduledoc false
-    use Sake.Tool,
+    use Issho.Tool,
       name: "connect_nodes",
       description: """
       Draws an edge from a node to another, from a handle to a handle when
       the nodes have them (a table's columns): the canvas's rules decide if
       they may be joined, and say why not.
       """,
-      annotations: [open_world: false]
+      annotations: []
 
     arg :canvas, :string, required: true
     arg :source, :string, required: true
@@ -281,10 +281,10 @@ if Code.ensure_loaded?(Issho.MCP.Session) do
     arg :label, :string
 
     alias Hakushi.{Canvas, Change}
-    alias Hakushi.Issho.MCP.Canvas, as: Shared
+    alias Hakushi.Issho.Tools.Canvas, as: Shared
 
     @impl true
-    def execute(args, ctx) do
+    def call(args, ctx) do
       edge =
         %{id: Canvas.new_id(), source: args.source, target: args.target}
         |> Map.merge(Map.take(args, [:source_handle, :target_handle, :label]))
@@ -302,15 +302,15 @@ if Code.ensure_loaded?(Issho.MCP.Session) do
     end
   end
 
-  defmodule Hakushi.Issho.MCP.Update do
+  defmodule Hakushi.Issho.Tools.Update do
     @moduledoc false
-    use Sake.Tool,
+    use Issho.Tool,
       name: "update_node",
       description: """
       Changes a node's data (the keys you give, the others as they are), or
       its type, or locks it.
       """,
-      annotations: [idempotent: true, open_world: false]
+      annotations: [idempotent: true]
 
     arg :canvas, :string, required: true
     arg :node, :string, required: true
@@ -319,10 +319,10 @@ if Code.ensure_loaded?(Issho.MCP.Session) do
     arg :locked, :boolean
 
     alias Hakushi.Change
-    alias Hakushi.Issho.MCP.Canvas
+    alias Hakushi.Issho.Tools.Canvas
 
     @impl true
-    def execute(%{node: id} = args, ctx) do
+    def call(%{node: id} = args, ctx) do
       with {:ok, canvas} <- Canvas.open(ctx, args.canvas),
            {:ok, node} <- Canvas.node(canvas, id),
            :ok <- Canvas.glide(canvas, Canvas.on(node), %{"selected" => [id]}),
@@ -347,22 +347,22 @@ if Code.ensure_loaded?(Issho.MCP.Session) do
     end
   end
 
-  defmodule Hakushi.Issho.MCP.Delete do
+  defmodule Hakushi.Issho.Tools.Delete do
     @moduledoc false
-    use Sake.Tool,
+    use Issho.Tool,
       name: "delete_items",
       description: "Deletes nodes (with the nodes in them, and their edges) and edges, by id.",
-      annotations: [destructive: true, open_world: false]
+      annotations: [destructive: true]
 
     arg :canvas, :string, required: true
     arg :nodes, {:array, :string}
     arg :edges, {:array, :string}
 
     alias Hakushi.Change
-    alias Hakushi.Issho.MCP.Canvas
+    alias Hakushi.Issho.Tools.Canvas
 
     @impl true
-    def execute(args, ctx) do
+    def call(args, ctx) do
       nodes = args[:nodes] || []
       edges = args[:edges] || []
 
@@ -375,47 +375,5 @@ if Code.ensure_loaded?(Issho.MCP.Session) do
         error -> Canvas.error(error)
       end
     end
-  end
-
-  defmodule Hakushi.Issho.MCP do
-    @moduledoc ~S"""
-    Hakushi's tools for agents, over MCP with Issho: an agent reads a
-    shared canvas, points (the people see its pointer, with its name),
-    selects, adds nodes, drags them (they see the node go), connects them,
-    changes and deletes them, as a person does, through the canvas's rules
-    and its `on_change`.
-
-    Serve it with `Issho.MCP`, as your app serves MCP (see `Issho.MCP` and
-    `Issho.MCP.Session` for who the agent is):
-
-        defmodule MyApp.MCP do
-          use Sake.Server, name: "my-app", version: "1.0.0"
-          mount Issho.MCP
-          mount Hakushi.Issho.MCP
-        end
-
-    A tool names its canvas by its room (`live={{MyApp.Issho, "schema:42"}}`);
-    an agent works on a canvas someone has open.
-    """
-
-    use Sake.Server,
-      name: "hakushi",
-      version: "0.1.0",
-      instructions: """
-      Shared canvases of nodes and edges. read_canvas first. Point at what
-      you work on: the people see your pointer. add_node, move_node,
-      connect_nodes, update_node and delete_items change the canvas as a
-      person does; the canvas's rules say why a change is refused.
-      """
-
-    tools [
-      Hakushi.Issho.MCP.Read,
-      Hakushi.Issho.MCP.Point,
-      Hakushi.Issho.MCP.Add,
-      Hakushi.Issho.MCP.Move,
-      Hakushi.Issho.MCP.Connect,
-      Hakushi.Issho.MCP.Update,
-      Hakushi.Issho.MCP.Delete
-    ]
   end
 end

@@ -11,11 +11,13 @@ The first release.
 
 ### Added
 
-- Agents on shared canvases: `Hakushi.Issho.MCP`, tools an agent uses
-  over MCP as a person uses the canvas: read it, point (the people see
+- Agents on shared canvases: `Hakushi.Issho.tools/0`, tools an agent
+  uses as a person uses the canvas, however it reaches the app (its own
+  model through an API with Issho's `Issho.Tools`, or MCP with
+  `Issho.MCP`): read it, point (the people see
   its pointer, with its name), add nodes, drag them (they see the node
   go), connect them, change and delete them, through the canvas's rules
-  and its `on_change`. Serve it with Issho's `Issho.MCP`.
+  and its `on_change`.
 - `Hakushi.Components.canvas/1`: a canvas for LiveView, with nodes drawn
   by `:node` slots of your HEEx, sent as LiveView streams; edges drawn
   in SVG (bezier, smooth, step, straight; arrows, dots, labels,

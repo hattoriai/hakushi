@@ -59,6 +59,8 @@ defmodule Hakushi.MixProject do
       # cursors. A canvas without `live` never needs it.
       # Until Issho 0.2 is on Hex.
       {:issho, github: "hattoriai/issho", branch: "main", optional: true},
+      # MCP for the development app's agents.
+      {:sake, "~> 0.4", only: [:dev, :test]},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
       {:lazy_html, "~> 0.1", only: :test},
       {:phoenix, if(@oldest, do: "~> 1.7.14", else: "~> 1.7.14 or ~> 1.8")},

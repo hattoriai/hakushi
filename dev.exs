@@ -1051,9 +1051,10 @@ defmodule HakushiDev.MCP do
   and works on the canvases open in a browser (the schema's room is
   `atelier:schema`, or `atelier:schema:ROOM` with `?room=ROOM`).
   """
-  use Sake.Server, name: "hakushi-dev", version: "0.0.0"
-  mount(Issho.MCP)
-  mount(Hakushi.Issho.MCP)
+  use Issho.MCP,
+    name: "hakushi-dev",
+    version: "0.0.0",
+    tools: Issho.Tools.room() ++ Hakushi.Issho.tools()
 end
 
 defmodule HakushiDev.AgentPlug do

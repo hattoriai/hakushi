@@ -7,6 +7,7 @@ defmodule Hakushi.SharedCanvasTest do
   import Phoenix.LiveViewTest
   import Hakushi.Test
 
+  alias Issho.Tool.Context
   alias Phoenix.Socket.Broadcast
 
   @endpoint HakushiTest.Endpoint
@@ -147,5 +148,56 @@ defmodule Hakushi.SharedCanvasTest do
     assert_received {:asked, :connect, before_connect}
     refute Hakushi.Graph.node(before_add, "b")
     assert Hakushi.Graph.node(before_connect, "b")
+  end
+
+  test "an agent of the app moves, connects and renames through the canvas's tools" do
+    topic = topic()
+    ada = open(topic, "ada")
+    tools = Hakushi.Issho.tools()
+
+    agent =
+      Context.new(HakushiTest.Issho, %{
+        id: "assistant",
+        name: "Assistant",
+        kind: :agent
+      })
+
+    canvas = "canvas:" <> topic
+
+    assert {:ok, %{"nodes" => nodes}} =
+             Issho.Tools.call(tools, "read_canvas", %{"canvas" => canvas}, agent)
+
+    assert Enum.any?(nodes, &(&1.id == "note"))
+
+    assert {:ok, _} =
+             Issho.Tools.call(
+               tools,
+               "move_node",
+               %{"canvas" => canvas, "node" => "note", "x" => 40, "y" => 80},
+               agent
+             )
+
+    settle(ada)
+    assert %{x: 40, y: 80} = Enum.find(nodes(ada, "schema"), &(&1.id == "note"))
+
+    # The canvas's rules (no cycles here) answer an agent as anyone.
+    assert {:error, _reason} =
+             Issho.Tools.call(
+               tools,
+               "connect_nodes",
+               %{"canvas" => canvas, "source" => "users", "target" => "orders"},
+               agent
+             )
+
+    assert {:ok, _} =
+             Issho.Tools.call(
+               tools,
+               "update_node",
+               %{"canvas" => canvas, "node" => "note", "data" => %{"label" => "Renamed"}},
+               agent
+             )
+
+    settle(ada)
+    assert %{label: "Renamed"} = Enum.find(nodes(ada, "schema"), &(&1.id == "note"))
   end
 end

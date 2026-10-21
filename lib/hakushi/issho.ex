@@ -118,6 +118,31 @@ if Code.ensure_loaded?(Issho.Engine) do
       end
     end
 
+    @doc ~S"""
+    Hakushi's tools for agents (`Issho.Tool`): an agent reads a shared
+    canvas, points (the people see its pointer, with its name), selects,
+    adds nodes, drags them (they see the node go), connects them, changes
+    and deletes them, as a person does, through the canvas's rules and its
+    `on_change`. Give them to your app's model (`Issho.Tools`), or serve
+    them to MCP clients (`Issho.MCP`), with Issho's room tools:
+
+        tools = Issho.Tools.room() ++ Hakushi.Issho.tools()
+
+    A tool names its canvas by its room (`live={{MyApp.Issho, "schema:42"}}`);
+    an agent works on a canvas someone has open.
+    """
+    @spec tools() :: [module()]
+    def tools,
+      do: [
+        Hakushi.Issho.Tools.Read,
+        Hakushi.Issho.Tools.Point,
+        Hakushi.Issho.Tools.Add,
+        Hakushi.Issho.Tools.Move,
+        Hakushi.Issho.Tools.Connect,
+        Hakushi.Issho.Tools.Update,
+        Hakushi.Issho.Tools.Delete
+      ]
+
     @doc "The graph of a shared canvas as its room has it, or `nil` when no canvas has it open."
     @spec graph(atom(), String.t()) :: Graph.t() | nil
     def graph(instance, topic) do

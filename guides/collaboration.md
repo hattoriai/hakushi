@@ -123,8 +123,8 @@ tables. `Hakushi.Issho.graph/2` reads the graph a room has.
 
 An agent works on a shared canvas as a person does, and the people see
 it: its avatar in the corner, its pointer with its name, the node it
-drags going with its pointer, its changes landing. `Hakushi.Issho.MCP`
-gives it the canvas's verbs over MCP:
+drags going with its pointer, its changes landing. `Hakushi.Issho.tools/0`
+gives it the canvas's verbs, however it reaches your app:
 
 | Tool | What it does |
 |---|---|
@@ -140,16 +140,29 @@ Its changes go the way of everyone's: the canvas's rules check them, and
 your `on_change` is asked once for each. It works on a canvas someone has
 open, whose first canvas gave the room its graph, rules and `on_change`.
 
-Serve it with Issho's room tools, as your app serves MCP (see Issho's
-agents guide for authorization, and for whom an agent acts):
+Give them to your app's own model, through its API, with Issho's room
+tools:
+
+```elixir
+tools = Issho.Tools.room() ++ Hakushi.Issho.tools()
+ctx = Issho.Tool.Context.new(MyApp.Issho, assistant, on_behalf_of: current_user)
+
+Issho.Tools.schemas(tools)                    # the tools of a request to the model
+Issho.Tools.call(tools, name, input, ctx)     # each tool use in its answer
+```
+
+or serve the same tools to MCP clients (with `{:sake, "~> 0.4"}`):
 
 ```elixir
 defmodule MyApp.MCP do
-  use Sake.Server, name: "my-app", version: "1.0.0"
-  mount Issho.MCP
-  mount Hakushi.Issho.MCP
+  use Issho.MCP,
+    name: "my-app",
+    version: "1.0.0",
+    tools: Issho.Tools.room() ++ Hakushi.Issho.tools()
 end
 ```
+
+See Issho's agents guide for who an agent is, and for whom it acts.
 
 The repository's development app serves them at `/mcp`. With `mix dev`
 running and the schema open at http://localhost:4099, connect Claude Code
