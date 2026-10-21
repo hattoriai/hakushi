@@ -118,3 +118,40 @@ job, another LiveView), `Hakushi.Issho.change(MyApp.Issho, topic,
 change)`, while someone has the canvas open; it answers
 `{:error, :not_running}` when no one has, and then you change your own
 tables. `Hakushi.Issho.graph/2` reads the graph a room has.
+
+## Agents
+
+An agent works on a shared canvas as a person does, and the people see
+it: its avatar in the corner, its pointer with its name, the node it
+drags going with its pointer, its changes landing. `Hakushi.Issho.MCP`
+gives it the canvas's verbs over MCP:
+
+| Tool | What it does |
+|---|---|
+| `read_canvas` | the nodes (place, size, data, group) and edges |
+| `point_at` | moves its pointer to a node or a point, and selects nodes |
+| `add_node` | a node of a type the canvas draws, at a place |
+| `move_node` | drags a node to a place: the people see it go |
+| `connect_nodes` | an edge, from a handle to a handle |
+| `update_node` | a node's data, type or lock |
+| `delete_items` | nodes, with their edges, and edges |
+
+Its changes go the way of everyone's: the canvas's rules check them, and
+your `on_change` is asked once for each. It works on a canvas someone has
+open, whose first canvas gave the room its graph, rules and `on_change`.
+
+Serve it with Issho's room tools, as your app serves MCP (see Issho's
+agents guide for authorization, and for whom an agent acts):
+
+```elixir
+defmodule MyApp.MCP do
+  use Sake.Server, name: "my-app", version: "1.0.0"
+  mount Issho.MCP
+  mount Hakushi.Issho.MCP
+end
+```
+
+The repository's development app serves them at `/mcp`. With `mix dev`
+running and the schema open at http://localhost:4099, connect Claude Code
+with `claude mcp add --transport http hakushi-dev http://localhost:4099/mcp`,
+ask it to lay out the tables of `atelier:schema`, and watch.
