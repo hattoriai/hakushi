@@ -144,6 +144,7 @@ export class Canvas {
   private boundsVersion = -1;
   private allBounds: Rect | null = null;
   private drawnView: View | null = null;
+  private panTimer = 0;
   private culledVersion = -1;
   private culledView: View | null = null;
 
@@ -586,12 +587,22 @@ export class Canvas {
     }
     const viewChanged = this.view !== this.drawnView;
     if (viewChanged) {
+      // While a pan goes on, the world is a layer of its own, whose pixels
+      // move; not while it zooms, which would scale them and blur the text.
+      const panned = this.drawnView?.zoom === this.view.zoom;
+      clearTimeout(this.panTimer);
+      this.world.style.willChange = panned ? "transform" : "";
+      if (panned) this.panTimer = window.setTimeout(() => (this.world.style.willChange = ""), 200);
       this.drawnView = this.view;
       this.world.style.transform = `translate(${this.view.x}px, ${this.view.y}px) scale(${this.view.zoom})`;
+      // The paper moves by less than a period of its pattern (five squares,
+      // for graph paper), as a layer: a pan paints none of it again.
+      const size = this.config.grid * this.view.zoom;
+      const period = size * 5;
       const bg = this.viewportEl.style;
-      bg.setProperty("--hakushi-grid-size", `${this.config.grid * this.view.zoom}px`);
-      bg.setProperty("--hakushi-grid-x", `${this.view.x}px`);
-      bg.setProperty("--hakushi-grid-y", `${this.view.y}px`);
+      bg.setProperty("--hakushi-grid-size", `${size}px`);
+      bg.setProperty("--hakushi-grid-x", `${((this.view.x % period) + period) % period}px`);
+      bg.setProperty("--hakushi-grid-y", `${((this.view.y % period) + period) % period}px`);
       const far = this.view.zoom < 0.5 ? "far" : "near";
       if (this.root.dataset.uiZoom !== far) this.root.dataset.uiZoom = far;
     }
@@ -2286,6 +2297,7 @@ export class Canvas {
   }
 
   destroy() {
+    clearTimeout(this.panTimer);
     for (const o of this.observers) o.disconnect();
     for (const cleanup of this.cleanups) cleanup();
     cancelAnimationFrame(this.frame);

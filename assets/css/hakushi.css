@@ -124,10 +124,13 @@
   pointer-events: none;
 }
 
+/* Larger than the canvas by a period of the pattern (five squares) on each
+   side, and moved by the view within it: a layer whose pixels a pan moves. */
 .hakushi-background {
   position: absolute;
-  inset: 0;
-  background-position: var(--hakushi-grid-x, 0) var(--hakushi-grid-y, 0);
+  inset: calc(var(--hakushi-grid-size, 20px) * -5);
+  translate: var(--hakushi-grid-x, 0) var(--hakushi-grid-y, 0);
+  will-change: translate;
   background-size: var(--hakushi-grid-size, 20px) var(--hakushi-grid-size, 20px);
 }
 
@@ -157,8 +160,6 @@
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M0 3V0h3M17 0h3v3M20 17v3h-3M3 20H0v-3' fill='none' stroke='black' stroke-width='1.6'/%3E%3C/svg%3E");
   -webkit-mask-size: var(--hakushi-grid-size, 20px) var(--hakushi-grid-size, 20px);
   mask-size: var(--hakushi-grid-size, 20px) var(--hakushi-grid-size, 20px);
-  -webkit-mask-position: var(--hakushi-grid-x, 0) var(--hakushi-grid-y, 0);
-  mask-position: var(--hakushi-grid-x, 0) var(--hakushi-grid-y, 0);
 }
 
 /* The world: the nodes, the edges and their labels, moved and scaled as one. */

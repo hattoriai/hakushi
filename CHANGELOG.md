@@ -12,6 +12,8 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A canvas of many nodes mounts in linear time: the nodes are all measured
   before any is placed, rather than the page being laid out again for each
   node (seconds for two thousand nodes in Safari).
+- A pan paints nothing again: the paper moves as a layer, by less than a
+  period of its pattern, and the world is a layer while a pan goes on.
 
 ## [0.2.0] - 2026-10-21
 
