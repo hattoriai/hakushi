@@ -73,6 +73,9 @@ interface EdgeView {
   shown: boolean;
   // Around the path: to cull it.
   box: Rect;
+  // What its path and marker were last written as.
+  d: string;
+  marker: string | null;
 }
 
 interface Peer {
@@ -179,6 +182,8 @@ export class Canvas {
     this.edgeData = this.part("-edge-data");
     this.labelsEl = this.part("-labels");
     this.edgesSvg = root.querySelector<SVGSVGElement>(`#${CSS.escape(this.id)}-svg`)!;
+    // The edges' layer is the engine's to keep or not (see .hakushi-edges).
+    if (webkit()) root.setAttribute("data-ui-webkit", "");
     this.ui = this.part("-ui");
 
     this.edgesSvg.append(this.defs());
@@ -814,15 +819,19 @@ export class Canvas {
         node.el.removeAttribute("data-ui-culled");
         // The handles keep their places while a node is culled: a node
         // measured once is not measured again, which would lay out the page
-        // for each node that comes into view.
+        // for each node that comes into view. Nor is it news: its place,
+        // size and edges are as they were, and a change of the layout here
+        // would cull all of them again on the next frame, and the next.
         if (!node.measured) unmeasured.push(node);
-        this.touchNode(node.id);
       } else {
         this.culled.add(node.id);
         node.el.setAttribute("data-ui-culled", "");
       }
     }
-    for (const node of unmeasured) this.measureHandles(node);
+    for (const node of unmeasured) {
+      this.measureHandles(node);
+      this.touchNode(node.id);
+    }
   }
 
   // The edges that changed get their paths again; with a new view, every
@@ -843,9 +852,17 @@ export class Canvas {
       const view = this.edgeView(edge);
       const path = edgePath(edge.path, geometry.from, geometry.fromSide, geometry.to, geometry.toSide);
       view.box = grow(fromCorners(geometry.from, geometry.to), 80);
-      view.line.setAttribute("d", path.d);
-      view.hit.setAttribute("d", path.d);
-      view.line.setAttribute("marker-end", edge.marker === "none" ? "" : `url(#${this.id}-${edge.marker}${this.selectedEdges.has(id) ? "-on" : ""})`);
+      // Written only when they change: a path written again is laid out and painted again.
+      if (view.d !== path.d) {
+        view.d = path.d;
+        view.line.setAttribute("d", path.d);
+        view.hit.setAttribute("d", path.d);
+      }
+      const marker = edge.marker === "none" ? "" : `url(#${this.id}-${edge.marker}${this.selectedEdges.has(id) ? "-on" : ""})`;
+      if (view.marker !== marker) {
+        view.marker = marker;
+        view.line.setAttribute("marker-end", marker);
+      }
       toggle(view.g, "data-ui-selected", this.selectedEdges.has(id));
       const g = this.gesture;
       toggle(view.g, "data-ui-gone", this.gone.has(id) || (g?.kind === "connect" && g.reconnect === id));
@@ -887,7 +904,7 @@ export class Canvas {
       const line = svg("path", { class: "hakushi-edge-line" });
       g.append(hit, line);
       this.edgesG.append(g);
-      view = { g, line, hit, label: null, shown: true, box: { x: 0, y: 0, width: 0, height: 0 } };
+      view = { g, line, hit, label: null, shown: true, box: { x: 0, y: 0, width: 0, height: 0 }, d: "", marker: null };
       this.edgeViews.set(edge.id, view);
     }
     return view;
@@ -2252,17 +2269,19 @@ export class Canvas {
     peer.start = performance.now();
     peer.duration = far < 1 || reducedMotion() ? 0 : Math.min(GLIDE_MAX, Math.max(60, far * 0.8));
     const before = new Set([...peer.selected, ...peer.dragging.keys()]);
+    const draggedBefore = new Set(peer.dragging.keys());
     peer.selected = (payload.selected as string[]) ?? [];
     peer.dragging = dragging;
     peer.seen = Date.now();
     this.peers.set(id, peer);
     if (id === this.followKey) this.showFollowed(peer);
-    for (const n of [...before, ...peer.selected, ...peer.dragging.keys()]) {
+    for (const n of new Set([...before, ...peer.selected, ...peer.dragging.keys()])) {
       const node = this.nodes.get(n);
-      if (node) {
-        this.decorate(node);
-        this.touchNode(n);
-      }
+      if (!node) continue;
+      this.decorate(node);
+      // Only a node they drag (or let go) moves: one they have selected is
+      // drawn in their colour, and the layout is as it was.
+      if (draggedBefore.has(n) || dragging.has(n)) this.touchNode(n);
     }
     clearTimeout(this.peerTimer);
     this.peerTimer = window.setTimeout(() => this.expirePeers(), PEER_TIMEOUT);
@@ -2500,6 +2519,13 @@ function toggle(element: Element, name: string, on: boolean) {
 
 function round(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+// WebKit (Safari, and WebKit on Linux), not the browsers built on Chromium,
+// whose user agents say AppleWebKit too.
+function webkit(): boolean {
+  const agent = typeof navigator === "undefined" ? "" : navigator.userAgent;
+  return /AppleWebKit/.test(agent) && !/Chrome|Chromium|CriOS|Edg|OPR/.test(agent);
 }
 
 function reducedMotion(): boolean {

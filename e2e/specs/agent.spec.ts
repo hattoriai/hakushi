@@ -21,24 +21,37 @@ test("an agent works on a canvas as a person does, and the person sees it", asyn
   await agent(page, "point_at", { canvas, node: "invoices", select: ["invoices"] });
   await expect(page.locator("#schema .hakushi-cursor")).toContainText("Claude Code");
 
-  // It drags a table: only where it lands is sent, and Ada's canvas draws it
-  // on its way there; then it lands.
-  // Every place it is drawn at, frame by frame, in the page: a slow browser
-  // misses none of them.
+  // It drags a table: only where it lands is sent, and Ada's canvas shows
+  // it moving on its way there; then it lands. What the node shows is
+  // recorded as it changes (not frame by frame, which a busy browser skips):
+  // "moving" before it is where it lands, and, when the browser drew frames
+  // on the way, a place between.
   await node(page, "invoices").evaluate((el) => {
-    const seen: number[] = ((window as unknown as { seen: number[] }).seen = []);
-    const frame = () => {
-      seen.push(Number((el as HTMLElement).style.translate.split("px")[0]));
-      requestAnimationFrame(frame);
+    const log: { moving: boolean; x: number; frame: number }[] = ((window as unknown as { log: unknown[] }).log = []);
+    let frame = 0;
+    const tick = () => {
+      frame++;
+      requestAnimationFrame(tick);
     };
-    requestAnimationFrame(frame);
+    requestAnimationFrame(tick);
+    const record = () =>
+      log.push({ moving: el.dataset.uiPeerName === "Claude Code is moving this", x: Number(el.style.translate.split("px")[0]), frame });
+    record();
+    new MutationObserver(record).observe(el, { attributes: true, attributeFilter: ["style", "data-ui-peer-name"] });
   });
-  await page.waitForFunction(() => (window as unknown as { seen: number[] }).seen.length > 0);
-  const from = (await page.evaluate(() => (window as unknown as { seen: number[] }).seen))[0];
+  type Entry = { moving: boolean; x: number; frame: number };
+  const log = () => page.evaluate(() => (window as unknown as { log: Entry[] }).log);
+  const from = (await log())[0].x;
   await agent(page, "move_node", { canvas, node: "invoices", x: 900, y: 520 });
   await expect.poll(() => place(page, "invoices")).toEqual({ x: 900, y: 520 });
-  const seen = await page.evaluate(() => (window as unknown as { seen: number[] }).seen);
-  expect(seen.some((x) => x > Math.min(from, 900) + 5 && x < Math.max(from, 900) - 5)).toBe(true);
+  const entries = await log();
+  const landed = entries.findIndex((e) => e.x === 900);
+  const moving = entries.findIndex((e) => e.moving);
+  expect(moving).toBeGreaterThanOrEqual(0);
+  expect(moving).toBeLessThan(landed);
+  const between = entries.slice(moving, landed);
+  if (between.length > 0 && between[between.length - 1].frame - between[0].frame >= 5)
+    expect(between.some((e) => e.x > Math.min(from, 900) + 5 && e.x < Math.max(from, 900) - 5)).toBe(true);
 
   // It adds a table, as the canvas's other tables are.
   const added = (await agent(page, "add_node", {
