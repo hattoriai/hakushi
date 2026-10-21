@@ -5,7 +5,13 @@ All notable changes to Hakushi are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] - 2026-10-21
+
+Agents on shared canvases, on Issho 0.2.
+
+### Changed
+
+- Shared canvases need `{:issho, "~> 0.2"}`.
 
 ### Added
 

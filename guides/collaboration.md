@@ -24,7 +24,7 @@ and no service besides your app.
 1. Issho in your dependencies:
 
    ```elixir
-   {:issho, "~> 0.1"}
+   {:issho, "~> 0.2"}
    ```
 
 2. An Issho instance in your supervision tree, after the PubSub, with

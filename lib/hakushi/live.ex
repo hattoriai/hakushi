@@ -89,7 +89,7 @@ defmodule Hakushi.Live do
     cond do
       not Code.ensure_loaded?(Issho.Live) ->
         raise ArgumentError, """
-        the canvas #{inspect(canvas)} has `live`, which needs Issho: add {:issho, "~> 0.1"} \
+        the canvas #{inspect(canvas)} has `live`, which needs Issho: add {:issho, "~> 0.2"} \
         to your dependencies\
         """
 
