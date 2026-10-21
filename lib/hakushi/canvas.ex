@@ -382,7 +382,8 @@ defmodule Hakushi.Canvas do
   # whatever the browser sends.
   def handle_event("hakushi:peer", params, %{assigns: %{shared: topic}} = socket)
       when is_binary(topic) and is_map(params) do
-    Issho.Live.aware(topic, peer_state(params))
+    # Merged: the LiveView's other components in the room keep their keys.
+    Issho.Live.merge(topic, peer_state(params))
     {:noreply, socket}
   end
 
@@ -588,6 +589,8 @@ defmodule Hakushi.Canvas do
       tabindex="0"
       aria-roledescription={@messages["canvas"]}
       aria-label={@label}
+      data-issho-doc={@shared}
+      data-issho-cursor={@shared && "own"}
       {@rest}
     >
       <%!-- The hook has an element of its own: LiveView locks the element of
