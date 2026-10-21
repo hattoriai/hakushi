@@ -116,6 +116,25 @@ defmodule Hakushi.SharedCanvasTest do
     })
   end
 
+  test "a peer's viewport goes to the others, apart from Issho's view of the page" do
+    topic = topic()
+    ada = open(topic, "ada")
+    grace = open(topic, "grace")
+
+    ada
+    |> element("#schema-hook")
+    |> render_hook("hakushi:peer", %{"cursor" => [1, 2], "viewport" => [0, 0, 800, 600]})
+
+    assert_push_event(
+      grace,
+      "hakushi:peer",
+      %{"person" => "ada", "viewport" => [0, 0, 800, 600]} = peer
+    )
+
+    # A person's `view` is Issho's (the page they have open), in the same state.
+    refute Map.has_key?(peer, "view")
+  end
+
   test "on_change runs once for each change, whoever makes it, and a refusal goes back" do
     topic = topic()
     # Ada opens first: her canvas gives the room its on_change.

@@ -60,7 +60,7 @@ Issho's motion, and following is the room's.
 
 - Following someone, from the canvas's avatars or the page's people list:
   the canvas shows what they show (their viewport, sent with their cursor
-  as `view`), or keeps an agent's pointer on the screen. A wheel, a press
+  as `viewport`), or keeps an agent's pointer on the screen. A wheel, a press
   or a key on the canvas stops following. A canvas that shows its people
   says whom it follows: "Following Ada", with Stop, in their colour, and
   a ring of it around the canvas, in Issho's look of following, the same
