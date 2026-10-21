@@ -124,27 +124,45 @@ if Code.ensure_loaded?(Issho.Tool) do
       description: """
       Reads a shared canvas: its nodes (id, type, place, size, data, the
       group they are in) and its edges (between nodes, from handle to
-      handle). Places are in the canvas's coordinates.
+      handle). Places are in the canvas's coordinates. With `of`, a person
+      in the room, also the nodes they have selected and where their
+      pointer is: act on them with the other tools ("connect what Ada
+      selected to the invoice").
       """,
       annotations: [read_only: true, idempotent: true]
 
     arg :canvas, :string, required: true, description: "The canvas's room: \"atelier:schema\""
+    arg :of, :string, description: "A person in the room, by name: what they have selected"
 
     alias Hakushi.Graph
     alias Hakushi.Issho.Tools.Canvas
 
     @impl true
-    def call(%{canvas: name}, ctx) do
-      case Canvas.open(ctx, name) do
-        {:ok, canvas} ->
-          {:ok,
-           %{
-             "nodes" => canvas.graph |> Graph.nodes() |> Enum.map(&Map.from_struct/1),
-             "edges" => canvas.graph |> Graph.edges() |> Enum.map(&Map.from_struct/1)
-           }}
+    def call(%{canvas: name} = args, ctx) do
+      with {:ok, canvas} <- Canvas.open(ctx, name) do
+        %{
+          "nodes" => canvas.graph |> Graph.nodes() |> Enum.map(&Map.from_struct/1),
+          "edges" => canvas.graph |> Graph.edges() |> Enum.map(&Map.from_struct/1)
+        }
+        |> selected(canvas, args[:of])
+      end
+    end
 
-        error ->
-          Canvas.error(error)
+    defp selected(read, _canvas, nil), do: {:ok, read}
+
+    # A person's selection and pointer, from the session of theirs that has
+    # the canvas open (its awareness: "selected", "cursor").
+    defp selected(read, canvas, who) do
+      with {:ok, %{name: name, states: states}} <- Issho.Tools.person_of(canvas.participant, who) do
+        state = Enum.find(states, &Map.has_key?(&1, "selected")) || %{}
+        ids = Enum.filter(state["selected"] || [], &Graph.node(canvas.graph, &1))
+
+        {:ok,
+         Map.put(read, "of", %{
+           "name" => name,
+           "selected" => ids,
+           "pointer" => state["cursor"]
+         })}
       end
     end
   end

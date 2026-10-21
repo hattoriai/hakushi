@@ -221,4 +221,26 @@ defmodule Hakushi.SharedCanvasTest do
     assert_receive {:saved, graph}
     assert Hakushi.Graph.node(graph, id)
   end
+
+  test "an agent reads what a person of the room selected on the canvas" do
+    topic = topic()
+    ada = open(topic, "ada")
+
+    render_hook(element(ada, "#schema-hook"), "hakushi:peer", %{
+      "cursor" => [10, 20],
+      "selected" => ["note", "gone"]
+    })
+
+    settle(ada)
+
+    agent = Context.new(HakushiTest.Issho, %{id: "assistant", name: "Assistant", kind: :agent})
+
+    assert {:ok, %{"of" => %{"selected" => ["note"], "pointer" => [10, 20]}}} =
+             Issho.Tools.call(
+               Hakushi.Issho.tools(),
+               "read_canvas",
+               %{"canvas" => "canvas:" <> topic, "of" => "ada"},
+               agent
+             )
+  end
 end
