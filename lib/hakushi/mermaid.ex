@@ -143,7 +143,7 @@ defmodule Hakushi.Mermaid do
 
     depth =
       Enum.reduce(nodes, %{}, fn id, acc ->
-        Map.put(acc, id, depth(id, incoming, MapSet.new()))
+        Map.put(acc, id, depth(id, incoming, %{}))
       end)
 
     nodes
@@ -156,9 +156,9 @@ defmodule Hakushi.Mermaid do
 
   # The longest way back to a node with nothing before it (a cycle stops).
   defp depth(id, incoming, seen) do
-    case Map.get(incoming, id, []) |> Enum.reject(&MapSet.member?(seen, &1)) do
+    case Map.get(incoming, id, []) |> Enum.reject(&Map.has_key?(seen, &1)) do
       [] -> 0
-      from -> 1 + Enum.max(Enum.map(from, &depth(&1, incoming, MapSet.put(seen, id))))
+      from -> 1 + Enum.max(Enum.map(from, &depth(&1, incoming, Map.put(seen, id, true))))
     end
   end
 

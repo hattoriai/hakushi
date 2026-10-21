@@ -189,7 +189,7 @@ defmodule Hakushi.Kit do
   @spec to_markdown([module()], Hakushi.Graph.t()) :: String.t() | nil
   def to_markdown(kits, graph) do
     kits
-    |> Enum.filter(&function_exported?(&1, :to_markdown, 1))
+    |> Enum.filter(&exports?(&1, :to_markdown, 1))
     |> Enum.map(& &1.to_markdown(graph))
     |> Enum.reject(&(&1 in [nil, ""]))
     |> case do
@@ -205,7 +205,7 @@ defmodule Hakushi.Kit do
   """
   @spec from_markdown([module()], String.t()) :: {:ok, Hakushi.Graph.t(), module()} | :error
   def from_markdown(kits, text) do
-    readers = Enum.filter(kits, &function_exported?(&1, :from_markdown, 1))
+    readers = Enum.filter(kits, &exports?(&1, :from_markdown, 1))
 
     readers =
       case Hakushi.Mermaid.kit(text) && by_name(readers, Hakushi.Mermaid.kit(text)) do
@@ -230,13 +230,13 @@ defmodule Hakushi.Kit do
 
   @doc false
   def resizable?(kit, type),
-    do: function_exported?(kit, :resizable?, 1) and kit.resizable?(type)
+    do: exports?(kit, :resizable?, 1) and kit.resizable?(type)
 
   @doc false
   # The canvas the kits like: the first kit's paper and layout, every
   # kit's rules (the first kit's, for a rule two kits set).
   def canvas_prefs(kits) do
-    prefs = for kit <- kits, function_exported?(kit, :canvas, 0), do: kit.canvas()
+    prefs = for kit <- kits, exports?(kit, :canvas, 0), do: kit.canvas()
 
     paper =
       Enum.reduce(Enum.reverse(prefs), [], fn pref, acc ->
@@ -250,6 +250,11 @@ defmodule Hakushi.Kit do
 
     Keyword.put(paper, :rules, rules)
   end
+
+  # An optional callback of a kit: the module is loaded first, as
+  # function_exported?/3 is false for a module not loaded yet.
+  defp exports?(kit, function, arity),
+    do: Code.ensure_loaded?(kit) and function_exported?(kit, function, arity)
 
   @doc false
   # String keys, as the kits keep them.
