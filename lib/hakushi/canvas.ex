@@ -24,7 +24,11 @@ defmodule Hakushi.Canvas do
     * `"hakushi:duplicate"` with `nodes`: a copy of the nodes, next to
       them.
     * `"hakushi:drop"` with `item`, `x` and `y`: a new node, made by the
-      canvas's `new_node` function.
+      canvas's `new_node` function, or by a kit for a kit's item
+      (`"schema:table"`).
+    * `"hakushi:edit"` with `node`, `action` and the action's params: a
+      change of a kit's node by its controls (`Hakushi.Kit`), whose data
+      the kit gives.
     * `"hakushi:undo"` and `"hakushi:redo"`: the person's own changes,
       undone and done again as new changes, which the server checks again.
     * `"hakushi:peer"`, on a shared canvas: the person's cursor, the nodes
@@ -39,7 +43,7 @@ defmodule Hakushi.Canvas do
 
   alias Phoenix.LiveView.JS
 
-  alias Hakushi.{Change, Commit, Graph, Messages, Node, Rules}
+  alias Hakushi.{Change, Commit, Graph, Kit, Messages, Node, Rules}
 
   # Issho is optional: a canvas without `live` never calls it.
   @compile {:no_warn_undefined, [Issho.Live, Hakushi.Issho]}
@@ -362,13 +366,26 @@ defmodule Hakushi.Canvas do
       when is_number(x) and is_number(y) do
     item = if is_binary(params["item"]), do: params["item"]
 
-    case socket.assigns.new_node && socket.assigns.new_node.(item, {x, y}) do
+    case new_node(socket.assigns, item, {x, y}) do
       nil ->
         {:reply, %{"ok" => false}, socket}
 
       node ->
         node = node |> with_id() |> Node.new() |> in_group(socket.assigns.graph, params["parent"])
         socket |> commit(Change.add([node]), true) |> reply(%{"select" => [node.id]})
+    end
+  end
+
+  def handle_event("hakushi:edit", %{"node" => id, "action" => action} = params, socket)
+      when is_binary(id) and is_binary(action) do
+    with %Node{} = node <- Graph.node(socket.assigns.graph, id),
+         kit when kit != nil <- Kit.for_type(socket.assigns.kits, node.type),
+         {:ok, data} <- kit.edit(action, params, Kit.stringify(node.data)) do
+      if data == node.data,
+        do: {:reply, %{"ok" => true}, socket},
+        else: socket |> commit(Change.update(nodes: [%{id: id, data: data}]), true) |> reply()
+    else
+      _refused -> {:reply, %{"ok" => false}, socket}
     end
   end
 
@@ -628,7 +645,7 @@ defmodule Hakushi.Canvas do
             data-width={node.width}
             data-height={node.height}
             data-locked={node.locked && "true"}
-            data-resizable={slot_flag?(@node_slots, node, :resizable) && "true"}
+            data-resizable={resizable?(@node_slots, @kits, node) && "true"}
             data-group={slot_flag?(@node_slots, node, :group) && "true"}
             data-parent={node.parent}
             style={node_style(node)}
@@ -637,7 +654,15 @@ defmodule Hakushi.Canvas do
             aria-roledescription={@messages["node"]}
             aria-label={@node_label.(node)}
           >
-            <.node_content slots={@node_slots} node={node} />
+            <.node_content
+              slots={@node_slots}
+              kits={@kits}
+              node={node}
+              readonly={@readonly}
+              canvas={@id}
+              target={@myself}
+              messages={@messages}
+            />
           </div>
         </div>
         <div id={@id <> "-labels"} class="hakushi-labels" phx-update="ignore"></div>
@@ -696,6 +721,22 @@ defmodule Hakushi.Canvas do
     """
   end
 
+  # A new node: a kit's for its items (`"schema:table"`), and for a double
+  # click when the app makes none of its own; else the app's `new_node`.
+  defp new_node(%{kits: kits, new_node: fun, messages: messages}, item, at) do
+    with [name, kit_item] <- item && String.split(item, ":", parts: 2),
+         kit when kit != nil <- Kit.by_name(kits, name) do
+      kit.new_node(kit_item, at, messages)
+    else
+      _other ->
+        cond do
+          fun -> fun.(item, at)
+          item == nil and kits != [] -> hd(kits).new_node(nil, at, messages)
+          true -> nil
+        end
+    end
+  end
+
   defp node_style(node) do
     size =
       if node.width,
@@ -715,24 +756,53 @@ defmodule Hakushi.Canvas do
     end
   end
 
+  # The app's slot for the node's type, then a kit's, then the app's slot
+  # without a type, then a box with the node's label.
   defp node_content(assigns) do
-    slots = assigns.slots
-    node = assigns.node
+    %{slots: slots, kits: kits, node: node} = assigns
 
     assigns =
-      assign(
-        assigns,
-        :slot,
-        Enum.find(slots, &(&1[:type] == node.type)) || Enum.find(slots, &is_nil(&1[:type]))
+      assign(assigns,
+        slot: Enum.find(slots, &(&1[:type] == node.type)),
+        kit: Kit.for_type(kits, node.type),
+        any: Enum.find(slots, &is_nil(&1[:type]))
       )
 
     ~H"""
-    <%= if @slot do %>
-      {render_slot([@slot], @node)}
-    <% else %>
-      <.default_node node={@node} />
+    <%= cond do %>
+      <% @slot -> %>
+        {render_slot([@slot], @node)}
+      <% @kit -> %>
+        <.kit_node
+          kit={@kit}
+          node={@node}
+          canvas={@canvas}
+          readonly={@readonly}
+          target={@target}
+          messages={@messages}
+        />
+      <% @any -> %>
+        {render_slot([@any], @node)}
+      <% true -> %>
+        <.default_node node={@node} />
     <% end %>
     """
+  end
+
+  # A kit's node component, called as a component (with change tracking).
+  defp kit_node(assigns) do
+    Phoenix.LiveView.TagEngine.component(
+      Function.capture(assigns.kit, :node, 1),
+      Map.take(assigns, [:node, :canvas, :readonly, :target, :messages]),
+      {__MODULE__, __ENV__.function, __ENV__.file, __ENV__.line}
+    )
+  end
+
+  defp resizable?(slots, kits, node) do
+    case {Enum.find(slots, &(&1[:type] == node.type)), Kit.for_type(kits, node.type)} do
+      {nil, kit} when kit != nil -> Kit.resizable?(kit, node.type)
+      _slot -> slot_flag?(slots, node, :resizable)
+    end
   end
 
   defp default_node(assigns) do
@@ -773,8 +843,9 @@ defmodule Hakushi.Canvas do
       "minZoom" => assigns.min_zoom,
       "maxZoom" => assigns.max_zoom,
       "readonly" => assigns.readonly,
-      "newNode" => assigns.new_node != nil,
+      "newNode" => assigns.new_node != nil or assigns.kits != [],
       "wheel" => Atom.to_string(assigns.wheel),
+      "refit" => assigns.refit,
       "layout" => Atom.to_string(assigns.layout),
       "exportable" => assigns.export,
       "live" => assigns.live != nil,

@@ -23,7 +23,8 @@ export interface Config {
   maxZoom: number;
   readonly: boolean;
   newNode: boolean;
-  wheel: "pan" | "zoom";
+  wheel: "pan" | "zoom" | "scroll";
+  refit: boolean;
   layout: "right" | "down";
   exportable: boolean;
   live: boolean;
