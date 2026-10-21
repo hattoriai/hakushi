@@ -20,8 +20,8 @@ defmodule Hakushi do
     canvas.
   * `Hakushi.Change` - what people (and the app) do to it, each checked by
     `Hakushi.Rules` and the app's `on_change` before anyone sees it.
-  * `Hakushi.Room` and `Hakushi.Live` - a canvas shared by everyone on a
-    topic.
+  * `Hakushi.Issho` and `Hakushi.Live` - a canvas shared by everyone in
+    a room, on Issho.
   * `Hakushi.Graph.Type` - a canvas in one column of the database.
   * `Hakushi.Test` - the canvas in `Phoenix.LiveViewTest`.
 

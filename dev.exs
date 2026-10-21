@@ -642,6 +642,18 @@ defmodule HakushiDev.Layouts do
   end
 end
 
+defmodule HakushiDev.Collaboration do
+  @moduledoc """
+  Who may do what on the shared canvases of the development app: anyone,
+  anything. An app answers from its own permissions.
+  """
+  @behaviour Issho.Policy
+
+  @impl true
+  def authorize(_who, "atelier:" <> _canvas, _action), do: :ok
+  def authorize(_who, _room, _action), do: {:error, :forbidden}
+end
+
 defmodule HakushiDev.Page do
   @moduledoc "What every page of the app mounts with: who you are, and the query."
   import Phoenix.Component, only: [assign: 3]
@@ -679,7 +691,7 @@ defmodule HakushiDev.SchemaLive do
 
   @impl true
   def handle_event("add_column", %{"table" => table}, socket) do
-    case Hakushi.Room.graph(topic("schema", socket.assigns.room))
+    case Hakushi.Issho.graph(HakushiDev.Issho, topic("schema", socket.assigns.room))
          |> Kernel.||(socket.assigns.graph)
          |> Graph.node(table) do
       nil ->
@@ -755,7 +767,7 @@ defmodule HakushiDev.SchemaLive do
         graph={@graph}
         on_change={&on_change(&1, &2, @room)}
         new_node={&new_node/2}
-        live={{HakushiDev.PubSub, topic("schema", @room)}}
+        live={{HakushiDev.Issho, topic("schema", @room)}}
         user={@me}
         readonly={@readonly}
         background={:lines}
@@ -856,7 +868,7 @@ defmodule HakushiDev.WorkflowLive do
         graph={@graph}
         on_change={&on_change(&1, &2, @room)}
         new_node={&new_node/2}
-        live={{HakushiDev.PubSub, topic("workflow", @room)}}
+        live={{HakushiDev.Issho, topic("workflow", @room)}}
         user={@me}
         readonly={@readonly}
         rules={[cycles: false]}
@@ -1091,6 +1103,12 @@ Task.async(fn ->
       [
         {Phoenix.PubSub, name: HakushiDev.PubSub},
         HakushiDev.Store,
+        # The room of each shared canvas, its people and their cursors.
+        {Issho,
+         name: HakushiDev.Issho,
+         pubsub: HakushiDev.PubSub,
+         endpoint: HakushiDev.Endpoint,
+         policy: HakushiDev.Collaboration},
         HakushiDev.Endpoint
       ],
       strategy: :one_for_one

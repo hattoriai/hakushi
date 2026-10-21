@@ -29,20 +29,27 @@ defmodule Hakushi.Canvas do
       undone and done again as new changes, which the server checks again.
     * `"hakushi:peer"`, on a shared canvas: the person's cursor, the nodes
       they selected and the nodes they drag, for the others.
+
+  On a shared canvas (`live`), the component is a session of an Issho
+  room (`Hakushi.Issho`): its changes go to the room's document, and the
+  room's events come back to it through `update/2`.
   """
 
   use Phoenix.LiveComponent
 
   alias Phoenix.LiveView.JS
 
-  alias Hakushi.{Change, Commit, Graph, Messages, Node, Room, Rules}
+  alias Hakushi.{Change, Commit, Graph, Messages, Node, Rules}
+
+  # Issho is optional: a canvas without `live` never calls it.
+  @compile {:no_warn_undefined, [Issho.Live, Hakushi.Issho]}
 
   # The changes of each person that undo can take back.
   @undo_limit 100
   # The most nodes one paste, duplicate or selection may name.
   @max_items 5_000
-  # The least time between two broadcasts of a person's cursor, in ms.
-  @peer_interval 40
+  # The colours of the people of a shared canvas with none of their own.
+  @palette ~w(#e84a1c #2563eb #059669 #9333ea #d97706 #db2777 #0891b2 #65a30d)
 
   @impl true
   def mount(socket) do
@@ -51,7 +58,7 @@ defmodule Hakushi.Canvas do
        graph: nil,
        given: nil,
        version: 0,
-       room: nil,
+       shared: nil,
        undo: [],
        redo: [],
        clipboard: nil,
@@ -63,7 +70,7 @@ defmodule Hakushi.Canvas do
   end
 
   @impl true
-  def update(%{hakushi: message}, socket), do: {:ok, receive_message(socket, message)}
+  def update(%{issho: event}, socket), do: {:ok, receive_event(socket, event)}
 
   def update(%{hakushi_push: {event, payload}}, socket) do
     {:ok, push_event(socket, event, Map.put(payload, "canvas", socket.assigns.id))}
@@ -91,7 +98,7 @@ defmodule Hakushi.Canvas do
         not socket.assigns.configured ->
           start(socket, assigns.graph)
 
-        socket.assigns.room ->
+        socket.assigns.shared ->
           socket
 
         assigns.graph != socket.assigns.given ->
@@ -114,27 +121,11 @@ defmodule Hakushi.Canvas do
       |> stream_configure(:edges, dom_id: &edge_dom_id(id, &1.id))
 
     case {socket.assigns.live, connected?(socket)} do
-      {{pubsub, topic}, true} ->
+      {{instance, topic}, true} ->
         Hakushi.Live.ensure_mounted!(id)
-        if Hakushi.Live.register(topic, id) == :new, do: Phoenix.PubSub.subscribe(pubsub, topic)
+        share(socket, instance, topic, graph)
 
-        {:ok, room, graph, version, people} =
-          Room.join(%{
-            topic: topic,
-            pubsub: pubsub,
-            graph: graph,
-            rules: socket.assigns.rules,
-            on_change: socket.assigns.on_change,
-            canvas: id,
-            user: socket.assigns.user
-          })
-
-        socket
-        |> assign(room: room, version: version)
-        |> assign_people(people)
-        |> reset(graph)
-
-      {{_pubsub, _topic}, false} ->
+      {{_instance, _topic}, false} ->
         Hakushi.Live.ensure_mounted!(id)
         reset(socket, graph)
 
@@ -145,6 +136,36 @@ defmodule Hakushi.Canvas do
 
   defp start(_socket, other) do
     raise ArgumentError, "a canvas's graph must be a Hakushi.Graph, got: #{inspect(other)}"
+  end
+
+  # A shared canvas: a session of the room, and the room's document (this
+  # canvas's graph, rules and on_change if it opens it first). A canvas the
+  # room refuses shows why, and stays read-only on the graph it was given.
+  defp share(socket, instance, topic, graph) do
+    spec =
+      Hakushi.Issho.spec(graph, socket.assigns.rules, socket.assigns.on_change, socket.assigns.id)
+
+    with {:ok, _session} <- Issho.Live.join(instance, actor(socket), topic),
+         {:ok, snapshot} <-
+           Issho.Live.open(topic, topic, spec: spec, notify: {__MODULE__, socket.assigns.id}) do
+      socket
+      |> assign(shared: topic, version: snapshot["revision"])
+      |> assign_people(people(topic))
+      |> reset(snapshot["state"])
+    else
+      {:error, reason} ->
+        socket
+        |> assign(readonly: true, notice: Messages.reason(socket.assigns.messages, reason))
+        |> reset(graph)
+    end
+  end
+
+  # The actor of the room: the canvas's user, or someone anonymous.
+  defp actor(socket) do
+    case socket.assigns.user do
+      nil -> %{id: "anonymous:" <> new_id()}
+      user -> %{id: own_id(socket), name: Map.get(user, :name) || Map.get(user, "name")}
+    end
   end
 
   # The whole graph, anew: at mount, and when a shared canvas lost track.
@@ -204,45 +225,84 @@ defmodule Hakushi.Canvas do
     end
   end
 
-  # -- Messages of the room ------------------------------------------------
+  # -- Events of the room -------------------------------------------------
 
-  defp receive_message(socket, {:changed, version, change}) do
-    if version == socket.assigns.version + 1 do
-      case Graph.apply(socket.assigns.graph, change) do
-        {:ok, graph, change, _inverse} ->
-          socket |> assign(:version, version) |> show(graph, change)
-
-        {:error, _reason, _id} ->
-          resync(socket)
-      end
-    else
-      resync(socket)
-    end
+  # A transaction of the room's document: its changes, in revision order.
+  defp receive_event(socket, {"tx", _document, %{"revision" => revision, "ops" => changes}}) do
+    if revision == socket.assigns.version + 1,
+      do: socket |> apply_changes(changes) |> assign(:version, revision),
+      else: resync(socket)
   end
 
-  defp receive_message(socket, {:people, people}), do: assign_people(socket, people)
+  defp receive_event(socket, {"presence_diff", topic, _diff}),
+    do: assign_people(socket, people(topic))
 
-  defp receive_message(socket, {:peer, person, state}) do
-    if person == own_id(socket),
-      do: socket,
-      else:
+  # The others' cursors, selections and drags, as the browser draws them.
+  defp receive_event(socket, {"aware", _topic, %{"states" => states}}) do
+    own = own_id(socket)
+
+    Enum.reduce(states, socket, fn
+      {_session, %{"key" => ^own}}, socket ->
+        socket
+
+      {_session, %{"key" => person, "state" => state}}, socket ->
         push_event(
           socket,
           "hakushi:peer",
           Map.merge(state, %{"canvas" => socket.assigns.id, "person" => person})
         )
+    end)
   end
 
-  defp receive_message(socket, _message), do: socket
+  defp receive_event(socket, {"bye", _topic, reason}) do
+    socket
+    |> assign(shared: nil, readonly: true)
+    |> assign(:notice, Messages.reason(socket.assigns.messages, bye_reason(reason)))
+  end
+
+  defp receive_event(socket, _event), do: socket
+
+  defp apply_changes(socket, changes) do
+    Enum.reduce_while(changes, socket, fn change, socket ->
+      case Graph.apply(socket.assigns.graph, change) do
+        {:ok, graph, change, _inverse} -> {:cont, show(socket, graph, change)}
+        {:error, _reason, _id} -> {:halt, resync(socket)}
+      end
+    end)
+  end
+
+  defp bye_reason("revoked"), do: :revoked
+  defp bye_reason("unauthorized"), do: :unauthorized
+  defp bye_reason(_other), do: :failed
 
   # The changes came out of order (a node of a cluster that fell behind):
   # the room's graph, whole.
-  defp resync(%{assigns: %{live: {_pubsub, topic}}} = socket) do
-    case Room.graph(topic) do
-      nil -> socket
-      graph -> reset(socket, graph)
+  defp resync(%{assigns: %{shared: topic}} = socket) when is_binary(topic) do
+    case Issho.Live.read(topic, topic) do
+      {:ok, %{"state" => graph, "revision" => revision}} ->
+        socket |> assign(:version, revision) |> reset(graph)
+
+      {:error, _reason} ->
+        socket
     end
   end
+
+  defp resync(socket), do: socket
+
+  # The people of the room, each once, as the canvas draws them.
+  defp people(topic) do
+    for {key, %{metas: [meta | _]}} <- Issho.Live.people(topic) do
+      %{
+        "id" => key,
+        "name" => meta["name"],
+        "color" => meta["color"] || color(key),
+        "avatar" => meta["avatar"]
+      }
+    end
+  end
+
+  @doc false
+  def color(id), do: Enum.at(@palette, :erlang.phash2(id, length(@palette)))
 
   defp assign_people(socket, people) do
     own = own_id(socket)
@@ -318,26 +378,11 @@ defmodule Hakushi.Canvas do
   def handle_event("hakushi:redo", _params, socket),
     do: step(socket, :redo, :undo, "nothingToRedo")
 
-  def handle_event("hakushi:peer", params, %{assigns: %{live: {pubsub, topic}}} = socket)
-      when is_map(params) do
-    # The browser sends at most one every 50 ms; a browser that sends more
-    # is not broadcast to the others more often than that.
-    now = System.monotonic_time(:millisecond)
-    key = {__MODULE__, :peer, socket.assigns.id}
-
-    last = Process.get(key)
-
-    if is_nil(last) or now - last >= @peer_interval do
-      Process.put(key, now)
-
-      Phoenix.PubSub.broadcast_from(
-        pubsub,
-        self(),
-        topic,
-        {:hakushi, topic, {:peer, own_id(socket), peer_state(params)}}
-      )
-    end
-
+  # Issho's awareness sends the room one frame of what changed every 50 ms,
+  # whatever the browser sends.
+  def handle_event("hakushi:peer", params, %{assigns: %{shared: topic}} = socket)
+      when is_binary(topic) and is_map(params) do
+    Issho.Live.aware(topic, peer_state(params))
     {:noreply, socket}
   end
 
@@ -418,25 +463,28 @@ defmodule Hakushi.Canvas do
 
   defp reply({socket, {:error, message}}, _extra), do: {:reply, %{"error" => message}, socket}
 
-  # A change, through the room of a shared canvas or here. A person's own
-  # change (`record`) goes on their undo list.
+  # A change, here or through the room of a shared canvas: the one place
+  # where the two differ. A person's own change (`record`) goes on their
+  # undo list. On a shared canvas, its inverse is of the graph this canvas
+  # has; the change itself shows when the room sends it back.
   defp commit(socket, %Change{} = change, record) do
     change = if record, do: %{change | by: person(socket)}, else: change
 
     result =
-      case socket.assigns.room do
+      case socket.assigns.shared do
         nil ->
-          case Commit.run(socket.assigns.graph, change, %{
-                 rules: socket.assigns.rules,
-                 on_change: socket.assigns.on_change,
-                 canvas: socket.assigns.id
-               }) do
-            {:ok, graph, change, inverse} -> {:ok, graph, change, inverse}
-            {:error, reason} -> {:error, reason}
-          end
+          Commit.run(socket.assigns.graph, change, %{
+            rules: socket.assigns.rules,
+            on_change: socket.assigns.on_change,
+            canvas: socket.assigns.id
+          })
 
-        room ->
-          Room.commit(room, change)
+        topic ->
+          with {:ok, _graph, _change, inverse} <-
+                 Commit.check_and_apply(socket.assigns.graph, change, socket.assigns.rules),
+               {:ok, _receipt} <- Issho.Live.transact(topic, topic, [change]) do
+            {:ok, inverse}
+          end
       end
 
     case result do

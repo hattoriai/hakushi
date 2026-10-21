@@ -80,7 +80,7 @@ end
 ```
 
 From anywhere (a job, another LiveView), for a shared canvas:
-`Hakushi.Room.change(topic, change)`.
+`Hakushi.Issho.change(MyApp.Issho, topic, change)`.
 
 Or give the canvas a new `graph`: without `live`, it shows what changed
 from the graph it had.

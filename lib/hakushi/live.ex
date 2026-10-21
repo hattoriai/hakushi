@@ -9,30 +9,26 @@ defmodule Hakushi.Live do
 
       on_mount Hakushi.Live
 
-  A canvas with `live` gets the changes of the others, and their cursors,
-  in its LiveView's process, as messages of its topic: this hook takes
-  them, so the LiveView needs no `handle_info` of its own for them. A
-  canvas with `live` in a LiveView without the hook raises, saying so.
+  A shared canvas is a session of an Issho room (see `Hakushi.Issho`): this
+  hook is Issho's (`Issho.Live`), which takes the room's events in the
+  LiveView's process and gives them to its canvases, so the LiveView needs
+  no `handle_info` of its own for them. A LiveView that has `on_mount
+  Issho.Live` already needs no other. A canvas with `live` in a LiveView
+  without the hook raises, saying so.
   """
 
-  import Phoenix.LiveView, only: [attach_hook: 4, send_update: 2]
+  import Phoenix.LiveView, only: [send_update: 2]
 
   alias Hakushi.Change
-  alias Phoenix.LiveView.Socket
+
+  @compile {:no_warn_undefined, Issho.Live}
 
   @doc false
-  def on_mount(_arg, _params, _session, %Socket{} = socket) do
-    Process.put(__MODULE__, true)
-    {:cont, attach_hook(socket, :hakushi_live, :handle_info, &__MODULE__.__handle_info__/2)}
+  def on_mount(arg, params, session, socket) do
+    if Code.ensure_loaded?(Issho.Live),
+      do: Issho.Live.on_mount(arg, params, session, socket),
+      else: {:cont, socket}
   end
-
-  @doc false
-  def __handle_info__({:hakushi, topic, message}, socket) do
-    for canvas <- canvases(topic), do: send_update(Hakushi.Canvas, id: canvas, hakushi: message)
-    {:halt, socket}
-  end
-
-  def __handle_info__(_message, socket), do: {:cont, socket}
 
   @doc """
   Makes the app's own change on the canvas `canvas` of this LiveView: a
@@ -47,7 +43,9 @@ defmodule Hakushi.Live do
         {:noreply, socket}
       end
 
-  A change the canvas refuses shows its reason on the canvas.
+  A change the canvas refuses shows its reason on the canvas. From outside
+  the LiveView (a job), change a shared canvas with
+  `Hakushi.Issho.change/3`.
   """
   @spec change(String.t(), Change.t()) :: :ok
   def change(canvas, %Change{} = change) when is_binary(canvas) do
@@ -88,23 +86,21 @@ defmodule Hakushi.Live do
   @doc false
   @spec ensure_mounted!(String.t()) :: :ok
   def ensure_mounted!(canvas) do
-    if Process.get(__MODULE__),
-      do: :ok,
-      else:
-        raise(ArgumentError, """
+    cond do
+      not Code.ensure_loaded?(Issho.Live) ->
+        raise ArgumentError, """
+        the canvas #{inspect(canvas)} has `live`, which needs Issho: add {:issho, "~> 0.1"} \
+        to your dependencies\
+        """
+
+      Process.get({Issho.Live, :mounted}) ->
+        :ok
+
+      true ->
+        raise ArgumentError, """
         the canvas #{inspect(canvas)} has `live`, which needs the Hakushi.Live hook in its \
         LiveView: `on_mount Hakushi.Live`, or `live_session :default, on_mount: [Hakushi.Live]`\
-        """)
+        """
+    end
   end
-
-  @doc false
-  # The canvases of this LiveView on a topic.
-  @spec register(String.t(), String.t()) :: :new | :known
-  def register(topic, canvas) do
-    known = canvases(topic)
-    Process.put({__MODULE__, topic}, Enum.uniq([canvas | known]))
-    if known == [], do: :new, else: :known
-  end
-
-  defp canvases(topic), do: Process.get({__MODULE__, topic}, [])
 end

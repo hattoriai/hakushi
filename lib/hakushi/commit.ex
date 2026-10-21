@@ -1,8 +1,11 @@
 defmodule Hakushi.Commit do
   @moduledoc false
 
-  # The way of every change, in a canvas or in a room: the rules of the
-  # edges, the graph, then the app's on_change.
+  # The way of every change: the rules of the edges and the graph
+  # (check_and_apply/3,
+  # pure: on a shared canvas, the engine of its Issho document), then the
+  # app's on_change (ask/3: on a shared canvas, the document's transaction
+  # hook, once for each change, whoever made it).
 
   alias Hakushi.{Change, Graph, Rules}
 
@@ -15,8 +18,7 @@ defmodule Hakushi.Commit do
   @spec run(Graph.t(), Change.t(), opts()) ::
           {:ok, Graph.t(), Change.t(), Change.t()} | {:error, atom() | String.t()}
   def run(%Graph{} = graph, %Change{} = change, opts) do
-    with :ok <- check_edges(opts.rules, graph, change),
-         {:ok, result, change, inverse} <- graph |> Graph.apply(change) |> drop_id(),
+    with {:ok, result, change, inverse} <- check_and_apply(graph, change, opts.rules),
          :ok <-
            ask(opts.on_change, change, %{
              graph: graph,
@@ -25,6 +27,17 @@ defmodule Hakushi.Commit do
              canvas: opts.canvas
            }) do
       {:ok, result, change, inverse}
+    end
+  end
+
+  @doc false
+  # The rules of the edges, then the graph: the change as it applied and
+  # its inverse, or why it does not apply.
+  @spec check_and_apply(Graph.t(), Change.t(), Rules.t()) ::
+          {:ok, Graph.t(), Change.t(), Change.t()} | {:error, atom() | String.t()}
+  def check_and_apply(%Graph{} = graph, %Change{} = change, rules) do
+    with :ok <- check_edges(rules, graph, change) do
+      graph |> Graph.apply(change) |> drop_id()
     end
   end
 
@@ -80,9 +93,12 @@ defmodule Hakushi.Commit do
     end
   end
 
-  defp ask(nil, _change, _context), do: :ok
+  @doc false
+  # The app's on_change: :ok, or why it refuses the change.
+  @spec ask((Change.t(), map() -> term()) | nil, Change.t(), map()) :: :ok | {:error, term()}
+  def ask(nil, _change, _context), do: :ok
 
-  defp ask(on_change, change, context) do
+  def ask(on_change, change, context) do
     case on_change.(change, context) do
       :ok ->
         :ok

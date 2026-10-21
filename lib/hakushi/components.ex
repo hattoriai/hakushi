@@ -52,8 +52,8 @@ defmodule Hakushi.Components do
   Without `live`, the canvas keeps its own copy of `graph`, which its
   changes change. Give it a new `graph` (after the app's own change, say)
   and it shows what changed. With `live`, the graph is the room's (see
-  `Hakushi.Room`): make the app's changes with `Hakushi.Live.change/2`
-  or `Hakushi.Room.change/2`.
+  `Hakushi.Issho`): make the app's changes with `Hakushi.Live.change/2`
+  or `Hakushi.Issho.change/3`.
   """
   attr :id, :string, required: true, doc: "the id of the canvas"
   attr :graph, Hakushi.Graph, required: true, doc: "the nodes and edges, a `Hakushi.Graph`"
@@ -78,7 +78,8 @@ defmodule Hakushi.Components do
 
   attr :live, :any,
     default: nil,
-    doc: "`{pubsub, topic}`: a canvas that everyone on the topic shares, see `Hakushi.Room`"
+    doc:
+      "`{issho, topic}`: a canvas that everyone in the Issho room `topic` shares, see `Hakushi.Issho`"
 
   attr :user, :map,
     default: nil,

@@ -48,7 +48,7 @@ defmodule HakushiTest.CanvasLive do
      assign(socket,
        graph: graph(),
        test: test,
-       live: if(params["live"], do: {HakushiTest.PubSub, "canvas:" <> params["live"]}),
+       live: if(params["live"], do: {HakushiTest.Issho, "canvas:" <> params["live"]}),
        user:
          if(params["user"], do: %{id: params["user"], name: String.capitalize(params["user"])}),
        readonly: params["readonly"] == "true"

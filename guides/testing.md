@@ -38,8 +38,11 @@ words the person sees.
 
 A shared canvas in a test is shared with the other LiveViews of its
 topic in the test: open two, as two people, to test what one sees of the
-other. Give the rooms a short life in `config/test.exs`:
+other. Start an Issho instance for the tests (`Issho.Test.start!/1`
+starts one per test), and give its rooms a short life with its `:ttl`
+(50 milliseconds, say).
 
-```elixir
-config :hakushi, room_timeout: 50
-```
+A change one person makes reaches the other's LiveView as a message:
+before you look at the other's canvas, let its LiveView handle its
+mailbox (`:sys.get_state(view.pid)`, twice: once for the change, once
+for the update of the canvas it sends itself).

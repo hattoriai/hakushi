@@ -42,11 +42,16 @@ The first release.
   controls, `Hakushi.Live.export/2`, `exportImage()` in JavaScript).
 - `mix hakushi.install`: the hook in `app.js` and the style sheet in
   `app.css`.
-- Shared canvases (`live`): `Hakushi.Room`, one process for each canvas
-  that orders, checks and broadcasts the changes, registered with
-  `:global`; people with their avatars, cursors, selections and drags.
-- `Hakushi.Live`: the `on_mount` hook of a shared canvas, and the app's
-  own changes (`Hakushi.Live.change/2`, `Hakushi.Room.change/2`).
+- Shared canvases (`live={{MyApp.Issho, topic}}`) on
+  [Issho](https://github.com/hattoriai/issho): each canvas of a topic is
+  a session of one Issho room, whose document is the graph
+  (`Hakushi.Issho`), with one process in the cluster that orders, checks
+  and sends the changes; `on_change` once for each change; an Issho
+  policy for who may open, read and change each canvas; people with
+  their avatars, cursors, selections and drags.
+- `Hakushi.Live`: the `on_mount` hook of a shared canvas (Issho's), and
+  the app's own changes (`Hakushi.Live.change/2`,
+  `Hakushi.Issho.change/3`, `Hakushi.Issho.graph/2`).
 - The keyboard: Tab between nodes, Alt and an arrow to the nearest node,
   the arrows to move, C to connect, Enter into a node; a live region for
   screen readers.

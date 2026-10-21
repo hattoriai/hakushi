@@ -4,9 +4,8 @@ defmodule Hakushi.Application do
 
   @impl true
   def start(_type, _args) do
-    children = [
-      {DynamicSupervisor, name: Hakushi.RoomSupervisor, strategy: :one_for_one}
-    ]
+    # Shared canvases run in Issho's processes; Hakushi starts none of its own.
+    children = []
 
     Supervisor.start_link(children, strategy: :one_for_one, name: Hakushi.Supervisor)
   end
