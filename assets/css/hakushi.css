@@ -173,7 +173,9 @@
 }
 
 /* The edges are a layer of their own: a pan moves their pixels and
-   paints none of them again. */
+   paints none of them again. Not in WebKit, where such a layer (a 1px
+   element whose drawing spans the whole canvas) costs more on each frame
+   of a pan than painting the edges with the world does. */
 .hakushi-edges {
   position: absolute;
   top: 0;
@@ -183,6 +185,10 @@
   overflow: visible;
   pointer-events: none;
   will-change: transform;
+}
+
+.hakushi[data-ui-webkit] .hakushi-edges {
+  will-change: auto;
 }
 
 .hakushi-edge-hit {
