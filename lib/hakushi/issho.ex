@@ -153,6 +153,10 @@ if Code.ensure_loaded?(Issho.Engine) do
     A tool names its canvas by its room (`live={{MyApp.Issho, "schema:42"}}`);
     an agent works on a canvas someone has open, or on one your policy's
     `document/2` describes with `document/2`.
+
+    Its pointer travels to where it works, and drags, as a hand does: only
+    where it goes is sent, and each browser draws the way. For changes that
+    land at once: `config :hakushi, Hakushi.Issho, travel: false`.
     """
     @spec tools() :: [module()]
     def tools,

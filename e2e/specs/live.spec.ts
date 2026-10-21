@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { center, drag, node, openCanvas, place } from "./support";
+import { center, drag, node, openCanvas, place, zoom } from "./support";
 
 test("two people on one canvas: the moves, the cursors, the avatars", async ({ browser }) => {
   const ada = await (await browser.newContext()).newPage();
@@ -37,4 +37,33 @@ test("a change the server refuses goes back, with the reason", async ({ page }) 
   );
   expect(JSON.stringify(reply)).toContain("do not join");
   await expect(page.locator("#schema > .hakushi-notice")).toContainText("tasks.title is text and people.id is uuid");
+});
+
+test("following someone: the canvas shows what they show, until one goes one's own way", async ({ browser }) => {
+  const ada = await (await browser.newContext()).newPage();
+  const kenji = await (await browser.newContext()).newPage();
+  const room = await openCanvas(ada, "/", undefined, "&as=ada");
+  await openCanvas(kenji, "/", room, "&as=kenji");
+
+  // Ada follows Kenji from his avatar: the room's following (Issho's), on the page.
+  const avatar = ada.locator('#schema [data-person="kenji"]');
+  await avatar.click();
+  await expect(avatar).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(() => ada.evaluate(() => document.documentElement.dataset.isshoFollowing ?? "")).toContain("kenji");
+
+  // Kenji zooms in twice: Ada's canvas goes with him.
+  await kenji.locator('#schema [data-action="zoom-in"]').click();
+  await kenji.locator('#schema [data-action="zoom-in"]').click();
+  await expect.poll(() => zoom(kenji)).toBeGreaterThan(100);
+  await expect.poll(async () => Math.abs((await zoom(ada)) - (await zoom(kenji)))).toBeLessThanOrEqual(5);
+
+  // Ada's own wheel on the canvas stops following; her view stays hers.
+  const box = (await ada.locator("#schema").boundingBox())!;
+  await ada.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await ada.mouse.wheel(0, 60);
+  await expect(avatar).toHaveAttribute("aria-pressed", "false");
+  await expect.poll(() => ada.evaluate(() => document.documentElement.dataset.isshoFollowing ?? "")).toBe("");
+
+  await ada.context().close();
+  await kenji.context().close();
 });

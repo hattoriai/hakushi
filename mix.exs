@@ -1,7 +1,7 @@
 defmodule Hakushi.MixProject do
   use Mix.Project
 
-  @version "0.2.0"
+  @version "0.3.0"
   @source_url "https://github.com/hattoriai/hakushi"
 
   # HAKUSHI_OLDEST=1 resolves the oldest Phoenix and LiveView that Hakushi
@@ -57,7 +57,7 @@ defmodule Hakushi.MixProject do
       {:esbuild, "~> 0.10", only: :dev, runtime: false},
       # Shared canvases (`live`): Issho is the room, its people and their
       # cursors. A canvas without `live` never needs it.
-      {:issho, "~> 0.2", optional: true},
+      {:issho, github: "hattoriai/issho", branch: "main", optional: true},
       # MCP for the development app's agents.
       {:sake, "~> 0.4", only: [:dev, :test]},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
@@ -116,6 +116,7 @@ defmodule Hakushi.MixProject do
         "guides/layout.md",
         "guides/changes.md",
         "guides/collaboration.md",
+        "guides/upgrading.md",
         "guides/navigation.md",
         "guides/testing.md",
         "guides/theming.md",
@@ -134,6 +135,7 @@ defmodule Hakushi.MixProject do
           "guides/layout.md",
           "guides/changes.md",
           "guides/collaboration.md",
+          "guides/upgrading.md",
           "guides/navigation.md",
           "guides/testing.md",
           "guides/theming.md"

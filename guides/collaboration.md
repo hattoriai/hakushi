@@ -136,6 +136,29 @@ gives it the canvas's verbs, however it reaches your app:
 | `update_node` | a node's data, type or lock |
 | `delete_items` | nodes, with their edges, and edges |
 
+Its pointer goes to where it works and drags as a hand does, in a straight
+line: only where it goes is sent, and each browser draws the way there
+(the pointer, and the node it drags), so the people follow it. Others'
+pointers glide the same way, which smooths a person's too. For changes
+that land at once:
+
+```elixir
+config :hakushi, Hakushi.Issho, travel: false
+```
+
+It moves with Issho's motion (`Issho.Motion`): only when someone of the
+room sees the canvas, within a tool call's time budget.
+
+### Following, and the page
+
+A click on someone's avatar, on the canvas or in the page's people list
+(`Issho.Components.people/1`), follows them: the canvas shows what theirs
+shows, or keeps an agent's pointer on the screen. A wheel, a press or a
+key on the canvas stops following. On a page with Issho's pointers
+(`Issho.Components.pointers/1`), they draw everyone's pointer on the
+canvas too, at the same point of the canvas for each person, and one
+pointer goes from the page onto the canvas and back.
+
 Its changes go the way of everyone's: the canvas's rules check them, and
 your `on_change` is asked once for each. It works on a canvas someone has
 open, whose first canvas gave the room its graph, rules and `on_change`.
