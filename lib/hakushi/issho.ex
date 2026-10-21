@@ -55,6 +55,28 @@ if Code.ensure_loaded?(Issho.Engine) do
       end
     end
 
+    @doc ~S"""
+    A shared canvas's document, for your policy's `document/2`
+    (`Issho.Policy`): what the room's canvas is when an agent opens it
+    before anyone has it open in a browser. Give it the graph your app
+    keeps, and the canvas's `rules` and `on_change` (as `canvas/1` takes
+    them), so that the agent's changes go the way of everyone's; a canvas
+    that opens the room later gets the document as it is.
+
+        def document(_identity, "board:" <> id = room) do
+          board = MyApp.Boards.get!(id)
+          Hakushi.Issho.document(board.graph, on_change: &MyApp.Boards.on_change(room, &1, &2))
+        end
+
+    Options: `:rules` (a list, as the canvas's), `:on_change` and `:canvas`
+    (the id `on_change` gets as `:canvas`, `"agent"` unless given).
+    """
+    @spec document(Graph.t(), keyword()) :: {:ok, map()}
+    def document(%Graph{} = graph, opts \\ []) do
+      rules = opts |> Keyword.get(:rules, []) |> Rules.new()
+      {:ok, spec(graph, rules, opts[:on_change], Keyword.get(opts, :canvas, "agent"))}
+    end
+
     @doc false
     # What the canvas's document is, if this canvas opens it first.
     @spec spec(Graph.t(), Rules.t(), function() | nil, String.t()) :: map()
@@ -129,7 +151,8 @@ if Code.ensure_loaded?(Issho.Engine) do
         tools = Issho.Tools.room() ++ Hakushi.Issho.tools()
 
     A tool names its canvas by its room (`live={{MyApp.Issho, "schema:42"}}`);
-    an agent works on a canvas someone has open.
+    an agent works on a canvas someone has open, or on one your policy's
+    `document/2` describes with `document/2`.
     """
     @spec tools() :: [module()]
     def tools,

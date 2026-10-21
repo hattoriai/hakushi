@@ -200,4 +200,25 @@ defmodule Hakushi.SharedCanvasTest do
     settle(ada)
     assert %{label: "Renamed"} = Enum.find(nodes(ada, "schema"), &(&1.id == "note"))
   end
+
+  test "an agent works on a board no one has open, which the app's policy says" do
+    tools = Hakushi.Issho.tools()
+    agent = Context.new(HakushiTest.Issho, %{id: "assistant", name: "Assistant", kind: :agent})
+    board = "board:" <> Base.encode64(:erlang.term_to_binary(self()))
+
+    assert {:ok, %{"nodes" => [%{id: "first"}]}} =
+             Issho.Tools.call(tools, "read_canvas", %{"canvas" => board}, agent)
+
+    assert {:ok, %{"id" => id}} =
+             Issho.Tools.call(
+               tools,
+               "add_node",
+               %{"canvas" => board, "x" => 100, "y" => 40, "data" => %{"label" => "Second"}},
+               agent
+             )
+
+    # The app saves it, through the canvas's on_change.
+    assert_receive {:saved, graph}
+    assert Hakushi.Graph.node(graph, id)
+  end
 end

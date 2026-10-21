@@ -5,19 +5,31 @@ All notable changes to Hakushi are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] - 2026-10-21
-
-The first release.
+## [Unreleased]
 
 ### Added
 
 - Agents on shared canvases: `Hakushi.Issho.tools/0`, tools an agent
   uses as a person uses the canvas, however it reaches the app (its own
   model through an API with Issho's `Issho.Tools`, or MCP with
-  `Issho.MCP`): read it, point (the people see
-  its pointer, with its name), add nodes, drag them (they see the node
-  go), connect them, change and delete them, through the canvas's rules
-  and its `on_change`.
+  `Issho.MCP`): read it, point (the people see its pointer, with its
+  name), add nodes, drag them (they see the node go), connect them,
+  change and delete them, through the canvas's rules and its
+  `on_change`.
+- `Hakushi.Issho.document/2`: a shared canvas's document for your Issho
+  policy's `document/2`, so that an agent works on a board no one has
+  open in a browser, through the canvas's rules and `on_change`.
+- A shared canvas names its document for Issho's page layer
+  (`data-issho-doc`) and draws its people's cursors itself
+  (`data-issho-cursor="own"`); its awareness merges into the LiveView's
+  session, whose other components keep their keys.
+
+## [0.1.0] - 2026-10-21
+
+The first release.
+
+### Added
+
 - `Hakushi.Components.canvas/1`: a canvas for LiveView, with nodes drawn
   by `:node` slots of your HEEx, sent as LiveView streams; edges drawn
   in SVG (bezier, smooth, step, straight; arrows, dots, labels,
