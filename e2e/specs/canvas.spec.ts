@@ -14,9 +14,9 @@ test("zooms with the controls, the keys and the wheel with Ctrl, and fits", asyn
   await openCanvas(page, "/board");
   const start = await zoom(page);
   await page.locator('[data-action="zoom-in"]').click();
-  expect(await zoom(page)).toBeGreaterThan(start);
+  await expect.poll(() => zoom(page)).toBeGreaterThan(start);
   await page.locator('[data-action="zoom-reset"]').click();
-  expect(await zoom(page)).toBe(100);
+  await expect.poll(() => zoom(page)).toBe(100);
 
   const box = (await page.locator("#board").boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);

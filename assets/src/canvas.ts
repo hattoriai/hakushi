@@ -227,12 +227,17 @@ export class Canvas {
 
   private readNodes() {
     this.order = [];
+    const read: NodeModel[] = [];
     for (const element of this.nodesEl.children) {
-      if (element instanceof HTMLElement && element.classList.contains("hakushi-node")) this.readNode(element);
+      if (element instanceof HTMLElement && element.classList.contains("hakushi-node")) this.readNode(element, read);
     }
+    for (const node of read) this.decorate(node);
   }
 
-  private readNode(element: HTMLElement): NodeModel | null {
+  // A node's size and handles, read from the page. With `later`, the node is
+  // decorated by the caller once all of them are read: a write between two
+  // reads lays the page out again, for each node of a large canvas.
+  private readNode(element: HTMLElement, later?: NodeModel[]): NodeModel | null {
     const id = element.dataset.id;
     if (!id) return null;
     const width = numberAttr(element, "data-width");
@@ -260,7 +265,8 @@ export class Canvas {
     // A node in another group: the nodes in it are deeper or shallower too.
     if (old && (old.parent !== node.parent || old.group !== node.group)) this.parentsChanged = true;
     this.measureHandles(node);
-    this.decorate(node);
+    if (later) later.push(node);
+    else this.decorate(node);
     this.touchNode(id);
     return node;
   }
@@ -515,17 +521,22 @@ export class Canvas {
       }
       this.order = [...this.nodesEl.children].map((n) => (n as HTMLElement).dataset.id!).filter((id) => this.nodes.has(id));
     }
+    const read: NodeModel[] = [];
+    let added = false;
     for (const element of touched) {
       const fresh = !this.nodes.has(element.dataset.id || "");
-      const node = this.readNode(element);
+      const node = this.readNode(element, read);
       if (node && fresh) {
         this.sizes.observe(element);
-        this.order = [...this.nodesEl.children].map((n) => (n as HTMLElement).dataset.id!).filter((id) => this.nodes.has(id));
+        added = true;
       }
     }
+    if (added) this.order = [...this.nodesEl.children].map((n) => (n as HTMLElement).dataset.id!).filter((id) => this.nodes.has(id));
     if (this.parentsChanged) {
       this.parentsChanged = false;
       for (const node of this.nodes.values()) this.decorate(node);
+    } else {
+      for (const node of read) this.decorate(node);
     }
     this.allDirty = true;
     this.layoutVersion++;
