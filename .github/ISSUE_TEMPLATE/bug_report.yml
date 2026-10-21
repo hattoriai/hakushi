@@ -1,0 +1,94 @@
+name: Bug report
+description: Something in Hakushi does not work as the docs say.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. A security problem goes to a private report instead (see SECURITY.md).
+
+  - type: input
+    id: hakushi
+    attributes:
+      label: Hakushi version
+      description: From `mix.lock`, or `mix deps | grep hakushi`.
+      placeholder: "0.2.0"
+    validations:
+      required: true
+
+  - type: input
+    id: stack
+    attributes:
+      label: Elixir, OTP, Phoenix and LiveView versions
+      placeholder: "Elixir 1.20.1, OTP 29, Phoenix 1.8.1, LiveView 1.1.14"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where it happens
+      options:
+        - Drawing the nodes and edges
+        - Moving, selecting, resizing
+        - Connecting (the rules, the handles)
+        - A change the server refused, or on_change
+        - A shared canvas (live, the room, the people)
+        - The keyboard or a screen reader
+        - Hakushi.Test
+        - Something else
+    validations:
+      required: true
+
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and OS
+      description: For what the canvas shows or does, the pointer and the keys.
+      placeholder: "Safari 26, macOS 26"
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: The smallest canvas that shows it
+      description: The `<.canvas>` with its `:node` slots, its graph (or a few of its nodes and edges) and its `on_change`, or a link to a small repository.
+      render: elixir
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps
+      placeholder: |
+        1. Press ⌘K
+        2. Type "inv"
+        3. Choose "Invite someone…" and enter an email
+        4. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: The error and its stacktrace, from the server log or the browser console, and what the canvas said.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I use a release from Hex, not `main`.
+          required: true
+        - label: I searched the open and closed issues.
+          required: true

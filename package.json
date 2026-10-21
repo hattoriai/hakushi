@@ -1,0 +1,16 @@
+{
+  "name": "hakushi",
+  "version": "0.1.0",
+  "license": "MIT",
+  "module": "./priv/static/hakushi.esm.js",
+  "main": "./priv/static/hakushi.cjs.js",
+  "exports": {
+    ".": {
+      "import": "./priv/static/hakushi.esm.js",
+      "require": "./priv/static/hakushi.cjs.js"
+    }
+  },
+  "files": [
+    "priv/static"
+  ]
+}

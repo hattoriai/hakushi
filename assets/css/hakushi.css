@@ -1,0 +1,726 @@
+/*
+ * Hakushi canvas styles.
+ *
+ * Every colour, space, radius and font comes from a --hakushi-* custom
+ * property. Set them on .hakushi (or higher) to theme the canvases, or
+ * load hakushi-sumi.css to map them to the Sumi tokens. The defaults below
+ * have no specificity, so a value set on :root, on an ancestor or on
+ * .hakushi itself wins. They are Masu's, Kotoba's and Koyomi's own
+ * defaults, so that a page with them all looks like one thing. See the
+ * Theming guide for each token.
+ */
+
+:where(:root) {
+  --hakushi-font: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --hakushi-font-size: 0.875rem;
+  --hakushi-text: #1f1f23;
+  --hakushi-muted: #6b6b76;
+  /* The paper, and its pattern. */
+  --hakushi-background: #fbfbfa;
+  --hakushi-pattern: #efeff2;
+  --hakushi-pattern-strong: #d9d9df;
+  --hakushi-surface: #ffffff;
+  --hakushi-border: #d9d9de;
+  --hakushi-accent: #2f5bd3;
+  --hakushi-accent-text: #ffffff;
+  /* The nodes: the default node, and the ring of a selected one. */
+  --hakushi-node-background: var(--hakushi-surface);
+  --hakushi-node-border: var(--hakushi-border);
+  --hakushi-node-radius: 8px;
+  --hakushi-node-shadow: 0 1px 2px rgba(15, 15, 20, 0.06), 0 1px 1px rgba(15, 15, 20, 0.04);
+  --hakushi-selection: var(--hakushi-accent);
+  /* The handles. */
+  --hakushi-handle-size: 10px;
+  --hakushi-handle: var(--hakushi-surface);
+  --hakushi-handle-border: #9a9aa6;
+  /* The edges. */
+  --hakushi-edge: #a3a3ad;
+  --hakushi-edge-width: 1.5px;
+  --hakushi-edge-selected: var(--hakushi-accent);
+  --hakushi-edge-label: var(--hakushi-surface);
+  /* The helper lines and the selection box. */
+  --hakushi-guide: #e5484d;
+  --hakushi-box: rgba(47, 91, 211, 0.08);
+  /* The controls and the overview. */
+  --hakushi-control: var(--hakushi-surface);
+  --hakushi-control-shadow: 0 1px 3px rgba(15, 15, 20, 0.1), 0 0 0 1px rgba(15, 15, 20, 0.06);
+  --hakushi-minimap-node: #c4c4cc;
+  --hakushi-minimap-mask: rgba(15, 15, 20, 0.05);
+  --hakushi-radius: 6px;
+  --hakushi-transition: 120ms ease-out;
+}
+
+/*
+ * Dark: under the app's own switch, a `dark` class or data-theme="dark"
+ * on an ancestor (the <html> of Tailwind's and Phoenix's apps). Tokens an
+ * app sets itself win, as above.
+ */
+:where(.dark, [data-theme="dark"]) {
+  --hakushi-text: #ececf0;
+  --hakushi-muted: #9a9aa6;
+  --hakushi-background: #141417;
+  --hakushi-pattern: #1d1d22;
+  --hakushi-pattern-strong: #2e2e35;
+  --hakushi-surface: #1f1f23;
+  --hakushi-border: #34343b;
+  --hakushi-accent: #7b9cff;
+  --hakushi-accent-text: #0f0f12;
+  --hakushi-node-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --hakushi-handle-border: #6b6b76;
+  --hakushi-edge: #5d5d68;
+  --hakushi-guide: #ff6b6f;
+  --hakushi-box: rgba(123, 156, 255, 0.12);
+  --hakushi-control-shadow: 0 1px 3px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --hakushi-minimap-node: #4a4a55;
+  --hakushi-minimap-mask: rgba(0, 0, 0, 0.35);
+}
+
+/* The canvas fills the box the app gives it: give it a height. */
+.hakushi {
+  position: relative;
+  overflow: hidden;
+  min-height: 16rem;
+  background: var(--hakushi-background);
+  color: var(--hakushi-text);
+  font-family: var(--hakushi-font);
+  font-size: var(--hakushi-font-size);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  outline: none;
+  isolation: isolate;
+}
+
+.hakushi *,
+.hakushi *::before,
+.hakushi *::after {
+  box-sizing: border-box;
+}
+
+/* The ring of the canvas, for the keyboard only: a click on the paper
+   focuses the canvas too. */
+.hakushi[data-ui-keyboard]:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--hakushi-accent);
+}
+
+.hakushi[data-ui-space],
+.hakushi[data-ui-space] * {
+  cursor: grab;
+}
+
+.hakushi[data-ui-panning],
+.hakushi[data-ui-panning] * {
+  cursor: grabbing !important;
+}
+
+.hakushi-hook {
+  display: none;
+}
+
+/* The paper: a pattern that follows the view. */
+.hakushi-viewport {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.hakushi-background {
+  position: absolute;
+  inset: 0;
+  background-position: var(--hakushi-grid-x, 0) var(--hakushi-grid-y, 0);
+  background-size: var(--hakushi-grid-size, 20px) var(--hakushi-grid-size, 20px);
+}
+
+.hakushi[data-background="dots"] .hakushi-background {
+  background-image: radial-gradient(circle at 0 0, var(--hakushi-pattern-strong) 1.1px, transparent 1.5px);
+  background-size: var(--hakushi-grid-size, 20px) var(--hakushi-grid-size, 20px);
+}
+
+/* Graph paper: a line every square, a stronger one every five. */
+.hakushi[data-background="lines"] .hakushi-background {
+  background-image:
+    linear-gradient(to right, var(--hakushi-pattern-strong) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--hakushi-pattern-strong) 1px, transparent 1px),
+    linear-gradient(to right, var(--hakushi-pattern) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--hakushi-pattern) 1px, transparent 1px);
+  background-size:
+    calc(var(--hakushi-grid-size, 20px) * 5) calc(var(--hakushi-grid-size, 20px) * 5),
+    calc(var(--hakushi-grid-size, 20px) * 5) calc(var(--hakushi-grid-size, 20px) * 5),
+    var(--hakushi-grid-size, 20px) var(--hakushi-grid-size, 20px),
+    var(--hakushi-grid-size, 20px) var(--hakushi-grid-size, 20px);
+}
+
+/* Crosses: a small plus at each corner of the squares. */
+.hakushi[data-background="cross"] .hakushi-background {
+  background: var(--hakushi-pattern-strong);
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M0 3V0h3M17 0h3v3M20 17v3h-3M3 20H0v-3' fill='none' stroke='black' stroke-width='1.6'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M0 3V0h3M17 0h3v3M20 17v3h-3M3 20H0v-3' fill='none' stroke='black' stroke-width='1.6'/%3E%3C/svg%3E");
+  -webkit-mask-size: var(--hakushi-grid-size, 20px) var(--hakushi-grid-size, 20px);
+  mask-size: var(--hakushi-grid-size, 20px) var(--hakushi-grid-size, 20px);
+  -webkit-mask-position: var(--hakushi-grid-x, 0) var(--hakushi-grid-y, 0);
+  mask-position: var(--hakushi-grid-x, 0) var(--hakushi-grid-y, 0);
+}
+
+/* The world: the nodes, the edges and their labels, moved and scaled as one. */
+.hakushi-world {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  transform-origin: 0 0;
+}
+
+/* The edges are a layer of their own: a pan moves their pixels and
+   paints none of them again. */
+.hakushi-edges {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.hakushi-edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14px;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.hakushi-edge-line {
+  fill: none;
+  stroke: var(--hakushi-edge);
+  stroke-width: var(--hakushi-edge-width);
+  pointer-events: none;
+  transition: stroke var(--hakushi-transition);
+}
+
+.hakushi-edge:hover .hakushi-edge-line {
+  stroke: color-mix(in oklab, var(--hakushi-edge) 60%, var(--hakushi-text));
+}
+
+.hakushi-edge[data-ui-selected] .hakushi-edge-line {
+  stroke: var(--hakushi-edge-selected);
+  stroke-width: calc(var(--hakushi-edge-width) + 0.5px);
+}
+
+.hakushi-edge[data-animated] .hakushi-edge-line {
+  stroke-dasharray: 6 4;
+  animation: hakushi-flow 0.6s linear infinite;
+}
+
+@keyframes hakushi-flow {
+  to {
+    stroke-dashoffset: -10;
+  }
+}
+
+.hakushi-edge[data-ui-gone] {
+  display: none;
+}
+
+.hakushi-marker {
+  fill: var(--hakushi-edge);
+}
+
+.hakushi-marker-on {
+  fill: var(--hakushi-edge-selected);
+}
+
+.hakushi-edge-pending {
+  fill: none;
+  stroke: var(--hakushi-accent);
+  stroke-width: var(--hakushi-edge-width);
+  stroke-dasharray: 5 4;
+}
+
+.hakushi-edge-pending[data-ui-valid="false"] {
+  stroke: var(--hakushi-muted);
+}
+
+.hakushi-guide {
+  stroke: var(--hakushi-guide);
+  stroke-width: 1px;
+}
+
+/* The nodes. */
+.hakushi-nodes {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+/* A node is as wide as its content (the layer it sits in has no width). */
+.hakushi-node {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: max-content;
+  cursor: grab;
+  outline: none;
+  border-radius: var(--hakushi-node-radius);
+}
+
+.hakushi[data-ui-dragging] .hakushi-node[data-ui-selected] {
+  cursor: grabbing;
+}
+
+.hakushi[data-ui-readonly] .hakushi-node,
+.hakushi-node[data-locked] {
+  cursor: default;
+}
+
+.hakushi-node[data-ui-selected] {
+  z-index: 1;
+  box-shadow: 0 0 0 2px var(--hakushi-selection);
+}
+
+.hakushi[data-ui-keyboard] .hakushi-node:focus-visible {
+  box-shadow: 0 0 0 2px var(--hakushi-background), 0 0 0 4px var(--hakushi-selection);
+}
+
+.hakushi-node[data-ui-peer]:not([data-ui-selected]) {
+  box-shadow: 0 0 0 2px var(--hakushi-peer);
+}
+
+.hakushi-node[data-ui-peer]::after {
+  content: attr(data-ui-peer-name);
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--hakushi-peer);
+  color: #fff;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.hakushi-node[data-ui-culled],
+.hakushi-node[data-ui-gone] {
+  display: none;
+}
+
+/* A node with no :node slot. */
+.hakushi-default-node {
+  position: relative;
+  min-width: 8rem;
+  padding: 0.625rem 0.875rem;
+  border: 1px solid var(--hakushi-node-border);
+  border-radius: var(--hakushi-node-radius);
+  background: var(--hakushi-node-background);
+  box-shadow: var(--hakushi-node-shadow);
+  text-align: center;
+}
+
+/* The handles, on a side of their nearest positioned ancestor. */
+.hakushi-handle {
+  position: absolute;
+  z-index: 2;
+  width: var(--hakushi-handle-size);
+  height: var(--hakushi-handle-size);
+  border: 1.5px solid var(--hakushi-handle-border);
+  border-radius: 999px;
+  background: var(--hakushi-handle);
+  cursor: crosshair;
+  transition: transform var(--hakushi-transition), border-color var(--hakushi-transition);
+}
+
+.hakushi-handle::before {
+  /* A larger target for the pointer than the dot. */
+  content: "";
+  position: absolute;
+  inset: -6px;
+}
+
+.hakushi-handle[data-side="left"] {
+  top: 50%;
+  left: 0;
+  translate: -50% -50%;
+}
+
+.hakushi-handle[data-side="right"] {
+  top: 50%;
+  right: 0;
+  translate: 50% -50%;
+}
+
+.hakushi-handle[data-side="top"] {
+  top: 0;
+  left: 50%;
+  translate: -50% -50%;
+}
+
+.hakushi-handle[data-side="bottom"] {
+  bottom: 0;
+  left: 50%;
+  translate: -50% 50%;
+}
+
+.hakushi-handle:hover {
+  border-color: var(--hakushi-accent);
+  transform: scale(1.25);
+}
+
+.hakushi[data-ui-readonly] .hakushi-handle {
+  visibility: hidden;
+}
+
+.hakushi[data-ui-connecting] .hakushi-handle {
+  opacity: 0.3;
+}
+
+.hakushi[data-ui-connecting] .hakushi-handle[data-ui-valid],
+.hakushi[data-ui-connecting] .hakushi-handle[data-ui-from] {
+  opacity: 1;
+  border-color: var(--hakushi-accent);
+}
+
+.hakushi[data-ui-connecting] .hakushi-handle[data-ui-target] {
+  background: var(--hakushi-accent);
+  transform: scale(1.4);
+}
+
+.hakushi[data-ui-connecting] .hakushi-node[data-ui-target] {
+  box-shadow: 0 0 0 2px var(--hakushi-accent);
+}
+
+/* Far out, the handles go: they are too small to aim at. */
+.hakushi[data-ui-zoom="far"]:not([data-ui-connecting]) .hakushi-handle {
+  visibility: hidden;
+}
+
+.hakushi-resizer {
+  position: absolute;
+  z-index: 3;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--hakushi-selection);
+  border-radius: 2px;
+  background: var(--hakushi-surface);
+}
+
+.hakushi-resizer[data-corner="nw"] {
+  top: -5px;
+  left: -5px;
+  cursor: nwse-resize;
+}
+
+.hakushi-resizer[data-corner="ne"] {
+  top: -5px;
+  right: -5px;
+  cursor: nesw-resize;
+}
+
+.hakushi-resizer[data-corner="sw"] {
+  bottom: -5px;
+  left: -5px;
+  cursor: nesw-resize;
+}
+
+.hakushi-resizer[data-corner="se"] {
+  right: -5px;
+  bottom: -5px;
+  cursor: nwse-resize;
+}
+
+/* The labels of the edges. */
+.hakushi-labels {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.hakushi-edge-label,
+.hakushi-edge-input {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translate(-50%, -50%);
+  padding: 2px 8px;
+  border: 1px solid var(--hakushi-border);
+  border-radius: 999px;
+  background: var(--hakushi-edge-label);
+  color: var(--hakushi-muted);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.hakushi-edge-label[data-ui-selected] {
+  border-color: var(--hakushi-edge-selected);
+  color: var(--hakushi-text);
+}
+
+.hakushi-edge-input {
+  min-width: 8rem;
+  color: var(--hakushi-text);
+  font: inherit;
+  font-size: 0.75rem;
+  outline: none;
+  border-color: var(--hakushi-accent);
+  cursor: text;
+  user-select: text;
+}
+
+/* What the browser draws over the canvas. */
+.hakushi-ui {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.hakushi-ui > * {
+  pointer-events: auto;
+}
+
+.hakushi-box {
+  position: absolute;
+  border: 1px solid var(--hakushi-accent);
+  background: var(--hakushi-box);
+  pointer-events: none;
+}
+
+.hakushi-controls {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: calc(var(--hakushi-radius) + 3px);
+  background: var(--hakushi-control);
+  box-shadow: var(--hakushi-control-shadow);
+}
+
+.hakushi-control {
+  display: grid;
+  place-items: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--hakushi-radius);
+  background: transparent;
+  color: var(--hakushi-text);
+  font: inherit;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.hakushi-control:hover {
+  background: color-mix(in oklab, var(--hakushi-text) 7%, transparent);
+}
+
+.hakushi-control:focus-visible {
+  outline: 2px solid var(--hakushi-accent);
+  outline-offset: -2px;
+}
+
+.hakushi-zoom {
+  min-width: 3.25rem;
+}
+
+.hakushi-minimap {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  border-radius: calc(var(--hakushi-radius) + 3px);
+  background: var(--hakushi-control);
+  box-shadow: var(--hakushi-control-shadow);
+  cursor: pointer;
+}
+
+/* The people on a shared canvas, and their cursors. */
+.hakushi-people {
+  position: absolute;
+  z-index: 2;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  flex-direction: row-reverse;
+}
+
+.hakushi-person {
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  margin-left: -6px;
+  overflow: hidden;
+  border: 2px solid var(--hakushi-background);
+  border-radius: 999px;
+  background: var(--hakushi-person);
+  color: #fff;
+  font-size: 0.625rem;
+  font-weight: 600;
+}
+
+.hakushi-person img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.hakushi-cursors {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none !important;
+}
+
+.hakushi-cursor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transition: translate 80ms linear;
+}
+
+.hakushi-cursor::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 14px;
+  height: 18px;
+  background: var(--hakushi-peer);
+  clip-path: polygon(0 0, 100% 66%, 45% 66%, 22% 100%);
+}
+
+.hakushi-cursor span {
+  position: absolute;
+  top: 16px;
+  left: 12px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--hakushi-peer);
+  color: #fff;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* A refused change: the server's words, for a while. */
+.hakushi-notice {
+  position: absolute;
+  z-index: 4;
+  top: 12px;
+  left: 50%;
+  max-width: min(28rem, calc(100% - 24px));
+  padding: 0.5rem 0.875rem;
+  border-radius: var(--hakushi-radius);
+  background: var(--hakushi-text);
+  color: var(--hakushi-background);
+  font-size: 0.8125rem;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -6px);
+  transition: opacity 160ms ease-out, transform 160ms ease-out;
+}
+
+.hakushi-notice[data-ui-shown] {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.hakushi-notice:empty {
+  display: none;
+}
+
+.hakushi[data-ui-offline]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: color-mix(in oklab, var(--hakushi-background) 40%, transparent);
+  pointer-events: none;
+}
+
+.hakushi-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--hakushi-muted);
+  pointer-events: none;
+}
+
+.hakushi-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.hakushi[data-ui-drop] {
+  box-shadow: inset 0 0 0 2px var(--hakushi-accent);
+}
+
+/* The items dropped on a canvas, and their ghost while dragged. */
+.hakushi-item {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.hakushi-ghost {
+  position: fixed;
+  z-index: 1000;
+  top: 0;
+  left: 0;
+  opacity: 0.85;
+  pointer-events: none;
+  box-shadow: 0 8px 24px rgba(15, 15, 20, 0.18);
+}
+
+@media (forced-colors: active) {
+  .hakushi-node[data-ui-selected],
+  .hakushi[data-ui-keyboard] .hakushi-node:focus-visible {
+    outline: 2px solid Highlight;
+  }
+
+  .hakushi-edge-line {
+    stroke: CanvasText;
+  }
+
+  .hakushi-edge[data-ui-selected] .hakushi-edge-line,
+  .hakushi-edge-pending {
+    stroke: Highlight;
+  }
+
+  .hakushi-marker {
+    fill: CanvasText;
+  }
+
+  .hakushi-marker-on {
+    fill: Highlight;
+  }
+
+  .hakushi-handle {
+    border-color: CanvasText;
+    background: Canvas;
+  }
+
+  .hakushi-guide {
+    stroke: Highlight;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hakushi *,
+  .hakushi *::before,
+  .hakushi *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
