@@ -326,12 +326,14 @@ export class Canvas {
     if (!ring) this.ui.prepend(el("div", { class: "hakushi-following-ring", "aria-hidden": "true" }));
     const name = avatar.title || key;
     if (line?.dataset.followed === key && line.dataset.name === name) return;
-    line ??= this.ui.appendChild(el("p", { class: "hakushi-following", role: "status", "data-issho-follow-control": "" }));
+    // Issho's look of following (its classes and properties), the same on every block of the page.
+    line ??= this.ui.appendChild(el("p", { class: "hakushi-following issho-following", role: "status", "data-issho-follow-control": "" }));
+    if (color) line.style.setProperty("--issho-color", color);
     line.dataset.followed = key;
     line.dataset.name = name;
     const text = el("span", {});
     text.textContent = this.messages.t("following", { name });
-    const stop = el("button", { type: "button", class: "hakushi-following-stop" });
+    const stop = el("button", { type: "button", class: "hakushi-following-stop issho-following-stop" });
     stop.textContent = this.messages.t("stopFollowing", {});
     stop.addEventListener("click", () => followIn(this.room, null));
     line.replaceChildren(text, stop);
