@@ -229,7 +229,11 @@ defmodule Hakushi.Test do
   """
   @spec edit(struct(), String.t(), String.t(), String.t(), map()) :: :ok | {:error, String.t()}
   def edit(view, id, node, action, params \\ %{}) do
-    payload = params |> Map.new(fn {k, v} -> {to_string(k), v} end) |> Map.merge(%{"node" => node, "action" => action})
+    payload =
+      params
+      |> Map.new(fn {k, v} -> {to_string(k), v} end)
+      |> Map.merge(%{"node" => node, "action" => action})
+
     result(event(view, id, "hakushi:edit", payload))
   end
 

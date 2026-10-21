@@ -127,7 +127,25 @@ defmodule Hakushi.Kit do
   """
   @callback canvas() :: keyword()
 
-  @optional_callbacks resizable?: 1, canvas: 0
+  @doc """
+  The kit's nodes of `graph` as Markdown: a fenced diagram (Mermaid), so
+  that a document with the canvas in it (a Kotoba embed) exports as text
+  people read and Markdown viewers draw, and that `from_markdown/1` reads
+  back. `nil` when the graph has none of the kit's nodes.
+
+  Write the places of the nodes in it (`Hakushi.Mermaid.places/3`), so
+  that the canvas comes back as it was. See the [Kits](kits.md) guide.
+  """
+  @callback to_markdown(graph :: Hakushi.Graph.t()) :: String.t() | nil
+
+  @doc """
+  The canvas of a diagram that `to_markdown/1` wrote, or that a person
+  wrote in the kit's kind of diagram: `{:ok, graph}`, or `:error` for a
+  text the kit does not read.
+  """
+  @callback from_markdown(text :: String.t()) :: {:ok, Hakushi.Graph.t()} | :error
+
+  @optional_callbacks resizable?: 1, canvas: 0, to_markdown: 1, from_markdown: 1
 
   defmacro __using__(_opts) do
     quote do
@@ -146,14 +164,62 @@ defmodule Hakushi.Kit do
   @spec get(map(), String.t()) :: term()
   def get(data, key) when is_map(data) and is_binary(key) do
     case Map.fetch(data, key) do
-      {:ok, value} -> value
-      :error -> Enum.find_value(data, fn {k, v} -> if is_atom(k) and Atom.to_string(k) == key, do: v end)
+      {:ok, value} ->
+        value
+
+      :error ->
+        Enum.find_value(data, &atom_value(&1, key))
     end
   end
+
+  defp atom_value({k, v}, key) when is_atom(k), do: if(Atom.to_string(k) == key, do: v)
+  defp atom_value(_entry, _key), do: nil
 
   @doc "A word of `messages`, with its `{name}` filled."
   @spec word(map(), String.t(), String.t()) :: String.t()
   def word(messages, key, name), do: String.replace(messages[key] || key, "{name}", name)
+
+  @doc """
+  A canvas as Markdown: the diagram of each of `kits` that has nodes in
+  `graph` (`c:to_markdown/1`), one after the other. `nil` when none has.
+
+      Hakushi.Kit.to_markdown([Hakushi.Kits.Schema], graph)
+      #=> "```mermaid\n%% hakushi kit=schema\nerDiagram\n  ..."
+  """
+  @spec to_markdown([module()], Hakushi.Graph.t()) :: String.t() | nil
+  def to_markdown(kits, graph) do
+    kits
+    |> Enum.filter(&function_exported?(&1, :to_markdown, 1))
+    |> Enum.map(& &1.to_markdown(graph))
+    |> Enum.reject(&(&1 in [nil, ""]))
+    |> case do
+      [] -> nil
+      parts -> Enum.join(parts, "\n\n")
+    end
+  end
+
+  @doc """
+  A canvas from Markdown (a diagram of `to_markdown/2`): read by the kit it
+  names (`%% hakushi kit=...`), or else by the first of `kits` that reads
+  it. Gives `{:ok, graph, kit}` or `:error`.
+  """
+  @spec from_markdown([module()], String.t()) :: {:ok, Hakushi.Graph.t(), module()} | :error
+  def from_markdown(kits, text) do
+    readers = Enum.filter(kits, &function_exported?(&1, :from_markdown, 1))
+
+    readers =
+      case Hakushi.Mermaid.kit(text) && by_name(readers, Hakushi.Mermaid.kit(text)) do
+        nil -> readers
+        kit -> [kit]
+      end
+
+    Enum.find_value(readers, :error, fn kit ->
+      case kit.from_markdown(text) do
+        {:ok, graph} -> {:ok, graph, kit}
+        :error -> nil
+      end
+    end)
+  end
 
   @doc false
   # The kit that draws a node type, among a canvas's kits.

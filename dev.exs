@@ -328,23 +328,75 @@ defmodule HakushiDev.Seeds do
           )
     )
   end
+
   # The canvases of the design spec, drawn with the built-in kits.
 
-  defp col(id, name, type, key \\ nil), do: %{"id" => id, "name" => name, "type" => type, "key" => key}
+  defp col(id, name, type, key \\ nil),
+    do: %{"id" => id, "name" => name, "type" => type, "key" => key}
 
   def spec_schema do
     Graph.new(
       nodes: [
-        %{id: "customers", type: "schema-table", x: 0, y: 30,
-          data: %{"name" => "customers", "columns" => [col("c1", "id", "uuid", "pk"), col("c2", "email", "text"), col("c3", "name", "text")]}},
-        %{id: "invoices", type: "schema-table", x: 320, y: 0,
-          data: %{"name" => "invoices", "columns" => [col("i1", "id", "uuid", "pk"), col("i2", "customer_id", "uuid", "fk"), col("i3", "total", "money"), col("i4", "paid_at", "timestamp")]}},
-        %{id: "lines", type: "schema-table", x: 640, y: 50,
-          data: %{"name" => "invoice_lines", "columns" => [col("l1", "id", "uuid", "pk"), col("l2", "invoice_id", "uuid", "fk"), col("l3", "sku", "text"), col("l4", "amount", "money")]}}
+        %{
+          id: "customers",
+          type: "schema-table",
+          x: 0,
+          y: 30,
+          data: %{
+            "name" => "customers",
+            "columns" => [
+              col("c1", "id", "uuid", "pk"),
+              col("c2", "email", "text"),
+              col("c3", "name", "text")
+            ]
+          }
+        },
+        %{
+          id: "invoices",
+          type: "schema-table",
+          x: 320,
+          y: 0,
+          data: %{
+            "name" => "invoices",
+            "columns" => [
+              col("i1", "id", "uuid", "pk"),
+              col("i2", "customer_id", "uuid", "fk"),
+              col("i3", "total", "money"),
+              col("i4", "paid_at", "timestamp")
+            ]
+          }
+        },
+        %{
+          id: "lines",
+          type: "schema-table",
+          x: 640,
+          y: 50,
+          data: %{
+            "name" => "invoice_lines",
+            "columns" => [
+              col("l1", "id", "uuid", "pk"),
+              col("l2", "invoice_id", "uuid", "fk"),
+              col("l3", "sku", "text"),
+              col("l4", "amount", "money")
+            ]
+          }
+        }
       ],
       edges: [
-        %{source: "invoices", source_handle: "i2", target: "customers", target_handle: "c1", path: :smooth},
-        %{source: "lines", source_handle: "l2", target: "invoices", target_handle: "i1", path: :smooth}
+        %{
+          source: "invoices",
+          source_handle: "i2",
+          target: "customers",
+          target_handle: "c1",
+          path: :smooth
+        },
+        %{
+          source: "lines",
+          source_handle: "l2",
+          target: "invoices",
+          target_handle: "i1",
+          path: :smooth
+        }
       ]
     )
   end
@@ -352,10 +404,34 @@ defmodule HakushiDev.Seeds do
   def spec_flow do
     Graph.new(
       nodes: [
-        %{id: "paid", type: "flow-trigger", x: 0, y: 70, data: %{"title" => "Invoice paid", "detail" => "Stripe webhook"}},
-        %{id: "large", type: "flow-condition", x: 300, y: 70, data: %{"title" => "Over €1,000?", "detail" => ""}},
-        %{id: "review", type: "flow-step", x: 620, y: 0, data: %{"title" => "Ask finance to review", "detail" => "Slack #finance"}},
-        %{id: "receipt", type: "flow-step", x: 620, y: 150, data: %{"title" => "Send the receipt", "detail" => "Email"}}
+        %{
+          id: "paid",
+          type: "flow-trigger",
+          x: 0,
+          y: 70,
+          data: %{"title" => "Invoice paid", "detail" => "Stripe webhook"}
+        },
+        %{
+          id: "large",
+          type: "flow-condition",
+          x: 300,
+          y: 70,
+          data: %{"title" => "Over €1,000?", "detail" => ""}
+        },
+        %{
+          id: "review",
+          type: "flow-step",
+          x: 620,
+          y: 0,
+          data: %{"title" => "Ask finance to review", "detail" => "Slack #finance"}
+        },
+        %{
+          id: "receipt",
+          type: "flow-step",
+          x: 620,
+          y: 150,
+          data: %{"title" => "Send the receipt", "detail" => "Email"}
+        }
       ],
       edges: [
         %{source: "paid", target: "large"},
@@ -368,9 +444,36 @@ defmodule HakushiDev.Seeds do
   def spec_notes do
     Graph.new(
       nodes: [
-        %{id: "q1", type: "note", x: 0, y: 0, width: 200, height: 140, data: %{"text" => "Refunds: a negative invoice, or a table of their own?", "color" => "yellow"}},
-        %{id: "q2", type: "note", x: 240, y: 20, width: 200, height: 140, data: %{"text" => "Taxes per line, not per invoice.", "color" => "mint"}},
-        %{id: "q3", type: "note", x: 480, y: 0, width: 200, height: 140, data: %{"text" => "Ask legal how long we keep invoices.", "color" => "rose"}}
+        %{
+          id: "q1",
+          type: "note",
+          x: 0,
+          y: 0,
+          width: 200,
+          height: 140,
+          data: %{
+            "text" => "Refunds: a negative invoice, or a table of their own?",
+            "color" => "yellow"
+          }
+        },
+        %{
+          id: "q2",
+          type: "note",
+          x: 240,
+          y: 20,
+          width: 200,
+          height: 140,
+          data: %{"text" => "Taxes per line, not per invoice.", "color" => "mint"}
+        },
+        %{
+          id: "q3",
+          type: "note",
+          x: 480,
+          y: 0,
+          width: 200,
+          height: 140,
+          data: %{"text" => "Ask legal how long we keep invoices.", "color" => "rose"}
+        }
       ],
       edges: [%{source: "q1", target: "q2", path: :straight}]
     )
@@ -1088,7 +1191,12 @@ defmodule HakushiDev.SpecLive do
   def mount(_params, _session, socket) do
     canvases =
       for {name, title, kits} <- @embeds,
-          do: %{name: name, title: title, kits: kits, graph: HakushiDev.Store.get(name, socket.assigns.room)}
+          do: %{
+            name: name,
+            title: title,
+            kits: kits,
+            graph: HakushiDev.Store.get(name, socket.assigns.room)
+          }
 
     {:ok, assign(socket, canvases: Map.new(canvases, &{&1.name, &1}), full: nil)}
   end

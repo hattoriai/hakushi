@@ -59,14 +59,27 @@ defmodule Hakushi.KitsTest do
       assert field(view, "orders", ".hakushi-kit-table-name") == ["customer_orders"]
 
       assert :ok = edit(view, "board", "orders", "add")
-      assert field(view, "orders", ".hakushi-kit-column-name") == ["id", "customer_id", "column_3"]
 
-      assert :ok = edit(view, "board", "orders", "column", %{"column" => 2, "value" => "placed_at"})
+      assert field(view, "orders", ".hakushi-kit-column-name") == [
+               "id",
+               "customer_id",
+               "column_3"
+             ]
+
+      assert :ok =
+               edit(view, "board", "orders", "column", %{"column" => 2, "value" => "placed_at"})
+
       assert :ok = edit(view, "board", "orders", "type", %{"column" => 2, "value" => "timestamp"})
       assert :ok = edit(view, "board", "orders", "key", %{"column" => 0})
 
       html = render(view)
-      assert field(view, "orders", ".hakushi-kit-column-name") == ["id", "customer_id", "placed_at"]
+
+      assert field(view, "orders", ".hakushi-kit-column-name") == [
+               "id",
+               "customer_id",
+               "placed_at"
+             ]
+
       assert html =~ ~s(<option value="timestamp" selected)
       # pk -> fk
       assert html =~ ~r/data-key="fk"[^>]*phx-value-column="0"/
@@ -88,8 +101,13 @@ defmodule Hakushi.KitsTest do
     test "refuses what a kit refuses, and every edit of a read-only canvas" do
       {view, _html} = open()
       assert {:error, nil} = edit(view, "board", "orders", "name", %{"value" => "!!!"})
-      assert {:error, nil} = edit(view, "board", "orders", "type", %{"column" => 0, "value" => "nope"})
-      assert {:error, nil} = edit(view, "board", "orders", "column", %{"column" => 9, "value" => "x"})
+
+      assert {:error, nil} =
+               edit(view, "board", "orders", "type", %{"column" => 0, "value" => "nope"})
+
+      assert {:error, nil} =
+               edit(view, "board", "orders", "column", %{"column" => 9, "value" => "x"})
+
       assert {:error, nil} = edit(view, "board", "nowhere", "name", %{"value" => "x"})
 
       {view, html} = open("?readonly=true")
@@ -120,8 +138,19 @@ defmodule Hakushi.KitsTest do
       {_view, html} = open()
       doc = LazyHTML.from_fragment(html)
 
-      items = doc |> LazyHTML.query(".hakushi-embed-bar .hakushi-kit-item") |> Enum.map(&LazyHTML.attribute(&1, "data-hakushi-item"))
-      assert items == [["schema:table"], ["flow:trigger"], ["flow:step"], ["flow:condition"], ["notes:note"]]
+      items =
+        doc
+        |> LazyHTML.query(".hakushi-embed-bar .hakushi-kit-item")
+        |> Enum.map(&LazyHTML.attribute(&1, "data-hakushi-item"))
+
+      assert items == [
+               ["schema:table"],
+               ["flow:trigger"],
+               ["flow:step"],
+               ["flow:condition"],
+               ["notes:note"]
+             ]
+
       assert html =~ ~s(aria-label="Full screen")
       assert html =~ "&quot;wheel&quot;:&quot;scroll&quot;"
       assert html =~ "&quot;refit&quot;:true"
@@ -136,10 +165,17 @@ defmodule Hakushi.KitsTest do
   describe "the kits" do
     test "Schema keeps names SQL-like and cycles the key" do
       data = %{"name" => "t", "columns" => [%{"name" => "a", "type" => "text", "key" => nil}]}
-      assert {:ok, %{"name" => "line_items"}} = Schema.edit("name", %{"value" => " Line Items "}, data)
-      assert {:ok, %{"columns" => [%{"key" => "pk"}]}} = Schema.edit("key", %{"column" => "0"}, data)
+
+      assert {:ok, %{"name" => "line_items"}} =
+               Schema.edit("name", %{"value" => " Line Items "}, data)
+
+      assert {:ok, %{"columns" => [%{"key" => "pk"}]}} =
+               Schema.edit("key", %{"column" => "0"}, data)
+
       assert :error = Schema.edit("key", %{"column" => "x"}, data)
-      assert {:ok, %{"columns" => [_, %{"name" => "column_2", "id" => "c" <> _}]}} = Schema.edit("add", %{}, data)
+
+      assert {:ok, %{"columns" => [_, %{"name" => "column_2", "id" => "c" <> _}]}} =
+               Schema.edit("add", %{}, data)
     end
 
     test "a canvas takes the paper, layout and rules its kits like, and its own over them" do

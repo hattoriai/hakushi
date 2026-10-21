@@ -41,7 +41,7 @@ defmodule Hakushi.Canvas do
 
   use Phoenix.LiveComponent
 
-  alias Phoenix.LiveView.JS
+  alias Phoenix.LiveView.{JS, TagEngine}
 
   alias Hakushi.{Change, Commit, Graph, Kit, Messages, Node, Rules}
 
@@ -791,7 +791,7 @@ defmodule Hakushi.Canvas do
 
   # A kit's node component, called as a component (with change tracking).
   defp kit_node(assigns) do
-    Phoenix.LiveView.TagEngine.component(
+    TagEngine.component(
       Function.capture(assigns.kit, :node, 1),
       Map.take(assigns, [:node, :canvas, :readonly, :target, :messages]),
       {__MODULE__, __ENV__.function, __ENV__.file, __ENV__.line}

@@ -21,9 +21,18 @@ defmodule Hakushi.Kits.Schema do
   so a foreign key stays when people rename the column.
   People rename the table and its columns in place, pick a column's type,
   set its key, and add and remove columns.
+
+  In Markdown, a schema is a Mermaid entity relationship diagram: each
+  table with its columns (`uuid id PK`), and a foreign key as a
+  relationship from its table to the table it refers to, named after its
+  column. `from_markdown/1` reads it back, and reads ER diagrams people
+  write: a relationship becomes an edge from the column it names (else
+  the table's first column) to the other table's primary key.
   """
 
   use Hakushi.Kit
+
+  alias Hakushi.{Graph, Mermaid}
 
   @types ~w(uuid text integer bigint decimal money boolean date timestamp json)
 
@@ -218,6 +227,165 @@ defmodule Hakushi.Kits.Schema do
   end
 
   def edit(_action, _params, _data), do: :error
+
+  @impl true
+  def to_markdown(graph) do
+    case Enum.filter(Graph.nodes(graph), &(&1.type == "schema-table")) do
+      [] -> nil
+      tables -> Mermaid.fence(name(), er_diagram(graph, tables))
+    end
+  end
+
+  defp er_diagram(graph, tables) do
+    ids = entity_names(tables)
+    columns = Map.new(tables, &{&1.id, columns(&1.data)})
+
+    edges =
+      Enum.filter(
+        Graph.edges(graph),
+        &(Map.has_key?(ids, &1.source) and Map.has_key?(ids, &1.target))
+      )
+
+    entities =
+      Enum.map(tables, fn table ->
+        rows =
+          Enum.map(columns[table.id], fn c ->
+            key = %{"pk" => " PK", "fk" => " FK"}[get(c, "key")] || ""
+            "    #{word(get(c, "type"))} #{word(get(c, "name"))}#{key}"
+          end)
+
+        Enum.join(["  #{ids[table.id]} {" | rows] ++ ["  }"], "\n")
+      end)
+
+    relations =
+      Enum.map(edges, fn edge ->
+        column = Enum.find(columns[edge.source], &(handle_id(&1) == edge.source_handle))
+        label = if column, do: get(column, "name"), else: "refers to"
+        "  #{ids[edge.source]} }o--|| #{ids[edge.target]} : #{Mermaid.label(label)}"
+      end)
+
+    extra =
+      Map.new(tables, &{&1.id, %{"name" => get(&1.data, "name"), "columns" => columns[&1.id]}})
+
+    Enum.join(
+      ["erDiagram" | entities] ++
+        relations ++ [Mermaid.places(tables, ids, extra), Mermaid.edge_places(edges, ids)],
+      "\n"
+    )
+  end
+
+  # Entity names: the tables' names, made unique.
+  defp entity_names(tables) do
+    {names, _seen} =
+      Enum.map_reduce(tables, MapSet.new(), fn table, seen ->
+        base = word(get(table.data, "name") || table.id)
+
+        name =
+          Stream.iterate(1, &(&1 + 1))
+          |> Stream.map(&if(&1 == 1, do: base, else: "#{base}_#{&1}"))
+          |> Enum.find(&(not MapSet.member?(seen, &1)))
+
+        {{table.id, name}, MapSet.put(seen, name)}
+      end)
+
+    Map.new(names)
+  end
+
+  # A word Mermaid takes as a name or a type.
+  defp word(text) do
+    case text |> to_string() |> String.replace(~r/[^\w-]+/u, "_") |> String.trim("_") do
+      "" -> "_"
+      word -> word
+    end
+  end
+
+  @impl true
+  def from_markdown(text) do
+    case Mermaid.lines(text) do
+      ["erDiagram" | lines] -> {:ok, read_er(text, lines)}
+      _other -> :error
+    end
+  end
+
+  defp read_er(text, lines) do
+    {entities, relations, _open} = Enum.reduce(lines, {[], [], nil}, &read_er_line/2)
+    places = Mermaid.read_places(text)
+    names = Enum.uniq(Enum.reverse(entities) |> Enum.map(&elem(&1, 0)))
+
+    tables =
+      Enum.map(names, fn name ->
+        place = places[name] || %{}
+
+        parsed =
+          entities
+          |> Enum.filter(&(elem(&1, 0) == name))
+          |> Enum.flat_map(&elem(&1, 1))
+          |> Enum.reverse()
+
+        %{
+          m: name,
+          type: "schema-table",
+          data: %{"name" => place["name"] || name, "columns" => place["columns"] || parsed}
+        }
+      end)
+
+    edges = Mermaid.read_edges(text) || keys(Enum.reverse(relations), tables)
+    Mermaid.graph(tables, edges, places)
+  end
+
+  @attribute ~r/^(\S+)\s+(\S+)((?:\s+(?:PK|FK|UK)\s*,?)*)\s*(?:"[^"]*")?$/
+  @relation ~r/^([\w-]+)\s+\S+?(?:--|\.\.)\S+\s+([\w-]+)\s*:\s*(.+)$/
+  @open ~r/^([\w-]+)\s*\{$/
+
+  defp read_er_line("}", {entities, relations, _open}), do: {entities, relations, nil}
+
+  defp read_er_line(line, {entities, relations, nil}) do
+    cond do
+      match = Regex.run(@open, line) ->
+        [_all, name] = match
+        {[{name, []} | entities], relations, name}
+
+      match = Regex.run(@relation, line) ->
+        [_all, from, to, label] = match
+        mentioned = [{to, []}, {from, []}]
+        {mentioned ++ entities, [{from, to, Mermaid.unlabel(label)} | relations], nil}
+
+      true ->
+        {entities, relations, nil}
+    end
+  end
+
+  defp read_er_line(line, {[{name, columns} | entities], relations, name}) do
+    case Regex.run(@attribute, line) do
+      [_all, type, column, keys] ->
+        key =
+          cond do
+            keys =~ "PK" -> "pk"
+            keys =~ "FK" -> "fk"
+            true -> nil
+          end
+
+        {[{name, [column(column, type, key) | columns]} | entities], relations, name}
+
+      nil ->
+        {[{name, columns} | entities], relations, name}
+    end
+  end
+
+  # A relationship a person wrote: from the column it names (or the
+  # table's first) to the primary key of the other table (or its first).
+  defp keys(relations, tables) do
+    columns = Map.new(tables, &{&1.m, &1.data["columns"]})
+
+    Enum.map(relations, fn {from, to, label} ->
+      source = Enum.find(columns[from], &(get(&1, "name") == label)) || List.first(columns[from])
+      target = Enum.find(columns[to], &(get(&1, "key") == "pk")) || List.first(columns[to])
+
+      %{from: from, to: to, path: "smooth"}
+      |> then(&if(source, do: Map.put(&1, :source_handle, handle_id(source)), else: &1))
+      |> then(&if(target, do: Map.put(&1, :target_handle, handle_id(target)), else: &1))
+    end)
+  end
 
   defp next_key(nil), do: "pk"
   defp next_key("pk"), do: "fk"

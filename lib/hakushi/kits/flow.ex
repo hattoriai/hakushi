@@ -11,9 +11,16 @@ defmodule Hakushi.Kits.Flow do
   A trigger has a way out and no way in; a step one of each; a condition
   a way in and two ways out, with the handles `"yes"` and `"no"`. People
   write the title and the detail in place.
+
+  In Markdown, a flow is a Mermaid flowchart: a trigger is a stadium
+  (`(["..."])`), a condition a rhombus (`{"..."}`), a step a box, and the
+  ways out of a condition are labelled Yes and No. `from_markdown/1`
+  reads it back, and reads flowcharts people write.
   """
 
   use Hakushi.Kit
+
+  alias Hakushi.{Graph, Mermaid}
 
   @kinds %{
     "flow-trigger" => {"trigger", "zap"},
@@ -122,4 +129,111 @@ defmodule Hakushi.Kits.Flow do
     do: {:ok, Map.put(data, action, String.slice(String.trim(to_string(value)), 0, 200))}
 
   def edit(_action, _params, _data), do: :error
+
+  @shapes %{
+    "flow-trigger" => {"([", "])"},
+    "flow-condition" => {"{", "}"},
+    "flow-step" => {"[", "]"}
+  }
+
+  @impl true
+  def to_markdown(graph) do
+    case Enum.filter(Graph.nodes(graph), &(&1.type in types())) do
+      [] ->
+        nil
+
+      nodes ->
+        ids = Mermaid.ids(nodes)
+
+        edges =
+          Enum.filter(
+            Graph.edges(graph),
+            &(Map.has_key?(ids, &1.source) and Map.has_key?(ids, &1.target))
+          )
+
+        body =
+          ["flowchart LR"] ++
+            Enum.map(nodes, &node_line(&1, ids)) ++
+            Enum.map(edges, &edge_line(&1, ids)) ++
+            [Mermaid.places(nodes, ids), Mermaid.edge_places(edges, ids)]
+
+        Mermaid.fence(name(), Enum.join(body, "\n"))
+    end
+  end
+
+  defp node_line(node, ids) do
+    {open, close} = @shapes[node.type]
+    title = get(node.data, "title") || ""
+    detail = get(node.data, "detail") || ""
+    text = if detail == "", do: title, else: title <> "\n" <> detail
+    "  " <> ids[node.id] <> open <> Mermaid.label(text) <> close
+  end
+
+  defp edge_line(edge, ids) do
+    label = edge.label || way(edge.source_handle)
+    arrow = if label, do: "-->|" <> String.replace(label, "|", "/") <> "|", else: "-->"
+    "  #{ids[edge.source]} #{arrow} #{ids[edge.target]}"
+  end
+
+  defp way("yes"), do: "Yes"
+  defp way("no"), do: "No"
+  defp way(_handle), do: nil
+
+  @impl true
+  def from_markdown(text) do
+    with {:ok, nodes, edges} <- Mermaid.flowchart(text) do
+      places = Mermaid.read_places(text)
+
+      nodes = Enum.map(nodes, &flow_node/1)
+
+      edges = Mermaid.read_edges(text) || ways(nodes, edges)
+      {:ok, Mermaid.graph(nodes, edges, places)}
+    end
+  end
+
+  defp flow_node(node) do
+    {title, detail} =
+      case String.split(node.text || node.m, "\n", parts: 2) do
+        [title, detail] -> {title, detail}
+        [title] -> {title, ""}
+      end
+
+    %{m: node.m, type: flow_type(node.shape), data: %{"title" => title, "detail" => detail}}
+  end
+
+  defp flow_type(:stadium), do: "flow-trigger"
+  defp flow_type(:rhombus), do: "flow-condition"
+  defp flow_type(_shape), do: "flow-step"
+
+  # The ways out of a condition: a Yes or No label, else the first is yes
+  # and the second no.
+  defp ways(nodes, edges) do
+    conditions = for %{type: "flow-condition", m: m} <- nodes, into: MapSet.new(), do: m
+
+    {edges, _count} =
+      Enum.map_reduce(edges, %{}, fn edge, count ->
+        if MapSet.member?(conditions, edge.from) do
+          n = Map.get(count, edge.from, 0)
+          handle = way_of(edge.label) || Enum.at(["yes", "no"], n)
+          label = if way_of(edge.label), do: nil, else: edge.label
+
+          {%{from: edge.from, to: edge.to, source_handle: handle, label: label},
+           Map.put(count, edge.from, n + 1)}
+        else
+          {Map.take(edge, [:from, :to, :label]), count}
+        end
+      end)
+
+    edges
+  end
+
+  defp way_of(nil), do: nil
+
+  defp way_of(label) do
+    case String.downcase(String.trim(label)) do
+      word when word in ["yes", "true", "y"] -> "yes"
+      word when word in ["no", "false", "n"] -> "no"
+      _other -> nil
+    end
+  end
 end

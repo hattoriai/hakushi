@@ -127,6 +127,7 @@ defmodule Hakushi.Components do
     when `true`, the canvas shows all of its nodes again when its box changes size, as an embed \
     that goes full screen and back\
     """
+
   attr :min_zoom, :float, default: 0.1, doc: "the smallest zoom"
   attr :max_zoom, :float, default: 4.0, doc: "the largest zoom"
 
@@ -413,13 +414,19 @@ defmodule Hakushi.Components do
   attr :kits, :list, default: [], doc: "the kits whose items the bar has"
   attr :readonly, :boolean, default: false, doc: "when `true`, the bar has no items"
   attr :full, :boolean, default: false, doc: "whether the frame is full screen now"
-  attr :on_full, :any, default: nil, doc: "the `phx-click` of the full screen button; none without it"
+
+  attr :on_full, :any,
+    default: nil,
+    doc: "the `phx-click` of the full screen button; none without it"
+
   attr :locale, :string, default: nil, doc: "the locale of the words, as the canvas's"
   attr :messages, :map, default: nil, doc: "words that replace the built-in ones"
   attr :class, :any, default: nil
   attr :rest, :global
 
-  slot :heading, doc: "the app's own heading in place of the title, as a field to rename the canvas"
+  slot :heading,
+    doc: "the app's own heading in place of the title, as a field to rename the canvas"
+
   slot :actions, doc: "the app's own buttons, before the full screen button"
   slot :inner_block, required: true, doc: "the canvas"
 

@@ -363,7 +363,8 @@ defmodule Hakushi.Messages.Translations do
       "noteColor" => "Farbe der Notiz",
       "addToCanvas" => "Zur Leinwand hinzufügen",
       "addItem" => "{name} hinzufügen",
-      "emptyKit" => "Fügen Sie {name} über die Leiste oben hinzu oder doppelklicken Sie auf das Papier.",
+      "emptyKit" =>
+        "Fügen Sie {name} über die Leiste oben hinzu oder doppelklicken Sie auf das Papier.",
       "fullScreen" => "Vollbild",
       "exitFullScreen" => "Vollbild beenden"
     },
