@@ -52,8 +52,11 @@ Issho's motion, and following is the room's.
   period of its pattern, and the world is a layer while a pan goes on.
 - A pan of a large canvas keeps its frames: a node that comes back into
   view is not news (it culled every node again on the next frame, redrew
-  the minimap and the edges), and an edge's path is written only when it
-  changes.
+  the minimap and the edges), an edge's path is written only when it
+  changes, a node another person has selected is redrawn without laying
+  out the canvas again, and in WebKit the edges are painted with the
+  world rather than as a layer of their own, which cost more on each
+  frame.
 
 ## [0.2.0] - 2026-10-21
 

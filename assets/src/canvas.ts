@@ -182,6 +182,8 @@ export class Canvas {
     this.edgeData = this.part("-edge-data");
     this.labelsEl = this.part("-labels");
     this.edgesSvg = root.querySelector<SVGSVGElement>(`#${CSS.escape(this.id)}-svg`)!;
+    // The edges' layer is the engine's to keep or not (see .hakushi-edges).
+    if (webkit()) root.setAttribute("data-ui-webkit", "");
     this.ui = this.part("-ui");
 
     this.edgesSvg.append(this.defs());
@@ -2259,17 +2261,19 @@ export class Canvas {
     peer.start = performance.now();
     peer.duration = far < 1 || reducedMotion() ? 0 : Math.min(GLIDE_MAX, Math.max(60, far * 0.8));
     const before = new Set([...peer.selected, ...peer.dragging.keys()]);
+    const draggedBefore = new Set(peer.dragging.keys());
     peer.selected = (payload.selected as string[]) ?? [];
     peer.dragging = dragging;
     peer.seen = Date.now();
     this.peers.set(id, peer);
     if (id === this.followKey) this.showFollowed(peer);
-    for (const n of [...before, ...peer.selected, ...peer.dragging.keys()]) {
+    for (const n of new Set([...before, ...peer.selected, ...peer.dragging.keys()])) {
       const node = this.nodes.get(n);
-      if (node) {
-        this.decorate(node);
-        this.touchNode(n);
-      }
+      if (!node) continue;
+      this.decorate(node);
+      // Only a node they drag (or let go) moves: one they have selected is
+      // drawn in their colour, and the layout is as it was.
+      if (draggedBefore.has(n) || dragging.has(n)) this.touchNode(n);
     }
     clearTimeout(this.peerTimer);
     this.peerTimer = window.setTimeout(() => this.expirePeers(), PEER_TIMEOUT);
@@ -2507,6 +2511,13 @@ function toggle(element: Element, name: string, on: boolean) {
 
 function round(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+// WebKit (Safari, and WebKit on Linux), not the browsers built on Chromium,
+// whose user agents say AppleWebKit too.
+function webkit(): boolean {
+  const agent = typeof navigator === "undefined" ? "" : navigator.userAgent;
+  return /AppleWebKit/.test(agent) && !/Chrome|Chromium|CriOS|Edg|OPR/.test(agent);
 }
 
 function reducedMotion(): boolean {
