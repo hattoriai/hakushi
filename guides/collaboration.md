@@ -87,11 +87,20 @@ give it.
 
 ## People
 
-`user` is a map with an `:id`, and a `:name`, a `:color` (any CSS
-colour) and an `:avatar` (an image's URL) if you have them. A person with
-no colour gets one of eight, by their id, the same everywhere. A person
-with the canvas open in two tabs is one person, and does not see
-themselves. Without a `user`, a canvas joins as someone anonymous.
+`user` is your user: a struct of yours for which you implement
+`Issho.Actor` (its key, `"user:4"`, and what others see of it), or a map
+with an `:id`, and a `:name`, a `:color` (any CSS colour) and an
+`:avatar` (an image's URL) if you have them. Give the canvas the same
+user as your other blocks (a Kotoba editor, Issho's people list), and
+the person is one person in all of them. A person with no colour gets
+one of Issho's eight (`--issho-person-1` to `-8`, the same as in Issho's
+lists), else one of Hakushi's, by their key. A person with the canvas
+open in two tabs is one person, and does not see themselves. Without a
+`user`, a canvas joins as someone anonymous.
+
+A read-only canvas (`readonly`) is a viewer of the room: Issho's lists
+show them viewing, their cursor still goes to the others, and the room
+takes no change from them.
 
 The avatars of the others show in the corner of the canvas. Draw them
 yourself with the `:person` slot, which gets a map with `"id"`,
@@ -158,6 +167,29 @@ key on the canvas stops following. On a page with Issho's pointers
 (`Issho.Components.pointers/1`), they draw everyone's pointer on the
 canvas too, at the same point of the canvas for each person, and one
 pointer goes from the page onto the canvas and back.
+
+### A canvas in a page of another room
+
+A canvas shared in its own room, in a page of another room (a canvas
+embedded in a Kotoba document): its people are its room's, wherever they
+are. Someone reading the document sees the cursor of someone on the
+canvas's own page, and the other way round, and the same canvas's
+changes, avatars and following. The page's pointers, of the document's
+room, draw no one on the canvas (see Issho's guide): the canvas draws its
+people, except those whom Issho's pointers of its own room draw (on the
+canvas's own page, when it has them).
+
+* Following someone into the canvas, from the page's people list, follows
+  them on the canvas too; following someone from the canvas's avatars
+  brings the canvas into view, once, when it is off the screen.
+* A canvas in a page twice (the same canvas, two embeds) is one person in
+  the room: the copy they use (their pointer, a press, the focus) says
+  where they are, and the other copies say nothing.
+* A canvas that goes while its LiveView stays (an embed deleted from the
+  document) lets its room go: the LiveView leaves the room with its last
+  canvas there, and the others see the person go.
+
+See [In a page](embedding.md).
 
 A canvas that shows its people (its avatars) says whom it follows:
 "Following Ada", with Stop, under the avatars, in their colour, and a ring

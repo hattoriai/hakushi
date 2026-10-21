@@ -93,7 +93,7 @@ defmodule Hakushi.Components do
   attr :user, :map,
     default: nil,
     doc:
-      "the person, on a shared canvas: a map with an `:id`, and a `:name`, `:color` and `:avatar`"
+      "the person, on a shared canvas: the app's user, as its `Issho.Actor` says them (or a map with an `:id`, and a `:name`, `:color` and `:avatar`)"
 
   attr :background, :atom,
     default: nil,

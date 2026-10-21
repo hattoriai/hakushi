@@ -12,7 +12,7 @@ defmodule Hakushi.SharedCanvasTest do
 
   @endpoint HakushiTest.Endpoint
 
-  defp open(topic, user, test \\ nil) do
+  defp open(topic, user, test \\ nil, query \\ "") do
     conn =
       if test,
         do:
@@ -21,7 +21,7 @@ defmodule Hakushi.SharedCanvasTest do
           }),
         else: build_conn()
 
-    {:ok, view, _html} = live(conn, "/?live=#{topic}&user=#{user}")
+    {:ok, view, _html} = live(conn, "/?live=#{topic}&user=#{user}" <> query)
     view
   end
 
@@ -133,6 +133,66 @@ defmodule Hakushi.SharedCanvasTest do
 
     # A person's `view` is Issho's (the page they have open), in the same state.
     refute Map.has_key?(peer, "view")
+  end
+
+  test "a read-only canvas is a viewer of the room, whose cursor still goes" do
+    topic = topic()
+    ada = open(topic, "ada", nil, "&readonly=true")
+    grace = open(topic, "grace")
+
+    assert %{"ada" => %{metas: [%{"can" => "read"}]}} =
+             Issho.Presence.list(Issho.Presence.topic("canvas:" <> topic))
+
+    ada |> element("#schema-hook") |> render_hook("hakushi:peer", %{"cursor" => [3, 4]})
+    assert_push_event(grace, "hakushi:peer", %{"person" => "ada", "cursor" => [3, 4]})
+  end
+
+  test "the app's user is the room's actor: its key, and Issho's colours" do
+    topic = topic()
+    ada = open(topic, "ada", nil, "&member=true")
+    grace = open(topic, "grace")
+    settle(ada)
+
+    assert_push_event(grace, "hakushi:people", %{
+      "people" => [%{"id" => "member:ada", "color" => color}]
+    })
+
+    assert color =~ ~r/^var\(--issho-person-\d, #[0-9a-f]{6}\)$/
+
+    ada |> element("#schema-hook") |> render_hook("hakushi:peer", %{"cursor" => [1, 1]})
+    assert_push_event(grace, "hakushi:peer", %{"person" => "member:ada"})
+    # Not to the person's own canvas.
+    settle(ada)
+    refute_push_event(ada, "hakushi:peer", %{"person" => "member:ada"})
+  end
+
+  test "a page of the room with Issho's pointers says whether they draw a person here" do
+    topic = topic()
+    room = "canvas:" <> topic
+    ada = open(topic, "ada")
+
+    # Grace's page: Issho's pointers, her pointer on this canvas.
+    Issho.Awareness.put(HakushiTest.Issho, room, "grace", %{
+      "pointer" => %{"doc" => room, "at" => %{"point" => [1, 2]}},
+      "view" => %{"page" => true}
+    })
+
+    assert_push_event(ada, "hakushi:peer", %{"person" => "grace", "paged" => true})
+    refute_push_event(ada, "hakushi:peer", %{"person" => "grace", "cursor" => _})
+  end
+
+  test "a canvas that goes while its LiveView stays lets its room go" do
+    topic = topic()
+    Phoenix.PubSub.subscribe(HakushiTest.PubSub, Issho.Presence.topic("canvas:" <> topic))
+    _ada = open(topic, "ada")
+    grace = open(topic, "grace")
+    assert_receive %Broadcast{payload: %{joins: %{"grace" => _}}}
+
+    # The canvas's hook, destroyed.
+    render_hook(grace, "issho:release", %{"room" => "canvas:" <> topic, "component" => "schema"})
+
+    assert_receive %Broadcast{payload: %{leaves: %{"grace" => _}}}
+    assert Process.alive?(grace.pid)
   end
 
   test "on_change runs once for each change, whoever makes it, and a refusal goes back" do

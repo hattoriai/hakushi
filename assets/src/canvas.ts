@@ -92,7 +92,15 @@ interface Peer {
   dragFrom: Map<string, Point>;
   start: number;
   duration: number;
+  // Their pointer is on this canvas on a page of the room with Issho's
+  // pointers, which draw it there.
+  paged?: boolean;
 }
+
+// The canvas of a room this person uses last (it has their pointer, a
+// press, the focus), when one page shows a canvas twice (an embed, again):
+// that one says where they are in it, and its copies say nothing.
+const activeIn = new Map<string, Canvas>();
 
 // The way to a new place: longer the farther it goes, never longer than this.
 const GLIDE_MAX = 400;
@@ -219,6 +227,13 @@ export class Canvas {
     const doc = this.docEl?.dataset.isshoDoc;
     if (!this.docEl || !doc) return;
     this.room = doc.split("/")[0];
+    // The copy of this canvas the person uses says where they are in it.
+    const use = () => activeIn.set(this.room, this);
+    for (const type of ["pointerenter", "pointerdown", "focusin"] as const) this.root.addEventListener(type, use, { passive: true });
+    this.cleanups.push(() => {
+      for (const type of ["pointerenter", "pointerdown", "focusin"] as const) this.root.removeEventListener(type, use);
+      if (activeIn.get(this.room) === this) activeIn.delete(this.room);
+    });
     const element = this.docEl as unknown as Record<symbol, unknown>;
     const locator = (at: unknown) => this.locatePlace(at);
     const pointer = (x: number, y: number) => this.pointAt(x, y);
@@ -295,6 +310,7 @@ export class Canvas {
   // Whom the room follows: their avatar is pressed, and the canvas shows
   // what they show.
   private followPerson(key: string | null) {
+    if (key !== this.followKey) this.followScrolled = null;
     this.followKey = key;
     this.followedAt = "";
     for (const avatar of this.root.querySelectorAll<HTMLElement>(".hakushi-person[data-person]")) {
@@ -349,15 +365,30 @@ export class Canvas {
       const [x, y, w, h] = peer.view;
       const zoom = clamp(Math.min(this.size.width / w, this.size.height / h), this.config.minZoom, this.config.maxZoom);
       this.setView({ zoom, x: this.size.width / 2 - (x + w / 2) * zoom, y: this.size.height / 2 - (y + h / 2) * zoom });
+      this.keepOnScreen();
       return;
     }
     if (!peer.cursor) return;
+    this.keepOnScreen();
     const sx = peer.cursor.x * this.view.zoom + this.view.x;
     const sy = peer.cursor.y * this.view.zoom + this.view.y;
     const margin = 48;
     if (sx >= margin && sy >= margin && sx <= this.size.width - margin && sy <= this.size.height - margin) return;
     this.setView({ x: this.size.width / 2 - peer.cursor.x * this.view.zoom, y: this.size.height / 2 - peer.cursor.y * this.view.zoom });
   }
+
+  // A canvas in a page (an embed in a document) that follows someone comes
+  // into view once, when it is off the screen: the page then scrolls as
+  // the person who follows likes.
+  private keepOnScreen() {
+    if (this.followScrolled === this.followKey) return;
+    this.followScrolled = this.followKey;
+    const rect = this.root.getBoundingClientRect();
+    if (rect.bottom > 0 && rect.top < document.documentElement.clientHeight) return;
+    this.root.scrollIntoView({ block: "nearest", behavior: reducedMotion() ? "auto" : "smooth" });
+  }
+
+  private followScrolled: string | null = null;
 
   private part(suffix: string): HTMLElement {
     return this.root.querySelector<HTMLElement>(`#${CSS.escape(this.id + suffix)}`)!;
@@ -2289,6 +2320,14 @@ export class Canvas {
   receivePeer(payload: Record<string, unknown>) {
     const id = String(payload.person);
     const peer: Peer = this.peers.get(id) ?? { cursor: null, view: null, selected: [], dragging: new Map(), seen: 0, el: null, from: null, dragFrom: new Map(), start: 0, duration: 0 };
+    // Their page's session (Issho's pointers), not their canvas's: only whether those draw them here.
+    if (!("cursor" in payload)) {
+      peer.paged = payload.paged === true;
+      peer.seen = Date.now();
+      this.peers.set(id, peer);
+      this.schedule();
+      return;
+    }
     // `viewport`, not `view`: a person's `view` is Issho's, what their page shows.
     const view = payload.viewport as [number, number, number, number] | null | undefined;
     peer.view = Array.isArray(view) && view.length === 4 && view[2] > 0 && view[3] > 0 ? view : null;
@@ -2365,8 +2404,10 @@ export class Canvas {
   }
 
   private drawPeers() {
-    // On a page with Issho's pointers, they draw everyone, on the canvas too.
-    const page = this.docEl !== null && document.querySelector(".issho-pointers") !== null;
+    // On a page with Issho's pointers of this canvas's room, they draw
+    // whom they know here (the people of that page of the room); the
+    // canvas draws the others (on another page, in an embed of it).
+    const page = this.docEl !== null && document.querySelector(`.issho-pointers[data-room="${CSS.escape(this.room)}"]`) !== null;
     for (const [id, peer] of this.peers) {
       // On their way: drawn again at the next frame, with the nodes they drag.
       if (this.moving(peer)) {
@@ -2380,7 +2421,7 @@ export class Canvas {
         this.schedule();
       }
       const person = this.people.get(id);
-      if (!peer.cursor || !person || page) {
+      if (!peer.cursor || !person || (page && peer.paged)) {
         if (peer.el) peer.el.hidden = true;
         continue;
       }
@@ -2398,6 +2439,8 @@ export class Canvas {
   // The person's cursor, selection and drag, for the others: at most every PEER_INTERVAL.
   private sendPeer() {
     if (!this.config.live || !this.connected) return;
+    const active = activeIn.get(this.room);
+    if (active && active !== this && active.root.isConnected) return;
     const now = Date.now();
     const wait = PEER_INTERVAL - (now - this.peerSent);
     if (wait > 0) {

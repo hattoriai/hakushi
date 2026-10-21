@@ -46,7 +46,7 @@ defmodule Hakushi.Canvas do
   alias Hakushi.{Change, Commit, Graph, Kit, Messages, Node, Rules}
 
   # Issho is optional: a canvas without `live` never calls it.
-  @compile {:no_warn_undefined, [Issho.Live, Hakushi.Issho]}
+  @compile {:no_warn_undefined, [Issho.Live, Issho.Actor, Hakushi.Issho]}
 
   # The changes of each person that undo can take back.
   @undo_limit 100
@@ -150,7 +150,11 @@ defmodule Hakushi.Canvas do
     spec =
       Hakushi.Issho.spec(graph, socket.assigns.rules, socket.assigns.on_change, socket.assigns.id)
 
-    with {:ok, _session} <- Issho.Live.join(instance, actor(socket), topic),
+    # A read-only canvas is a viewer of the room: it shares its person's
+    # cursor and changes nothing.
+    can = if socket.assigns.readonly, do: :read, else: :write
+
+    with {:ok, _session} <- Issho.Live.join(instance, actor(socket), topic, can: can),
          {:ok, snapshot} <-
            Issho.Live.open(topic, topic, spec: spec, notify: {__MODULE__, socket.assigns.id}) do
       socket
@@ -165,11 +169,24 @@ defmodule Hakushi.Canvas do
     end
   end
 
-  # The actor of the room: the canvas's user, or someone anonymous.
+  # The actor of the room: the canvas's user, as the app's Issho.Actor says
+  # them (their key, name, avatar and colour, the same in every room of
+  # the page), or someone anonymous.
   defp actor(socket) do
     case socket.assigns.user do
-      nil -> %{id: "anonymous:" <> new_id()}
-      user -> %{id: own_id(socket), name: Map.get(user, :name) || Map.get(user, "name")}
+      nil ->
+        %{id: "anonymous:" <> new_id()}
+
+      %{id: _} = user ->
+        user
+
+      user ->
+        %{
+          id: own_id(socket),
+          name: user["name"],
+          avatar: user["avatar"],
+          color: user["color"]
+        }
     end
   end
 
@@ -243,19 +260,34 @@ defmodule Hakushi.Canvas do
     do: assign_people(socket, people(topic))
 
   # The others' cursors, selections and drags, as the browser draws them.
-  defp receive_event(socket, {"aware", _topic, %{"states" => states}}) do
-    own = own_id(socket)
+  # A person may have other sessions in the room than a canvas's (Issho's
+  # pointers of a page of the room): of those, only whether their pointer
+  # is on this canvas, which that page's pointers draw.
+  defp receive_event(socket, {"aware", topic, %{"states" => states}}) do
+    own = room_key(socket)
 
     Enum.reduce(states, socket, fn
       {_session, %{"key" => ^own}}, socket ->
         socket
 
-      {_session, %{"key" => person, "state" => state}}, socket ->
+      {_session, %{"key" => person, "state" => %{"selected" => _} = state}}, socket ->
         push_event(
           socket,
           "hakushi:peer",
           Map.merge(state, %{"canvas" => socket.assigns.id, "person" => person})
         )
+
+      {_session, %{"key" => person, "state" => %{} = state}}, socket ->
+        paged = match?(%{"doc" => ^topic}, state["pointer"])
+
+        push_event(socket, "hakushi:peer", %{
+          "canvas" => socket.assigns.id,
+          "person" => person,
+          "paged" => paged
+        })
+
+      _other, socket ->
+        socket
     end)
   end
 
@@ -294,23 +326,30 @@ defmodule Hakushi.Canvas do
 
   defp resync(socket), do: socket
 
-  # The people of the room, each once, as the canvas draws them.
+  # The people of the room, each once, as the canvas draws them: in their
+  # colour, else the one Issho's theme gives them (the same as in the
+  # page's other lists), else Hakushi's.
   defp people(topic) do
     for {key, %{metas: [meta | _]}} <- Issho.Live.people(topic) do
       %{
         "id" => key,
         "name" => meta["name"],
-        "color" => meta["color"] || color(key),
+        "color" => meta["color"] || palette(meta["palette"], key),
         "avatar" => meta["avatar"]
       }
     end
   end
 
+  defp palette(index, key) when is_integer(index),
+    do: "var(--issho-person-#{index}, #{color(key)})"
+
+  defp palette(_index, key), do: color(key)
+
   @doc false
   def color(id), do: Enum.at(@palette, :erlang.phash2(id, length(@palette)))
 
   defp assign_people(socket, people) do
-    own = own_id(socket)
+    own = room_key(socket)
     others = Enum.reject(people, &(&1["id"] == own))
 
     socket
@@ -322,6 +361,14 @@ defmodule Hakushi.Canvas do
     case socket.assigns.user do
       nil -> nil
       user -> to_string(Map.get(user, :id) || Map.get(user, "id"))
+    end
+  end
+
+  # This person's key in the room: the app's Issho.Actor's (`"user:4"`).
+  defp room_key(socket) do
+    case socket.assigns.user do
+      %{id: _} = user -> Issho.Actor.key(user)
+      _other -> own_id(socket)
     end
   end
 

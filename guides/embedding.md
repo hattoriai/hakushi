@@ -99,6 +99,36 @@ LiveView renders the frame and its canvas for it.
 * A page that reads the document (`readonly`) shows the canvas read-only:
   people pan, zoom and go full screen, and change nothing.
 
+### Shared, in a document
+
+A canvas with `live` in a document is shared in its own room, the
+canvas's, whatever the document's room: everyone with the canvas open, in
+the document or on its own page, is there, and sees the others' cursors,
+changes and avatars.
+
+```heex
+<.canvas
+  id={"canvas-" <> embed.id}
+  graph={diagram.graph}
+  live={{MyApp.Issho, "diagram:" <> diagram.id}}
+  user={@current_user}
+  readonly={embed.readonly}
+  ...
+/>
+```
+
+* Give it the same `user` as the document's editor (`Kotoba.Collab.token/3`)
+  and Issho's lists: the person is one in every room of the page.
+* On a page with Issho's pointers of the document's room, the canvas
+  still draws its people: those pointers leave a block of another room to
+  that room. Following someone in the document who goes into the canvas
+  follows them on the canvas too.
+* Full screen moves the canvas, as it is: it stays in its room, its
+  people and its view.
+* An embed that is deleted lets the canvas's room go; undo brings the
+  canvas back, in its room again.
+* A reader (`embed.readonly`) is a viewer of the canvas's room.
+
 ### Markdown
 
 A document with a canvas in it exports as Markdown with the canvas's

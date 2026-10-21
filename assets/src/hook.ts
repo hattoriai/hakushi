@@ -11,6 +11,7 @@ import type { Person } from "./types";
 interface HookContext {
   el: HTMLElement;
   pushEventTo(target: string | HTMLElement, event: string, payload: object, onReply?: (reply: Record<string, unknown>, ref: number) => void): void;
+  pushEvent(event: string, payload: object): void;
   handleEvent(event: string, callback: (payload: Record<string, unknown>) => void): void;
 }
 
@@ -61,6 +62,17 @@ export const Hakushi = {
   },
 
   destroyed(this: HakushiHook) {
+    // A shared canvas that goes while its LiveView stays (an embed deleted
+    // from a document): its room lets it go (Issho.Live.release/2), and the
+    // LiveView leaves it with its last canvas there.
+    const room = this.canvas?.root.dataset.isshoDoc;
+    if (room && this.canvas) {
+      try {
+        this.pushEvent("issho:release", { room, component: this.canvas.id });
+      } catch {
+        // The LiveView went with it: so did its rooms.
+      }
+    }
     if (this.canvas) canvases.delete(this.canvas.root);
     this.canvas?.destroy();
     this.canvas = undefined;
