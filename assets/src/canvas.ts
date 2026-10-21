@@ -77,6 +77,8 @@ interface EdgeView {
 
 interface Peer {
   cursor: Point | null;
+  // What their canvas shows, in the canvas's terms ([x, y, width, height]), for those who follow them.
+  view: [number, number, number, number] | null;
   selected: string[];
   dragging: Map<string, Point>;
   seen: number;
@@ -155,6 +157,12 @@ export class Canvas {
   private allBounds: Rect | null = null;
   private drawnView: View | null = null;
   private panTimer = 0;
+  // Issho: the canvas's document on the page, its room, and whom the room
+  // follows (Issho's following: the canvas shows what they show).
+  private docEl: HTMLElement | null = null;
+  private room = "";
+  private followKey: string | null = null;
+  private followedAt = "";
   private culledVersion = -1;
   private culledView: View | null = null;
 
@@ -189,7 +197,118 @@ export class Canvas {
     this.observe();
     this.listen();
     this.measureRoot();
+    this.joinPage();
     this.schedule();
+  }
+
+  // -- Issho's page ---------------------------------------------------------
+  //
+  // The canvas's part in Issho's page, by its contracts (no import of
+  // Issho's script): where a place of the canvas is on the screen (a point,
+  // a node), for Issho's pointers (`locate`); what point is under the
+  // pointer (`point`), so that a person's pointer is a point of the canvas,
+  // drawn where it is on each screen; and following, the room's.
+
+  private joinPage() {
+    this.docEl = this.root.closest<HTMLElement>("[data-issho-doc]");
+    const doc = this.docEl?.dataset.isshoDoc;
+    if (!this.docEl || !doc) return;
+    this.room = doc.split("/")[0];
+    const element = this.docEl as unknown as Record<symbol, unknown>;
+    const locator = (at: unknown) => this.locatePlace(at);
+    const pointer = (x: number, y: number) => this.pointAt(x, y);
+    element[Symbol.for("issho.locator")] = locator;
+    element[Symbol.for("issho.point")] = pointer;
+    const onFollowing = (event: Event) => {
+      const detail = (event as CustomEvent<{ room?: string; key?: string | null }>).detail;
+      if (detail?.room === this.room) this.followPerson(detail.key ?? null);
+    };
+    document.addEventListener("issho:following", onFollowing);
+    // Going one's own way on the canvas (a wheel, a press, a key) stops following.
+    const ownWay = (event: Event) => {
+      if (!this.followKey || !event.isTrusted) return;
+      if ((event.target as Element | null)?.closest?.("[data-issho-follow-control]")) return;
+      if (event instanceof KeyboardEvent && ["Shift", "Control", "Alt", "Meta", "Tab"].includes(event.key)) return;
+      followIn(this.room, null);
+    };
+    const types = ["wheel", "pointerdown", "keydown"] as const;
+    for (const type of types) this.root.addEventListener(type, ownWay, { capture: true, passive: true });
+    // Its avatars follow someone, or stop.
+    const onAvatar = (event: Event) => {
+      const button = (event.target as Element | null)?.closest?.<HTMLElement>(".hakushi-person[data-person]");
+      if (!button || !this.root.contains(button)) return;
+      const key = button.dataset.person!;
+      followIn(this.room, followingIn(this.room) === key ? null : key);
+    };
+    this.root.addEventListener("click", onAvatar);
+    this.cleanups.push(() => {
+      if (element[Symbol.for("issho.locator")] === locator) delete element[Symbol.for("issho.locator")];
+      if (element[Symbol.for("issho.point")] === pointer) delete element[Symbol.for("issho.point")];
+      document.removeEventListener("issho:following", onFollowing);
+      for (const type of types) this.root.removeEventListener(type, ownWay, { capture: true });
+      this.root.removeEventListener("click", onAvatar);
+    });
+    this.followPerson(followingIn(this.room));
+  }
+
+  // A place of the canvas on the screen: a point, or a node.
+  private locatePlace(at: unknown): DOMRect | null {
+    const place = at as { point?: [number, number]; node?: string; nodes?: string[] } | null;
+    const rect = this.root.getBoundingClientRect();
+    if (place?.point && place.point.length === 2) {
+      const [x, y] = place.point;
+      return new DOMRect(rect.left + x * this.view.zoom + this.view.x, rect.top + y * this.view.zoom + this.view.y, 0, 0);
+    }
+    const id = place?.node ?? place?.nodes?.[0];
+    const node = id ? this.nodes.get(id) : undefined;
+    if (!node) return null;
+    const at2 = this.placeOf(node);
+    return new DOMRect(
+      rect.left + at2.x * this.view.zoom + this.view.x,
+      rect.top + at2.y * this.view.zoom + this.view.y,
+      node.width * this.view.zoom,
+      node.height * this.view.zoom,
+    );
+  }
+
+  // The point of the canvas under a point of the screen.
+  private pointAt(clientX: number, clientY: number): { point: [number, number] } | null {
+    const rect = this.root.getBoundingClientRect();
+    if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return null;
+    const round = (value: number) => Math.round(value * 10) / 10;
+    return { point: [round((clientX - rect.left - this.view.x) / this.view.zoom), round((clientY - rect.top - this.view.y) / this.view.zoom)] };
+  }
+
+  // Whom the room follows: their avatar is pressed, and the canvas shows
+  // what they show.
+  private followPerson(key: string | null) {
+    this.followKey = key;
+    this.followedAt = "";
+    for (const avatar of this.root.querySelectorAll<HTMLElement>(".hakushi-person[data-person]")) {
+      avatar.setAttribute("aria-pressed", String(avatar.dataset.person === key));
+    }
+    const peer = key ? this.peers.get(key) : undefined;
+    if (peer) this.showFollowed(peer);
+  }
+
+  // The followed person's view, when their canvas shares it (a person's);
+  // else their pointer kept on the screen (an agent's).
+  private showFollowed(peer: Peer) {
+    if (peer.view) {
+      const where = peer.view.join(",");
+      if (where === this.followedAt) return;
+      this.followedAt = where;
+      const [x, y, w, h] = peer.view;
+      const zoom = clamp(Math.min(this.size.width / w, this.size.height / h), this.config.minZoom, this.config.maxZoom);
+      this.setView({ zoom, x: this.size.width / 2 - (x + w / 2) * zoom, y: this.size.height / 2 - (y + h / 2) * zoom });
+      return;
+    }
+    if (!peer.cursor) return;
+    const sx = peer.cursor.x * this.view.zoom + this.view.x;
+    const sy = peer.cursor.y * this.view.zoom + this.view.y;
+    const margin = 48;
+    if (sx >= margin && sy >= margin && sx <= this.size.width - margin && sy <= this.size.height - margin) return;
+    this.setView({ x: this.size.width / 2 - peer.cursor.x * this.view.zoom, y: this.size.height / 2 - peer.cursor.y * this.view.zoom });
   }
 
   private part(suffix: string): HTMLElement {
@@ -615,6 +734,8 @@ export class Canvas {
       this.world.style.willChange = panned ? "transform" : "";
       if (panned) this.panTimer = window.setTimeout(() => (this.world.style.willChange = ""), 200);
       this.drawnView = this.view;
+      // What this canvas shows goes to those who follow this person.
+      if (this.docEl) this.sendPeer();
       this.world.style.transform = `translate(${this.view.x}px, ${this.view.y}px) scale(${this.view.zoom})`;
       // The paper moves by less than a period of its pattern (five squares,
       // for graph paper), as a layer: a pan paints none of it again.
@@ -1048,7 +1169,7 @@ export class Canvas {
   private pointerDown(event: PointerEvent) {
     const target = event.target as Element;
     this.root.removeAttribute("data-ui-keyboard");
-    if (target.closest(".hakushi-controls, .hakushi-minimap, .hakushi-edge-input")) return;
+    if (target.closest(".hakushi-controls, .hakushi-minimap, .hakushi-edge-input, [data-hakushi-people]")) return;
     this.bounds = this.root.getBoundingClientRect();
     this.pointers.set(event.pointerId, this.local(event));
 
@@ -1426,7 +1547,7 @@ export class Canvas {
     const nodeEl = target.closest<HTMLElement>(".hakushi-node");
     const group = nodeEl && this.nodes.get(nodeEl.dataset.id || "")?.group;
     // On the paper, or on a group's inside.
-    if ((nodeEl && (!group || interactive(target, nodeEl) || target.closest("[data-hakushi-drag]"))) || target.closest(".hakushi-controls, .hakushi-minimap")) return;
+    if ((nodeEl && (!group || interactive(target, nodeEl) || target.closest("[data-hakushi-drag]"))) || target.closest(".hakushi-controls, .hakushi-minimap, [data-hakushi-people]")) return;
     if (this.config.readonly || !this.config.newNode) return;
     const at = this.canvasPoint(event);
     this.drop(null, this.config.snap ? { x: snapToGrid(at.x, this.config.grid), y: snapToGrid(at.y, this.config.grid) } : at);
@@ -2099,7 +2220,9 @@ export class Canvas {
 
   receivePeer(payload: Record<string, unknown>) {
     const id = String(payload.person);
-    const peer: Peer = this.peers.get(id) ?? { cursor: null, selected: [], dragging: new Map(), seen: 0, el: null, from: null, dragFrom: new Map(), start: 0, duration: 0 };
+    const peer: Peer = this.peers.get(id) ?? { cursor: null, view: null, selected: [], dragging: new Map(), seen: 0, el: null, from: null, dragFrom: new Map(), start: 0, duration: 0 };
+    const view = payload.view as [number, number, number, number] | null | undefined;
+    peer.view = Array.isArray(view) && view.length === 4 && view[2] > 0 && view[3] > 0 ? view : null;
     const cursor = payload.cursor as [number, number] | null;
     const dragging = new Map(((payload.dragging as [string, number, number][]) ?? []).map(([n, x, y]) => [n, { x, y }]));
     // From where the cursor and the nodes are drawn now, to where they go.
@@ -2125,6 +2248,7 @@ export class Canvas {
     peer.dragging = dragging;
     peer.seen = Date.now();
     this.peers.set(id, peer);
+    if (id === this.followKey) this.showFollowed(peer);
     for (const n of [...before, ...peer.selected, ...peer.dragging.keys()]) {
       const node = this.nodes.get(n);
       if (node) {
@@ -2167,6 +2291,8 @@ export class Canvas {
   }
 
   private drawPeers() {
+    // On a page with Issho's pointers, they draw everyone, on the canvas too.
+    const page = this.docEl !== null && document.querySelector(".issho-pointers") !== null;
     for (const [id, peer] of this.peers) {
       // On their way: drawn again at the next frame, with the nodes they drag.
       if (this.moving(peer)) {
@@ -2180,7 +2306,7 @@ export class Canvas {
         this.schedule();
       }
       const person = this.people.get(id);
-      if (!peer.cursor || !person) {
+      if (!peer.cursor || !person || page) {
         if (peer.el) peer.el.hidden = true;
         continue;
       }
@@ -2213,10 +2339,12 @@ export class Canvas {
     this.peerSent = now;
     const g = this.gesture;
     const dragging = g?.kind === "drag" && g.moved ? [...g.origin.keys()].map((id) => [id, this.nodes.get(id)!.x, this.nodes.get(id)!.y]) : [];
+    const z = this.view.zoom;
     this.live.push("hakushi:peer", {
       cursor: this.pointer ? [round(this.pointer.x), round(this.pointer.y)] : null,
       selected: [...this.selected],
       dragging,
+      view: this.size.width > 0 ? [round(-this.view.x / z), round(-this.view.y / z), round(this.size.width / z), round(this.size.height / z)] : null,
     });
   }
 
@@ -2368,4 +2496,30 @@ function round(n: number): number {
 
 function reducedMotion(): boolean {
   return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+// Following is Issho's, a room's, kept by the page (Issho's contract, with
+// no import of it): the root element's `data-issho-following`, a JSON object
+// of room to the key of the one followed, and the `issho:following` event.
+function followingIn(room: string): string | null {
+  try {
+    return (JSON.parse(document.documentElement.dataset.isshoFollowing ?? "{}") as Record<string, string>)[room] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function followIn(room: string, key: string | null): void {
+  if (followingIn(room) === key) return;
+  let all: Record<string, string> = {};
+  try {
+    all = JSON.parse(document.documentElement.dataset.isshoFollowing ?? "{}") as Record<string, string>;
+  } catch {
+    all = {};
+  }
+  if (key) all[room] = key;
+  else delete all[room];
+  if (Object.keys(all).length > 0) document.documentElement.dataset.isshoFollowing = JSON.stringify(all);
+  else delete document.documentElement.dataset.isshoFollowing;
+  document.dispatchEvent(new CustomEvent("issho:following", { detail: { room, key } }));
 }

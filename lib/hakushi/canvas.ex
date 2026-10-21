@@ -545,12 +545,11 @@ defmodule Hakushi.Canvas do
   # than a canvas has.
   defp peer_state(params) do
     %{
-      "cursor" =>
-        case params["cursor"] do
-          [x, y] when is_number(x) and is_number(y) -> [x, y]
-          _other -> nil
-        end,
+      "cursor" => numbers(params["cursor"], 2),
       "selected" => params |> Map.get("selected", []) |> ids_only(),
+      # What the person's canvas shows (its top left corner, width and height,
+      # in the canvas's terms), for those who follow them.
+      "view" => numbers(params["view"], 4),
       "dragging" =>
         params
         |> Map.get("dragging", [])
@@ -561,6 +560,12 @@ defmodule Hakushi.Canvas do
         )
     }
   end
+
+  # A list of `count` numbers, or nil.
+  defp numbers(list, count) when is_list(list) and length(list) == count,
+    do: if(Enum.all?(list, &is_number/1), do: list)
+
+  defp numbers(_other, _count), do: nil
 
   defp ids_only(list) when is_list(list),
     do: list |> Enum.filter(&is_binary/1) |> Enum.take(@max_items)
@@ -653,11 +658,15 @@ defmodule Hakushi.Canvas do
         ></i>
       </div>
       <div :if={@people != []} class="hakushi-people" data-hakushi-people>
-        <span
+        <button
           :for={person <- @people}
+          type="button"
           class="hakushi-person"
           data-person={person["id"]}
+          data-issho-follow-control
           title={person["name"]}
+          aria-label={"Follow #{person["name"] || person["id"]}"}
+          phx-mounted={JS.ignore_attributes(["aria-pressed"])}
           style={"--hakushi-person: #{person["color"]}"}
         >
           <%= if @person_slot != [] do %>
@@ -666,7 +675,7 @@ defmodule Hakushi.Canvas do
             <img :if={person["avatar"]} src={person["avatar"]} alt="" />
             <span :if={!person["avatar"]}>{initials(person["name"] || person["id"])}</span>
           <% end %>
-        </span>
+        </button>
       </div>
       <div
         :if={@empty_slot != [] and map_size(@graph.nodes) == 0}

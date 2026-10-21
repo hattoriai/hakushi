@@ -208,9 +208,10 @@ defmodule Hakushi.SharedCanvasTest do
     agent = Context.new(HakushiTest.Issho, %{id: "assistant", name: "Assistant", kind: :agent})
     move = %{"canvas" => "canvas:" <> topic, "node" => "note", "x" => 40, "y" => 80}
 
-    # To the node, then the drag: only where it goes is sent, each a wait.
+    # To the node (Issho's flight, 450ms), then the drag (a step within the
+    # canvas, 300ms): only where it goes is sent, each a wait.
     {travelled, {:ok, _}} = :timer.tc(fn -> Issho.Tools.call(tools, "move_node", move, agent) end)
-    assert travelled >= 800_000
+    assert travelled >= 700_000
 
     Application.put_env(:hakushi, Hakushi.Issho, travel: false)
     on_exit(fn -> Application.delete_env(:hakushi, Hakushi.Issho) end)

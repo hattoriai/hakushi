@@ -5,9 +5,32 @@ All notable changes to Hakushi are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.1] - 2026-10-21
+## [0.3.0] - 2026-10-21
+
+On Issho 0.3: the canvas is a block of an Issho page, agents move with
+Issho's motion, and following is the room's.
+
+### Changed (breaking)
+
+- Requires `{:issho, "~> 0.3"}`.
+- An agent moves with `Issho.Motion`: only when someone of the room sees
+  the canvas, within a tool call's time budget (Hakushi's `travel` still
+  turns it off for the canvas's agents, Issho's for every component).
+- On a page with Issho's pointers (`Issho.Components.pointers/1`), they
+  draw everyone's pointer on the canvas too: the canvas says where its
+  points and nodes are on the screen (Issho's `locate`) and which point is
+  under a pointer (`point`), so a pointer goes from the page onto the
+  canvas and back as one, and each person sees it on the same point of
+  the canvas, however theirs is panned. Alone on a page, the canvas draws
+  its people's cursors itself, as before.
+- The avatars are buttons that follow someone (`data-issho-follow-control`).
 
 ### Added
+
+- Following someone, from the canvas's avatars or the page's people list:
+  the canvas shows what they show (their viewport, sent with their cursor
+  as `view`), or keeps an agent's pointer on the screen. A wheel, a press
+  or a key on the canvas stops following.
 
 - An agent's pointer travels as a hand does, in a straight line, and the
   node it drags goes with it: only where it goes is sent (once for a

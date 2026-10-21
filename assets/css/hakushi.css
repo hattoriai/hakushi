@@ -568,6 +568,9 @@
 .hakushi-person {
   display: grid;
   place-items: center;
+  padding: 0;
+  font-family: inherit;
+  cursor: pointer;
   width: 1.75rem;
   height: 1.75rem;
   margin-left: -6px;
@@ -754,4 +757,9 @@
 .hakushi-export .hakushi-handle,
 .hakushi-export .hakushi-resizer {
   display: none;
+}
+
+/* The one followed (Issho's following, the room's): a ring of their colour. */
+.hakushi-person[aria-pressed="true"] {
+  box-shadow: 0 0 0 2px var(--hakushi-person);
 }

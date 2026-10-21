@@ -45,19 +45,16 @@ if Code.ensure_loaded?(Issho.Tool) do
     # (`config :hakushi, Hakushi.Issho, travel: true`), or is there at once.
     def travel?, do: Keyword.get(Application.get_env(:hakushi, Hakushi.Issho, []), :travel, true)
 
-    # As long as a browser takes to draw the way (Hakushi's GLIDE_MAX).
-    @glide 400
-
-    # Moves the pointer to a point: only where it goes is sent, each browser
-    # draws the way there, and the agent waits as long as that takes.
-    def glide(%__MODULE__{} = canvas, {x, y}, extra \\ %{}) do
-      with :ok <- aware(canvas, Map.put(extra, "cursor", [x, y])), do: wait()
-    end
-
-    # Waits for the way to be drawn, when the agent travels.
-    def wait do
-      if travel?(), do: Process.sleep(@glide)
-      :ok
+    # Moves the pointer to a point of the canvas, with Issho's motion
+    # (`Issho.Motion`): only where it goes is sent, with the canvas's own
+    # state that changes with it (its cursor, selection, drag); each browser
+    # draws the way there; it moves only for someone who sees the canvas.
+    def glide(%__MODULE__{} = canvas, {x, y}, extra \\ %{}, gesture \\ :move) do
+      Issho.Motion.go(canvas.participant, %{"doc" => canvas.canvas, "at" => %{"point" => [x, y]}},
+        gesture: gesture,
+        travel: travel?(),
+        aware: Map.put(extra, "cursor", [x, y])
+      )
     end
 
     # A point on a node, to point at it.
@@ -279,13 +276,8 @@ if Code.ensure_loaded?(Issho.Tool) do
     # lands is sent, and each browser draws it on its way there.
     defp drag(canvas, node, x, y) do
       {grab_x, grab_y} = Canvas.on(node)
-
-      with :ok <-
-             Canvas.aware(canvas, %{
-               "cursor" => [x + grab_x - node.x, y + grab_y - node.y],
-               "dragging" => [[node.id, x, y]]
-             }),
-           do: Canvas.wait()
+      point = {x + grab_x - node.x, y + grab_y - node.y}
+      Canvas.glide(canvas, point, %{"dragging" => [[node.id, x, y]]}, :drag)
     end
   end
 
