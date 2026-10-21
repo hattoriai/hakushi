@@ -27,6 +27,7 @@ port = "PORT" |> System.get_env("4099") |> String.to_integer()
 watch? = System.get_env("HAKUSHI_DEV_WATCH") != "false"
 
 Application.put_env(:phoenix, :json_library, JSON)
+Application.put_env(:issho, Issho.MCP, instance: HakushiDev.Issho)
 Logger.configure(level: :info)
 
 Application.put_env(:hakushi, HakushiDev.Endpoint,
@@ -1041,16 +1042,64 @@ defmodule HakushiDev.ScaleLive do
   end
 end
 
+defmodule HakushiDev.MCP do
+  @moduledoc """
+  MCP for agents: Issho's room tools and Hakushi's canvas tools, at /mcp,
+  with no authorization (development only): an agent is named for its
+  client and acts as itself. Claude Code connects with
+  `claude mcp add --transport http hakushi-dev http://localhost:4099/mcp`,
+  and works on the canvases open in a browser (the schema's room is
+  `atelier:schema`, or `atelier:schema:ROOM` with `?room=ROOM`).
+  """
+  use Sake.Server, name: "hakushi-dev", version: "0.0.0"
+  mount(Issho.MCP)
+  mount(Hakushi.Issho.MCP)
+end
+
+defmodule HakushiDev.AgentPlug do
+  @moduledoc false
+  # For the browser tests: calls a tool of /mcp as an MCP client does, over
+  # HTTP, with Sake's client. POST {"tool": ..., "arguments": {...}}.
+  @behaviour Plug
+
+  def init(opts), do: opts
+
+  def call(conn, _opts) do
+    %{"tool" => tool, "arguments" => arguments} = conn.body_params
+    url = "http://127.0.0.1:#{conn.port}/mcp"
+
+    {:ok, session} =
+      Sake.Client.connect(url, client_info: %{"name" => "claude-code", "title" => "Claude Code"})
+
+    reply =
+      case Sake.Client.call_tool(session, tool, arguments) do
+        {:ok, %{is_error: true, text: text}, _session} -> %{"error" => text}
+        {:ok, result, _session} -> %{"result" => result.structured || result.text}
+        {:error, reason, _session} -> %{"error" => inspect(reason)}
+      end
+
+    conn
+    |> Plug.Conn.put_resp_content_type("application/json")
+    |> Plug.Conn.send_resp(200, JSON.encode!(reply))
+  end
+end
+
 defmodule HakushiDev.Router do
   use Phoenix.Router
 
   import Phoenix.LiveView.Router
+  import Sake.Router
 
   pipeline :browser do
     plug(:fetch_session)
     plug(:fetch_live_flash)
     plug(:protect_from_forgery)
     plug(:put_root_layout, html: {HakushiDev.Layouts, :root})
+  end
+
+  scope "/" do
+    sake_endpoint("/mcp", server: HakushiDev.MCP, secret: String.duplicate("hakushi-dev-mcp-", 4))
+    post("/dev/agent", HakushiDev.AgentPlug, [])
   end
 
   scope "/" do
