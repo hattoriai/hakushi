@@ -2289,7 +2289,8 @@ export class Canvas {
   receivePeer(payload: Record<string, unknown>) {
     const id = String(payload.person);
     const peer: Peer = this.peers.get(id) ?? { cursor: null, view: null, selected: [], dragging: new Map(), seen: 0, el: null, from: null, dragFrom: new Map(), start: 0, duration: 0 };
-    const view = payload.view as [number, number, number, number] | null | undefined;
+    // `viewport`, not `view`: a person's `view` is Issho's, what their page shows.
+    const view = payload.viewport as [number, number, number, number] | null | undefined;
     peer.view = Array.isArray(view) && view.length === 4 && view[2] > 0 && view[3] > 0 ? view : null;
     const cursor = payload.cursor as [number, number] | null;
     const dragging = new Map(((payload.dragging as [string, number, number][]) ?? []).map(([n, x, y]) => [n, { x, y }]));
@@ -2417,7 +2418,7 @@ export class Canvas {
       cursor: this.pointer ? [round(this.pointer.x), round(this.pointer.y)] : null,
       selected: [...this.selected],
       dragging,
-      view: this.size.width > 0 ? [round(-this.view.x / z), round(-this.view.y / z), round(this.size.width / z), round(this.size.height / z)] : null,
+      viewport: this.size.width > 0 ? [round(-this.view.x / z), round(-this.view.y / z), round(this.size.width / z), round(this.size.height / z)] : null,
     });
   }
 

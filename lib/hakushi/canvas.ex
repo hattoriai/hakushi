@@ -566,8 +566,9 @@ defmodule Hakushi.Canvas do
       "cursor" => numbers(params["cursor"], 2),
       "selected" => params |> Map.get("selected", []) |> ids_only(),
       # What the person's canvas shows (its top left corner, width and height,
-      # in the canvas's terms), for those who follow them.
-      "view" => numbers(params["view"], 4),
+      # in the canvas's terms), for those who follow them; not `view`, which
+      # is Issho's (what their page shows), in the same state.
+      "viewport" => numbers(params["viewport"], 4),
       "dragging" =>
         params
         |> Map.get("dragging", [])
