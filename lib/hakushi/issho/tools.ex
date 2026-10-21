@@ -80,9 +80,31 @@ if Code.ensure_loaded?(Issho.Tool) do
     # JSON from an agent as a node's data: the keys the app's data has as
     # atoms become those atoms (an app reads `node.data.name`); others stay
     # strings. No atom is made from what an agent sends.
-    def data(value) when is_map(value), do: Map.new(value, fn {key, v} -> {key(key), data(v)} end)
-    def data(value) when is_list(value), do: Enum.map(value, &data/1)
-    def data(value), do: value
+    # The data an agent gives a node, in the shape of the canvas's own: with
+    # atom keys where its nodes of that type have them (an app's seeds), with
+    # string keys where they do not (a graph saved as JSON), so a node's
+    # template reads the agent's nodes as it reads the others.
+    def data(%__MODULE__{graph: graph}, type, value) do
+      if atom_keys?(graph, type), do: atomize(value), else: value
+    end
+
+    # Merged into a node's own data, in its shape.
+    def data_like(%{} = existing, value) do
+      if Enum.any?(Map.keys(existing), &is_atom/1), do: atomize(value), else: value
+    end
+
+    defp atom_keys?(graph, type) do
+      nodes = Graph.nodes(graph)
+      like = Enum.filter(nodes, &(&1.type == type))
+      sample = Enum.find(if(like == [], do: nodes, else: like), &(map_size(&1.data) > 0))
+      sample != nil and Enum.any?(Map.keys(sample.data), &is_atom/1)
+    end
+
+    defp atomize(value) when is_map(value),
+      do: Map.new(value, fn {key, v} -> {key(key), atomize(v)} end)
+
+    defp atomize(value) when is_list(value), do: Enum.map(value, &atomize/1)
+    defp atomize(value), do: value
 
     defp key(key) when is_binary(key) do
       String.to_existing_atom(key)
@@ -188,16 +210,17 @@ if Code.ensure_loaded?(Issho.Tool) do
     def call(args, ctx) do
       id = Canvas.new_id()
 
-      node = %{
-        id: id,
-        type: args[:type] || "default",
-        x: args.x,
-        y: args.y,
-        data: Shared.data(args[:data] || %{}),
-        parent: args[:parent]
-      }
+      type = args[:type] || "default"
 
       with {:ok, canvas} <- Shared.open(ctx, args.canvas),
+           node = %{
+             id: id,
+             type: type,
+             x: args.x,
+             y: args.y,
+             data: Shared.data(canvas, type, args[:data] || %{}),
+             parent: args[:parent]
+           },
            :ok <- Shared.glide(canvas, {args.x + 20, args.y + 20}),
            :ok <- Shared.change(canvas, Change.add([node])),
            :ok <- Shared.aware(canvas, %{"selected" => [id]}) do
@@ -338,7 +361,7 @@ if Code.ensure_loaded?(Issho.Tool) do
       %{id: node.id}
       |> then(
         &if(is_map(args[:data]),
-          do: Map.put(&1, :data, Map.merge(node.data, Canvas.data(args.data))),
+          do: Map.put(&1, :data, Map.merge(node.data, Canvas.data_like(node.data, args.data))),
           else: &1
         )
       )
