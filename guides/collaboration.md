@@ -21,10 +21,10 @@ and no service besides your app.
 
 ## Setting up
 
-1. Issho in your dependencies (until it is on Hex, from GitHub):
+1. Issho in your dependencies:
 
    ```elixir
-   {:issho, github: "hattoriai/issho"}
+   {:issho, "~> 0.1"}
    ```
 
 2. An Issho instance in your supervision tree, after the PubSub, with

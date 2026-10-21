@@ -56,10 +56,8 @@ defmodule Hakushi.MixProject do
       {:ecto, "~> 3.13", optional: true},
       {:esbuild, "~> 0.10", only: :dev, runtime: false},
       # Shared canvases (`live`): Issho is the room, its people and their
-      # cursors. A canvas without `live` never needs it. Until Issho is on
-      # Hex, an app that shares canvases adds it itself; then this becomes
-      # {:issho, "~> 0.1", optional: true}.
-      {:issho, github: "hattoriai/issho", only: [:dev, :test]},
+      # cursors. A canvas without `live` never needs it.
+      {:issho, "~> 0.1", optional: true},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
       {:lazy_html, "~> 0.1", only: :test},
       {:phoenix, if(@oldest, do: "~> 1.7.14", else: "~> 1.7.14 or ~> 1.8")},
