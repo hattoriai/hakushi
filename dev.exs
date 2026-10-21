@@ -669,6 +669,7 @@ defmodule HakushiDev.Page do
      socket
      |> assign(:me, me)
      |> assign(:readonly, params["as"] == "viewer")
+     |> assign(:follow, params["follow"] != "false")
      |> assign(:room, params["room"])
      |> assign(:query, Map.take(params, ["as", "theme", "dark", "room"]))}
   end
@@ -771,6 +772,7 @@ defmodule HakushiDev.SchemaLive do
         live={{HakushiDev.Issho, topic("schema", @room)}}
         user={@me}
         readonly={@readonly}
+        follow={@follow}
         background={:lines}
         grid={20}
         label="The tables of Atelier"

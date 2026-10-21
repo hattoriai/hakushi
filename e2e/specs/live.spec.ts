@@ -50,6 +50,10 @@ test("following someone: the canvas shows what they show, until one goes one's o
   await avatar.click();
   await expect(avatar).toHaveAttribute("aria-pressed", "true");
   await expect.poll(() => ada.evaluate(() => document.documentElement.dataset.isshoFollowing ?? "")).toContain("kenji");
+  // The canvas says whom it follows, in their colour, with Stop, and has a ring of it.
+  const line = ada.locator("#schema .hakushi-following");
+  await expect(line).toContainText(/Following Kenji/i);
+  await expect(ada.locator("#schema")).toHaveAttribute("data-ui-following", "");
 
   // Kenji zooms in twice: Ada's canvas goes with him.
   await kenji.locator('#schema [data-action="zoom-in"]').click();
@@ -63,6 +67,38 @@ test("following someone: the canvas shows what they show, until one goes one's o
   await ada.mouse.wheel(0, 60);
   await expect(avatar).toHaveAttribute("aria-pressed", "false");
   await expect.poll(() => ada.evaluate(() => document.documentElement.dataset.isshoFollowing ?? "")).toBe("");
+  await expect(line).toHaveCount(0);
+  await expect(ada.locator("#schema")).not.toHaveAttribute("data-ui-following", "");
+
+  // Stop, from the line.
+  await avatar.click();
+  await expect(line).toBeVisible();
+  await line.getByRole("button", { name: "Stop" }).click();
+  await expect(line).toHaveCount(0);
+  await expect(avatar).toHaveAttribute("aria-pressed", "false");
+
+  await ada.context().close();
+  await kenji.context().close();
+});
+
+test("a canvas with follow={false}: its avatars follow no one, and it shows no one followed", async ({ browser }) => {
+  const ada = await (await browser.newContext()).newPage();
+  const kenji = await (await browser.newContext()).newPage();
+  const room = await openCanvas(ada, "/", undefined, "&as=ada&follow=false");
+  await openCanvas(kenji, "/", room, "&as=kenji");
+  const avatar = ada.locator('#schema .hakushi-person[data-person="kenji"]');
+  await expect(avatar).toBeVisible();
+  await expect(ada.locator("#schema button.hakushi-person")).toHaveCount(0);
+  await avatar.click();
+  await expect.poll(() => ada.evaluate(() => document.documentElement.dataset.isshoFollowing ?? "")).toBe("");
+
+  // The room follows Kenji (another block of the page could): this canvas shows nothing of it.
+  await ada.evaluate((room) => {
+    document.documentElement.dataset.isshoFollowing = JSON.stringify({ [room]: "kenji" });
+    document.dispatchEvent(new CustomEvent("issho:following", { detail: { room, key: "kenji" } }));
+  }, await ada.locator("#schema").evaluate((el) => el.dataset.isshoDoc!.split("/")[0]));
+  await expect(ada.locator("#schema .hakushi-following")).toHaveCount(0);
+  await expect(ada.locator("#schema")).not.toHaveAttribute("data-ui-following", "");
 
   await ada.context().close();
   await kenji.context().close();

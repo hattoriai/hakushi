@@ -22,6 +22,8 @@ export interface Config {
   minZoom: number;
   maxZoom: number;
   readonly: boolean;
+  /** Whether a shared canvas takes part in following, the room's (false: it follows no one, and shows no one followed). */
+  follow?: boolean;
   newNode: boolean;
   wheel: "pan" | "zoom";
   layout: "right" | "down";
