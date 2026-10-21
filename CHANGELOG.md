@@ -50,6 +50,10 @@ Issho's motion, and following is the room's.
   node (seconds for two thousand nodes in Safari).
 - A pan paints nothing again: the paper moves as a layer, by less than a
   period of its pattern, and the world is a layer while a pan goes on.
+- A pan of a large canvas keeps its frames: a node that comes back into
+  view is not news (it culled every node again on the next frame, redrew
+  the minimap and the edges), and an edge's path is written only when it
+  changes.
 
 ## [0.2.0] - 2026-10-21
 
