@@ -785,14 +785,17 @@
 
 /* Following someone on the canvas: "Following Ada", with Stop, under the
    avatars, and a ring of their colour (--hakushi-follow-color) around the
-   canvas. Set --hakushi-following-background, --hakushi-following-text and
-   --hakushi-following-ring (none for no ring) to restyle them. */
+   canvas. The look is Issho's, the same on every block of a page (the line
+   carries its classes too): --issho-following-background,
+   --issho-following-text and --issho-following-ring (none for no ring)
+   restyle them. These rules are its look on a page without Issho's
+   stylesheet. */
 .hakushi-following-ring {
   position: absolute;
   inset: 0;
   z-index: 3;
   pointer-events: none;
-  box-shadow: var(--hakushi-following-ring, inset 0 0 0 2px var(--hakushi-follow-color, var(--hakushi-accent)));
+  box-shadow: var(--issho-following-ring, inset 0 0 0 2px var(--hakushi-follow-color, var(--hakushi-accent)));
 }
 
 .hakushi-following {
@@ -806,8 +809,8 @@
   margin: 0;
   padding: 0.125rem 0.25rem 0.125rem 0.625rem;
   border-radius: 999px;
-  background: var(--hakushi-following-background, var(--hakushi-follow-color, var(--hakushi-accent)));
-  color: var(--hakushi-following-text, #fff);
+  background: var(--issho-following-background, var(--hakushi-follow-color, var(--hakushi-accent)));
+  color: var(--issho-following-text, #fff);
   font-size: 0.75rem;
   font-weight: 500;
   line-height: 1.25rem;

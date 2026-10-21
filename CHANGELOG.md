@@ -63,9 +63,10 @@ Issho's motion, and following is the room's.
   as `view`), or keeps an agent's pointer on the screen. A wheel, a press
   or a key on the canvas stops following. A canvas that shows its people
   says whom it follows: "Following Ada", with Stop, in their colour, and
-  a ring of it around the canvas (restyled with
-  `--hakushi-following-background`, `--hakushi-following-text` and
-  `--hakushi-following-ring`).
+  a ring of it around the canvas, in Issho's look of following, the same
+  on every block of the page (restyled with Issho's
+  `--issho-following-background`, `--issho-following-text` and
+  `--issho-following-ring`).
 - `follow={false}`: a shared canvas that takes no part in following,
   though its room's other blocks do.
 

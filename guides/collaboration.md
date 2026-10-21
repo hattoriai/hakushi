@@ -161,16 +161,18 @@ pointer goes from the page onto the canvas and back.
 
 A canvas that shows its people (its avatars) says whom it follows:
 "Following Ada", with Stop, under the avatars, in their colour, and a ring
-of it around the canvas. The line is `.hakushi-following` (its button
-`.hakushi-following-stop`), the ring `.hakushi-following-ring`, and the
-canvas carries `data-ui-following` while it follows. These properties, on
-`.hakushi` or the page, change their look:
+of it around the canvas. The look is Issho's, the same as its people
+list's and every other block's on the page: the line carries Issho's
+classes (`issho-following`, `issho-following-stop`) besides its own
+(`.hakushi-following`, the ring `.hakushi-following-ring`), the canvas
+carries `data-ui-following` while it follows, and Issho's properties, on
+the page, restyle all of them at once:
 
 ```css
-.hakushi {
-  --hakushi-following-background: #111827; /* the person's colour */
-  --hakushi-following-text: #fff;
-  --hakushi-following-ring: none;          /* 2px of the person's colour */
+:root {
+  --issho-following-background: #111827; /* the person's colour */
+  --issho-following-text: #fff;
+  --issho-following-ring: none;          /* a ring of the person's colour */
 }
 ```
 
