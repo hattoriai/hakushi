@@ -30,7 +30,13 @@ Issho's motion, and following is the room's.
 - Following someone, from the canvas's avatars or the page's people list:
   the canvas shows what they show (their viewport, sent with their cursor
   as `view`), or keeps an agent's pointer on the screen. A wheel, a press
-  or a key on the canvas stops following.
+  or a key on the canvas stops following. A canvas that shows its people
+  says whom it follows: "Following Ada", with Stop, in their colour, and
+  a ring of it around the canvas (restyled with
+  `--hakushi-following-background`, `--hakushi-following-text` and
+  `--hakushi-following-ring`).
+- `follow={false}`: a shared canvas that takes no part in following,
+  though its room's other blocks do.
 
 - An agent's pointer travels as a hand does, in a straight line, and the
   node it drags goes with it: only where it goes is sent (once for a

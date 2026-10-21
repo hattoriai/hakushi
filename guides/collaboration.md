@@ -159,6 +159,28 @@ key on the canvas stops following. On a page with Issho's pointers
 canvas too, at the same point of the canvas for each person, and one
 pointer goes from the page onto the canvas and back.
 
+A canvas that shows its people (its avatars) says whom it follows:
+"Following Ada", with Stop, under the avatars, in their colour, and a ring
+of it around the canvas. The line is `.hakushi-following` (its button
+`.hakushi-following-stop`), the ring `.hakushi-following-ring`, and the
+canvas carries `data-ui-following` while it follows. These properties, on
+`.hakushi` or the page, change their look:
+
+```css
+.hakushi {
+  --hakushi-following-background: #111827; /* the person's colour */
+  --hakushi-following-text: #fff;
+  --hakushi-following-ring: none;          /* 2px of the person's colour */
+}
+```
+
+`--hakushi-follow-color` is the followed person's colour, for your own
+rules; the words are the `following` and `stopFollowing` messages.
+
+A canvas that should take no part in following, though the other blocks
+of its room do, says so with `follow={false}`: its avatars are not
+buttons, it shows no one followed, and its view stays its person's.
+
 Its changes go the way of everyone's: the canvas's rules check them, and
 your `on_change` is asked once for each. It works on a canvas someone has
 open, whose first canvas gave the room its graph, rules and `on_change`.
