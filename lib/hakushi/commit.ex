@@ -50,7 +50,35 @@ defmodule Hakushi.Commit do
     end
   end
 
+  # A moved end: the rules of the edge with its new ends, in the graph
+  # without it.
+  defp check_edges(rules, graph, %Change{op: :reconnect, edges: ends}) do
+    Enum.reduce_while(ends, :ok, fn ends, :ok ->
+      case check_ends(rules, graph, ends) do
+        :ok -> {:cont, :ok}
+        error -> {:halt, error}
+      end
+    end)
+  end
+
   defp check_edges(_rules, _graph, _change), do: :ok
+
+  defp check_ends(rules, graph, %{id: id} = ends) do
+    case Graph.edge(graph, id) do
+      nil ->
+        {:error, :missing}
+
+      edge ->
+        others = %{
+          graph
+          | edges: Map.delete(graph.edges, id),
+            edge_order: List.delete(graph.edge_order, id)
+        }
+
+        moved = struct!(edge, Map.take(ends, [:source, :source_handle, :target, :target_handle]))
+        Rules.check(rules, others, moved)
+    end
+  end
 
   defp ask(nil, _change, _context), do: :ok
 

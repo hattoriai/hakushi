@@ -24,6 +24,8 @@ export interface Config {
   readonly: boolean;
   newNode: boolean;
   wheel: "pan" | "zoom";
+  layout: "right" | "down";
+  exportable: boolean;
   live: boolean;
   user: string | null;
   messages: Record<string, string>;
@@ -74,6 +76,10 @@ export interface NodeModel {
   fixed: boolean;
   locked: boolean;
   resizable: boolean;
+  /** The group it is in, or null. */
+  parent: string | null;
+  /** Whether it holds other nodes (a `group` slot). */
+  group: boolean;
   label: string;
   handles: Handle[];
   /** Whether its handles were measured since its element last changed. */

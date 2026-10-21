@@ -243,6 +243,16 @@
   stroke: var(--hakushi-muted);
 }
 
+/* The ends of a selected edge, to drag to other handles. */
+.hakushi-knob {
+  fill: var(--hakushi-surface);
+  stroke: var(--hakushi-edge-selected);
+  stroke-width: 1.5px;
+  vector-effect: non-scaling-stroke;
+  pointer-events: all;
+  cursor: grab;
+}
+
 .hakushi-guide {
   stroke: var(--hakushi-guide);
   stroke-width: 1px;
@@ -276,8 +286,12 @@
 }
 
 .hakushi-node[data-ui-selected] {
-  z-index: 1;
   box-shadow: 0 0 0 2px var(--hakushi-selection);
+}
+
+/* A group a dragged node will go in. */
+.hakushi-node[data-ui-drop-target] {
+  box-shadow: 0 0 0 2px var(--hakushi-accent), 0 0 0 6px var(--hakushi-box);
 }
 
 .hakushi[data-ui-keyboard] .hakushi-node:focus-visible {
@@ -711,7 +725,17 @@
     background: Canvas;
   }
 
-  .hakushi-guide {
+  /* The ends of a selected edge, to drag to other handles. */
+.hakushi-knob {
+  fill: var(--hakushi-surface);
+  stroke: var(--hakushi-edge-selected);
+  stroke-width: 1.5px;
+  vector-effect: non-scaling-stroke;
+  pointer-events: all;
+  cursor: grab;
+}
+
+.hakushi-guide {
     stroke: Highlight;
   }
 }
@@ -723,4 +747,10 @@
     transition: none !important;
     animation: none !important;
   }
+}
+
+/* An export is the drawing, without the tools: no handles or resizers. */
+.hakushi-export .hakushi-handle,
+.hakushi-export .hakushi-resizer {
+  display: none;
 }

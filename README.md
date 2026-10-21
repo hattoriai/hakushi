@@ -22,9 +22,14 @@ on a sheet. It gives your app:
 * shared canvases, with no service and no CRDT: one process for each
   canvas puts the changes of everyone in it in order, and the others see
   them as they happen, with each person's cursor, selection and drag;
+* groups and frames: nodes that hold others, which move and go with
+  them; a node dropped on a frame goes in it;
+* a tidy up that lays the nodes out in layers along their edges, as one
+  change that undoes, and a download of the whole canvas as a PNG or an
+  SVG;
 * the keyboard of a design tool: Tab from node to node, the arrows to
-  move, C to connect, Delete, ⌘C, ⌘V, ⌘D, ⌘Z; and a screen reader that
-  hears each node and its connections;
+  move, C to connect, Delete, ⌘C, ⌘V, ⌘D, ⌘Z, ⇧L; and a screen reader
+  that hears each node and its connections;
 * `Hakushi.Test`, to move, connect and delete in `Phoenix.LiveViewTest`
   with no browser.
 
@@ -45,8 +50,8 @@ The development app of this repository is a small project tool
   the server takes.
 * **Workflow**: an automation, with a palette of steps to drag on, a
   condition with two ways out, and no cycles.
-* **Moodboard**: notes that resize and snap to the grid, swatches, a
-  type specimen and labelled arrows.
+* **Moodboard**: notes that resize and snap to the grid, a frame that
+  holds notes, swatches, a type specimen and labelled arrows.
 * **Two thousand nodes**, or `?n=10000`.
 
 Run `mix setup` and `mix dev`, open http://localhost:4099, and open the
@@ -57,7 +62,9 @@ the schema and the workflow are shared.
 
 ![The workflow: an automation of steps from a palette, a condition with two ways out, a running step and its flowing edge](https://raw.githubusercontent.com/hattoriai/hakushi/main/media/workflow.png)
 
-![The moodboard: sticky notes on crossed paper, a palette of swatches, a type specimen and labelled arrows, one note selected with its corners to resize](https://raw.githubusercontent.com/hattoriai/hakushi/main/media/board.png)
+![The moodboard: sticky notes on crossed paper, a palette of swatches, a type specimen and labelled arrows, and a frame holding two notes, with a note being dropped into it](https://raw.githubusercontent.com/hattoriai/hakushi/main/media/frame.png)
+
+![The schema after a tidy up: the tables in layers along their foreign keys, from time entries on the left to clients on the right](https://raw.githubusercontent.com/hattoriai/hakushi/main/media/layout.png)
 
 ## What the canvas does
 
@@ -68,7 +75,10 @@ the schema and the workflow are shared.
 | Nodes | your own HEEx, a `:node` slot for each type; drawn from the node's data, on the server; locked nodes; resized by their corners (`resizable`); a part of a node to drag it by (`data-hakushi-drag`), and fields and buttons in it that are theirs |
 | Handles | sources, targets or both, on any side of the node or of any element in it (a row of a table); several with one id, of which an edge takes the nearest; `type`, `accepts` and `max` |
 | Edges | bezier, smooth, step, straight; an arrow, a dot or no end; a label, set with a double click; animated; selected and deleted |
-| Drawing | from a handle to a handle, the handles it may end on shown; from a target backwards; dropped on a node, to its nearest valid handle |
+| Drawing | from a handle to a handle, the handles it may end on shown; from a target backwards; dropped on a node, to its nearest valid handle; the end of a selected edge dragged to another handle |
+| Groups | nodes of a `group` slot hold others (`parent`): a drop on one puts a node in it, a drag off takes it out; its nodes move, are copied and go with it; groups in groups; a box drawn inside a group selects in it |
+| Layout | a tidy up (⇧L, the controls, `Hakushi.Live.layout/2`): layers from left to right or top to bottom, fewer crossings, each node level with its neighbours, the parts of a graph apart; of the selection or of every node; animated; one change |
+| Export | the whole canvas as a PNG or an SVG, the nodes as the page draws them (the controls, `Hakushi.Live.export/2`, `exportImage()`) |
 | Selection | a click, Shift or ⌘ and a click, a box on the paper, ⌘A, Escape |
 | Moving | a drag, of every selected node; helper lines that line a node up with the others (Alt to drag freely); the arrow keys, Shift for ten |
 | Changes | moves, resizes, edges, deletes (with their edges), labels, copy and paste, duplicate, items dragged from outside the canvas (`canvas_item/1`) or a double click on the paper (`new_node`); undo and redo of each person's own changes, checked again |
@@ -96,8 +106,22 @@ def deps do
 end
 ```
 
-Import the hook in `assets/js/app.js` and add it to the hooks of the
-`LiveSocket`:
+Then run:
+
+```sh
+mix deps.get
+mix hakushi.install
+```
+
+The installer adds the hook to `assets/js/app.js` and the style sheet to
+`assets/css/app.css`, and prints what it changed. Give `--dry-run` to see
+the changes first. It does not add what a file already has, so you can
+run it again.
+
+### The manual steps
+
+To make the same changes by hand, import the hook in `assets/js/app.js`
+and add it to the hooks of the `LiveSocket`:
 
 ```js
 import { Hakushi } from "hakushi"
@@ -172,6 +196,9 @@ Give the canvas a height: it fills the box you give it.
 * [Nodes](guides/nodes.md): slots, handles, sizes, a part to drag by.
 * [Edges](guides/edges.md): paths, ends, labels, and the rules of what
   connects to what.
+* [Groups](guides/groups.md): frames that hold nodes.
+* [Layout and export](guides/layout.md): the tidy up, and the canvas as
+  an image.
 * [Changes](guides/changes.md): `on_change`, refusals, the app's own
   changes, undo, storage.
 * [Collaboration](guides/collaboration.md): a shared canvas, rooms,

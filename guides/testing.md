@@ -24,9 +24,10 @@ words the person sees.
 
 | | |
 | --- | --- |
-| `nodes/2`, `edges/2` | what the canvas shows, as maps |
-| `move/4` | `move(view, id, "node", {x, y})`, or several with sizes |
+| `nodes/2`, `edges/2` | what the canvas shows, as maps (a node's `:parent` is its group) |
+| `move/4` | `move(view, id, "node", {x, y})`, or several with sizes, or maps with a `:parent` for a drop into a group |
 | `connect/4` | ends as a node's id or `{node, handle}` |
+| `reconnect/4` | `source:` or `target:`, the new end of an edge |
 | `remove/3` | `nodes:` and `edges:` (not `delete`, which `Phoenix.ConnTest` has) |
 | `label/4` | an edge's label |
 | `copy_paste/4`, `duplicate/3` | `{:ok, ids}` of the copies |

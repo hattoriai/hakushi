@@ -106,7 +106,21 @@ defmodule Hakushi.Components do
     default: true,
     doc: "when `true`, an overview of the canvas in a corner"
 
-  attr :controls, :boolean, default: true, doc: "when `true`, buttons to zoom, fit, undo and redo"
+  attr :controls, :boolean,
+    default: true,
+    doc: "when `true`, buttons to zoom, fit, tidy up, undo and redo, and to download the canvas"
+
+  attr :layout, :atom,
+    default: :right,
+    values: [:right, :down],
+    doc: """
+    the way the tidy up (⇧L, the controls) lays the nodes out: in layers from left to right, \
+    or from top to bottom; see [Layout and export](layout.md)\
+    """
+
+  attr :export, :boolean,
+    default: true,
+    doc: "when `true`, a button of the controls downloads the canvas as an image"
 
   attr :readonly, :boolean,
     default: false,
@@ -136,6 +150,10 @@ defmodule Hakushi.Components do
   slot :node, doc: "draws the nodes of a type (`:let` gets the `Hakushi.Node`)" do
     attr :type, :string, doc: "the type of the nodes it draws; none for every other type"
     attr :resizable, :boolean, doc: "when `true`, people resize these nodes by their corners"
+
+    attr :group, :boolean,
+      doc:
+        "when `true`, these nodes hold others: a node dropped on one goes in it, see [Groups](groups.md)"
   end
 
   slot :person,
@@ -163,6 +181,8 @@ defmodule Hakushi.Components do
       min_zoom={@min_zoom}
       max_zoom={@max_zoom}
       minimap={@minimap}
+      layout={@layout}
+      export={@export}
       controls={@controls}
       readonly={@readonly}
       label={@label}

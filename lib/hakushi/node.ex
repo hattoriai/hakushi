@@ -17,6 +17,10 @@ defmodule Hakushi.Node do
       slot renders.
     * `locked` - a locked node does not move, resize or go away, in the
       browser or on the server.
+    * `parent` - the id of the node it is in (a frame, a group), or `nil`.
+      A node moves with its parent and goes with it; people put a node in
+      a group by dropping it there, and take it out by dragging it out.
+      See [Groups](groups.md).
   """
 
   @enforce_keys [:id]
@@ -27,7 +31,8 @@ defmodule Hakushi.Node do
             width: nil,
             height: nil,
             data: %{},
-            locked: false
+            locked: false,
+            parent: nil
 
   @type id :: String.t()
 
@@ -39,7 +44,8 @@ defmodule Hakushi.Node do
           width: number() | nil,
           height: number() | nil,
           data: term(),
-          locked: boolean()
+          locked: boolean(),
+          parent: id() | nil
         }
 
   @doc """
@@ -60,7 +66,8 @@ defmodule Hakushi.Node do
       width: get(fields, :width, nil),
       height: get(fields, :height, nil),
       data: get(fields, :data, %{}),
-      locked: get(fields, :locked, false) == true
+      locked: get(fields, :locked, false) == true,
+      parent: get(fields, :parent, nil)
     }
 
     check!(node)
@@ -74,6 +81,8 @@ defmodule Hakushi.Node do
         not is_number(Map.fetch!(node, key)),
         do: raise(ArgumentError, "the #{key} of node #{inspect(id)} must be a number")
 
+    check_parent!(node)
+
     for key <- [:width, :height],
         value = Map.fetch!(node, key),
         value != nil and not (is_number(value) and value > 0),
@@ -81,6 +90,14 @@ defmodule Hakushi.Node do
 
     node
   end
+
+  defp check_parent!(%__MODULE__{parent: nil}), do: :ok
+
+  defp check_parent!(%__MODULE__{id: id, parent: parent}) when is_binary(parent) and parent != id,
+    do: :ok
+
+  defp check_parent!(%__MODULE__{id: id}),
+    do: raise(ArgumentError, "the parent of node #{inspect(id)} must be another node's id")
 
   @doc false
   def fetch(fields, key) do

@@ -33,7 +33,8 @@ defmodule Hakushi.Test do
   @doc """
   The nodes of the canvas `id`, in the order they are drawn: maps with
   `:id`, `:type`, `:x`, `:y`, `:width`, `:height` (`nil` for the size of
-  the content), `:locked` and `:label` (the name screen readers say).
+  the content), `:locked`, `:parent` (the group it is in, or `nil`) and
+  `:label` (the name screen readers say).
   """
   @spec nodes(struct(), String.t()) :: [map()]
   def nodes(view, id) do
@@ -48,6 +49,7 @@ defmodule Hakushi.Test do
         width: number(attribute(node, "data-width")),
         height: number(attribute(node, "data-height")),
         locked: attribute(node, "data-locked") == "true",
+        parent: attribute(node, "data-parent"),
         label: attribute(node, "aria-label")
       }
     end)
@@ -80,7 +82,8 @@ defmodule Hakushi.Test do
   @doc """
   Moves nodes, as a person drags them: `{id, x, y}` for each, or one
   node's id and `{x, y}`. A tuple `{id, x, y, width, height}` resizes it
-  too.
+  too. A map `%{id: id, x: x, y: y, parent: group}` drops it into a group
+  (or out of one, with `parent: nil`), as a drop on a group does.
   """
   @spec move(struct(), String.t(), String.t() | [tuple()], {number(), number()} | nil) ::
           :ok | {:error, String.t()}
@@ -90,8 +93,17 @@ defmodule Hakushi.Test do
   def move(view, id, places, nil) when is_list(places) do
     nodes =
       Enum.map(places, fn
-        {node, x, y} -> %{"id" => node, "x" => x, "y" => y}
-        {node, x, y, w, h} -> %{"id" => node, "x" => x, "y" => y, "width" => w, "height" => h}
+        {node, x, y} ->
+          %{"id" => node, "x" => x, "y" => y}
+
+        {node, x, y, w, h} ->
+          %{"id" => node, "x" => x, "y" => y, "width" => w, "height" => h}
+
+        %{id: node, x: x, y: y} = place ->
+          place
+          |> Map.take([:parent])
+          |> Map.new(fn {k, v} -> {to_string(k), v} end)
+          |> Map.merge(%{"id" => node, "x" => x, "y" => y})
       end)
 
     change(view, id, %{"op" => "move", "nodes" => nodes})
@@ -141,6 +153,36 @@ defmodule Hakushi.Test do
     })
   end
 
+  @doc """
+  Moves an end of an edge to another handle, as a person drags the end of
+  a selected edge: `source:` or `target:`, a node's id or
+  `{node, handle}`.
+  """
+  @spec reconnect(struct(), String.t(), String.t(), keyword()) :: :ok | {:error, String.t()}
+  def reconnect(view, id, edge, ends) do
+    current =
+      Enum.find(edges(view, id), &(&1.id == edge)) || flunk("no edge #{inspect(edge)} in #{id}")
+
+    {source, source_handle} =
+      if s = ends[:source], do: end_of(s), else: {current.source, current.source_handle}
+
+    {target, target_handle} =
+      if t = ends[:target], do: end_of(t), else: {current.target, current.target_handle}
+
+    change(view, id, %{
+      "op" => "reconnect",
+      "edges" => [
+        %{
+          "id" => edge,
+          "source" => source,
+          "sourceHandle" => source_handle,
+          "target" => target,
+          "targetHandle" => target_handle
+        }
+      ]
+    })
+  end
+
   @doc "Sets the label of an edge, or takes it away (`nil`)."
   @spec label(struct(), String.t(), String.t(), String.t() | nil) :: :ok | {:error, String.t()}
   def label(view, id, edge, label) do
@@ -168,12 +210,15 @@ defmodule Hakushi.Test do
   @doc """
   Drops an item (`Hakushi.Components.canvas_item/1`) on the canvas at
   `{x, y}`, or double-clicks there (`item` is `nil`): gives `{:ok, [id]}`
-  of the node that `new_node` made.
+  of the node that `new_node` made. `parent: group` drops it in a group,
+  as a drop on the group does.
   """
-  @spec drop(struct(), String.t(), String.t() | nil, {number(), number()}) ::
+  @spec drop(struct(), String.t(), String.t() | nil, {number(), number()}, keyword()) ::
           {:ok, [String.t()]} | {:error, String.t()}
-  def drop(view, id, item, {x, y}),
-    do: selected(event(view, id, "hakushi:drop", %{"item" => item, "x" => x, "y" => y}))
+  def drop(view, id, item, {x, y}, opts \\ []) do
+    payload = %{"item" => item, "x" => x, "y" => y, "parent" => opts[:parent]}
+    selected(event(view, id, "hakushi:drop", payload))
+  end
 
   @doc "Undoes the last change of this LiveView's person, as ⌘Z does."
   @spec undo(struct(), String.t()) :: :ok | {:error, String.t()}

@@ -22,11 +22,12 @@ A `Hakushi.Change` has an `op`:
 
 | `op` | What the person did | `nodes` and `edges` |
 | --- | --- | --- |
-| `:move` | dragged, resized, or moved with the arrow keys | maps of `:id`, `:x`, `:y`, and `:width` and `:height` for a resize |
+| `:move` | dragged, resized, moved with the arrow keys, tidied up, dropped into or out of a group | maps of `:id`, `:x`, `:y`, `:width` and `:height` for a resize, `:parent` for a drop; the nodes in a moved group are in it too |
 | `:connect` | drew an edge | `Hakushi.Edge`s |
+| `:reconnect` | dragged an end of an edge to another handle | maps of `:id` and the new `:source`, `:source_handle`, `:target`, `:target_handle` |
 | `:add` | dropped an item, double-clicked, pasted, duplicated, undid a delete | `Hakushi.Node`s, and `Hakushi.Edge`s between them |
 | `:update` | set an edge's label (and the app's own changes of data) | maps of `:id` and the keys that change |
-| `:delete` | pressed Delete | ids; the edges of the deleted nodes are in `edges` too |
+| `:delete` | pressed Delete | ids; the nodes in deleted groups are in `nodes` too, and the edges of all of them in `edges` |
 
 `by` is the person (the canvas's `user`), or `nil` for the app's own.
 
@@ -59,7 +60,7 @@ On a shared canvas, `on_change` runs once for each change, in the room
 
 ## What the browser may send
 
-The browser sends moves, edges, deletes and labels, which the server
+The browser sends moves, edges, ends of edges, deletes and labels, which the server
 checks as above. Nothing else comes from it: a paste copies nodes the
 server has (the browser names them by id), a dropped item is the node
 your `new_node` makes, an undo is a change the server kept. So the
@@ -98,4 +99,5 @@ change has made impossible is refused, with the reason.
 
 `Hakushi.Graph` is the canvas's data, and functions of it:
 `Hakushi.Graph.new/1`, `nodes/1`, `edges/1`, `node/2`, `edges_of/2`,
-`bounds/1`, `apply/2` and `diff/2`, and `dump/1` and `load/1` for JSON.
+`children/2`, `descendants/2`, `bounds/1`, `apply/2` and `diff/2`, and
+`dump/1` and `load/1` for JSON.

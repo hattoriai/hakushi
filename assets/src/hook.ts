@@ -40,6 +40,12 @@ export const Hakushi = {
     hook.handleEvent("hakushi:peer", (payload) => {
       if (payload.canvas === canvas.id) canvas.receivePeer(payload);
     });
+    hook.handleEvent("hakushi:layout", (payload) => {
+      if (payload.canvas === canvas.id) void canvas.layout({ direction: payload.direction as "right" | "down" | undefined });
+    });
+    hook.handleEvent("hakushi:export", (payload) => {
+      if (payload.canvas === canvas.id) void canvas.download({ format: payload.format as "png" | "svg" | undefined, filename: payload.filename as string | undefined });
+    });
   },
 
   updated(this: HakushiHook) {

@@ -28,6 +28,10 @@ Escape nothing.
 | --- | --- |
 | Move | drag a node (and every selected node with it); the helper lines line it up with the nodes near it, and Alt drags without them; the arrow keys move the selection by one (ten with Shift, a square of the grid on a canvas that snaps) |
 | Connect | drag from a handle to a handle; or C, then the arrows, then Enter |
+| Move an end | select an edge, and drag one of its ends to another handle |
+| Group | drop a node on a group to put it in; drag it off to take it out |
+| Tidy up | ⇧L, or the button of the controls: the selection when two or more nodes are selected, else every node |
+| Download | the button of the controls: the canvas as a PNG |
 | Resize | the corners of a selected node of a `resizable` slot |
 | Delete | Delete or Backspace |
 | Copy, cut, paste | ⌘C, ⌘X, ⌘V (at the pointer, or next to what it copies) |

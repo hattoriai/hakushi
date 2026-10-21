@@ -2,24 +2,8 @@
 
 Known gaps in Hakushi, each to become an issue. None is planned yet.
 
-## Groups and frames
-
-A node inside another (`parent`), which moves with it and stays in it: a
-frame of a moodboard, a lane of a workflow, a schema of a database. A
-drop into a group makes the node its child; the group grows to hold its
-children.
-
-## Automatic layout
-
-Arrange the nodes by their edges: layered (left to right, top to bottom)
-for workflows and schemas, a tree for mind maps. In a Web Worker, as one
-`:move` change, so that it undoes. ELK is the best layered layout, under
-the EPL-2.0 licence: an optional add-on, or a layout of our own for the
-common cases.
-
 ## Edges
 
-- Moving the end of an edge to another handle (a `:reconnect` change).
 - Points of an edge of its own, which people drag.
 - Edges that take the focus, for the keyboard and screen readers.
 - An edge's label of HEEx (a `:edge_label` slot).
@@ -39,19 +23,16 @@ common cases.
 - Following a person: the view moves with theirs.
 - Presence across the pages of an app, not only one canvas.
 
-## Export
-
-The canvas as SVG and PNG, in the browser; the graph as JSON from the
-controls.
-
-## The installer
-
-`mix hakushi.install`: the hook in `app.js` and the style sheet in
-`app.css`, as the other libraries of the family have.
-
 ## Pages without LiveView
 
 `mountHakushi()` for a read-only canvas in a controller's template.
+
+## Layout
+
+- Edges routed around the nodes in their way.
+- A layout of the nodes in a group, within it.
+- A force-directed layout, for graphs that do not flow (a mind map, a
+  network).
 
 ## Together with the family
 

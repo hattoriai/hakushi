@@ -68,6 +68,14 @@ def change(%Hakushi.Change{op: :connect, edges: [edge]}, %{graph: graph}) do
 end
 ```
 
+## Moving an end
+
+A selected edge shows its two ends: drag one to another handle (or
+node), and the edge goes there, by the same rules as a new edge, which
+the handles it may end on show. The edge keeps its id, its label and its
+data. On the server it is a `:reconnect` change, which the rules check
+with the edge's new ends and `on_change` sees; ⌘Z puts it back.
+
 ## Selecting and deleting
 
 A click on an edge or its label selects it; Shift adds it. Delete

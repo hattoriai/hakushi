@@ -56,14 +56,25 @@ edge means in `on_change`. The rules of the graph (`loops`,
 * The room is registered with `:global`; in a split cluster, each side
   may start its own.
 
+## Export
+
+An image of the canvas is the page's HTML in an SVG. The browser draws it
+without what it may not read: a style sheet or a font of another origin
+(a font from a CDN falls back to the next font of the stack), and an
+image of another origin, which Chromium draws but Safari and Firefox may
+not put in a PNG; the download is then the SVG. A PNG has at most 16,384
+pixels a side: a larger canvas is drawn at a smaller scale.
+
+## Layout
+
+The tidy up is a layered layout, for graphs that flow (workflows,
+schemas, trees). It does not route edges around nodes, and it lays out a
+group as one box without arranging what is in it.
+
 ## Not yet
 
-* Groups: nodes inside a node, which move with it.
-* Automatic layout.
-* An edge's points of your own, and an edge moved to another handle by
-  dragging its end.
+* An edge's points of your own, which people drag.
 * Edges that take the focus.
-* An export of the canvas as an image.
 * Pages without LiveView.
 
 See the [backlog](https://github.com/hattoriai/hakushi/blob/main/BACKLOG.md).

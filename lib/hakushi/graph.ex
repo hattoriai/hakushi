@@ -32,7 +32,7 @@ defmodule Hakushi.Graph do
         }
 
   @typedoc "Why a change does not apply."
-  @type reason :: :missing | :exists | :locked | :dangling
+  @type reason :: :missing | :exists | :locked | :dangling | :nested
 
   @doc """
   Makes a graph of `nodes` and `edges`: `Hakushi.Node`s and
@@ -106,15 +106,20 @@ defmodule Hakushi.Graph do
   Applies a change. Gives back the graph, the change as it applied, and
   the change that undoes it:
 
-    * a delete lists the edges of its nodes too, which go with them;
+    * a move of a node moves the nodes in it (`parent`) too, unless the
+      change places them itself, and a move may put a node in a group or
+      take it out (`:parent`); the change lists every node it moved;
+    * a delete lists the nodes in its nodes, and the edges of all of
+      them, which go with them;
     * the change that undoes a delete adds the nodes back, with their
       edges (over the other nodes, as new nodes are).
 
   A change does not apply, and nothing changes, when it names a node or an
   edge that the graph does not have (`:missing`), adds one it has
   (`:exists`), moves, resizes or deletes a locked node (`:locked`), or
-  adds an edge to a node it does not have (`:dangling`). The error has the
-  id.
+  adds an edge to a node it does not have, or a node to a parent it does
+  not have (`:dangling`), or puts a node in itself or in a node inside it
+  (`:nested`). The error has the id.
   """
   @spec apply(t(), Change.t()) ::
           {:ok, t(), Change.t(), Change.t()} | {:error, reason(), String.t()}
@@ -137,24 +142,34 @@ defmodule Hakushi.Graph do
   end
 
   def apply(%__MODULE__{} = graph, %Change{op: :move, nodes: places} = change) do
-    Enum.reduce_while(places, {:ok, graph, []}, fn place, {:ok, graph, undo} ->
-      id = place.id
+    named = MapSet.new(places, & &1.id)
 
-      case Map.fetch(graph.nodes, id) do
-        :error ->
-          {:halt, {:error, :missing, id}}
+    Enum.reduce_while(places, {:ok, graph, [], []}, fn place, {:ok, graph, done, undo} ->
+      case move(graph, place, named) do
+        {:ok, graph, moved, old} -> {:cont, {:ok, graph, moved ++ done, old ++ undo}}
+        error -> {:halt, error}
+      end
+    end)
+    |> case do
+      {:ok, graph, done, undo} ->
+        {:ok, graph, %{change | nodes: Enum.reverse(done)},
+         %Change{op: :move, nodes: Enum.reverse(undo), by: change.by}}
 
-        {:ok, %Node{locked: true}} ->
-          {:halt, {:error, :locked, id}}
+      error ->
+        error
+    end
+  end
 
-        {:ok, node} ->
-          {moved, old} = place(node, place)
-          {:cont, {:ok, %{graph | nodes: Map.put(graph.nodes, id, moved)}, [old | undo]}}
+  def apply(%__MODULE__{} = graph, %Change{op: :reconnect, edges: ends} = change) do
+    Enum.reduce_while(ends, {:ok, graph, []}, fn ends, {:ok, graph, undo} ->
+      case reconnect(graph, ends) do
+        {:ok, graph, old} -> {:cont, {:ok, graph, [old | undo]}}
+        error -> {:halt, error}
       end
     end)
     |> case do
       {:ok, graph, undo} ->
-        {:ok, graph, change, %Change{op: :move, nodes: Enum.reverse(undo), by: change.by}}
+        {:ok, graph, change, %Change{op: :reconnect, edges: Enum.reverse(undo), by: change.by}}
 
       error ->
         error
@@ -177,6 +192,7 @@ defmodule Hakushi.Graph do
 
     with :ok <- all_present(graph.nodes, node_ids),
          :ok <- all_present(graph.edges, edge_ids),
+         node_ids = with_descendants(graph, node_ids),
          :ok <- none_locked(graph, node_ids) do
       gone = MapSet.new(node_ids)
 
@@ -210,25 +226,150 @@ defmodule Hakushi.Graph do
         by: change.by
       }
 
-      {:ok, applied, %{change | edges: edge_ids}, inverse}
+      {:ok, applied, %{change | nodes: node_ids, edges: edge_ids}, inverse}
     end
   end
 
-  # A node at its new place (and size), and its old place for the undo.
-  defp place(node, %{width: width, height: height} = place) do
-    {%{node | x: place.x, y: place.y, width: width, height: height},
-     %{id: node.id, x: node.x, y: node.y, width: node.width, height: node.height}}
+  # A node to its place (and size, and parent), with the nodes in it when it
+  # moves and the change does not place them: the places it gave, and the
+  # old ones for the undo.
+  defp move(graph, place, named) do
+    id = place.id
+
+    with {:ok, node} <- fetch_node(graph, id),
+         :ok <- unlocked(node),
+         :ok <- parent_ok(graph, id, Map.get(place, :parent, node.parent)) do
+      {moved, old} = place(node, place)
+      graph = %{graph | nodes: Map.put(graph.nodes, id, moved)}
+      {dx, dy} = {moved.x - node.x, moved.y - node.y}
+
+      # A resize moves the corner, not the nodes inside.
+      if Map.has_key?(place, :width) or (dx == 0 and dy == 0) do
+        {:ok, graph, [place], [old]}
+      else
+        follow(graph, id, dx, dy, named, [place], [old])
+      end
+    end
+  end
+
+  defp follow(graph, id, dx, dy, named, done, undo) do
+    graph
+    |> descendants(id)
+    |> Enum.reject(&MapSet.member?(named, &1))
+    |> Enum.reduce({:ok, graph, done, undo}, fn child, {:ok, graph, done, undo} ->
+      node = Map.fetch!(graph.nodes, child)
+      moved = %{node | x: node.x + dx, y: node.y + dy}
+
+      {:ok, %{graph | nodes: Map.put(graph.nodes, child, moved)},
+       [%{id: child, x: moved.x, y: moved.y} | done], [%{id: child, x: node.x, y: node.y} | undo]}
+    end)
   end
 
   defp place(node, place) do
-    {%{node | x: place.x, y: place.y}, %{id: node.id, x: node.x, y: node.y}}
+    moved = %{node | x: place.x, y: place.y}
+    old = %{id: node.id, x: node.x, y: node.y}
+
+    {moved, old} =
+      case place do
+        %{width: width, height: height} ->
+          {%{moved | width: width, height: height},
+           Map.merge(old, %{width: node.width, height: node.height})}
+
+        _place ->
+          {moved, old}
+      end
+
+    case place do
+      %{parent: parent} -> {%{moved | parent: parent}, Map.put(old, :parent, node.parent)}
+      _place -> {moved, old}
+    end
   end
+
+  defp fetch_node(graph, id) do
+    case Map.fetch(graph.nodes, id) do
+      {:ok, node} -> {:ok, node}
+      :error -> {:error, :missing, id}
+    end
+  end
+
+  defp unlocked(%Node{locked: true, id: id}), do: {:error, :locked, id}
+  defp unlocked(_node), do: :ok
+
+  # A parent the graph has, which is neither the node nor inside it.
+  defp parent_ok(_graph, _id, nil), do: :ok
+
+  defp parent_ok(graph, id, parent) do
+    cond do
+      not Map.has_key?(graph.nodes, parent) -> {:error, :dangling, parent}
+      parent == id or parent in descendants(graph, id) -> {:error, :nested, parent}
+      true -> :ok
+    end
+  end
+
+  defp reconnect(graph, %{id: id} = ends) do
+    with {:ok, edge} <- fetch_edge(graph, id),
+         :ok <- present_node(graph, Map.get(ends, :source, edge.source)),
+         :ok <- present_node(graph, Map.get(ends, :target, edge.target)) do
+      fields = [:source, :source_handle, :target, :target_handle]
+      changes = Map.take(ends, fields)
+      old = Map.put(Map.take(edge, Map.keys(changes)), :id, id)
+      {:ok, %{graph | edges: Map.put(graph.edges, id, struct!(edge, changes))}, old}
+    end
+  end
+
+  defp fetch_edge(graph, id) do
+    case Map.fetch(graph.edges, id) do
+      {:ok, edge} -> {:ok, edge}
+      :error -> {:error, :missing, id}
+    end
+  end
+
+  defp present_node(graph, id),
+    do: if(Map.has_key?(graph.nodes, id), do: :ok, else: {:error, :dangling, id})
+
+  @doc "The ids of the nodes in a node (its children), in the order they are drawn."
+  @spec children(t(), Node.id()) :: [Node.id()]
+  def children(%__MODULE__{} = graph, id),
+    do: Enum.filter(graph.node_order, &(Map.fetch!(graph.nodes, &1).parent == id))
+
+  @doc """
+  The ids of the nodes in a node, and in those, all the way down, in the
+  order they are drawn.
+  """
+  @spec descendants(t(), Node.id()) :: [Node.id()]
+  def descendants(%__MODULE__{} = graph, id) do
+    by_parent = Enum.group_by(Map.values(graph.nodes), & &1.parent, & &1.id)
+    all = MapSet.new(collect(Map.get(by_parent, id, []), by_parent, []))
+    Enum.filter(graph.node_order, &MapSet.member?(all, &1))
+  end
+
+  defp collect([], _by_parent, acc), do: Enum.reverse(acc)
+
+  defp collect([id | rest], by_parent, acc),
+    do: collect(Map.get(by_parent, id, []) ++ rest, by_parent, [id | acc])
+
+  # The nodes, and the nodes in them, each once, in the graph's order.
+  defp with_descendants(graph, ids) do
+    by_parent = Enum.group_by(Map.values(graph.nodes), & &1.parent, & &1.id)
+    all = ids |> collect_all(by_parent) |> MapSet.new()
+    Enum.filter(graph.node_order, &MapSet.member?(all, &1))
+  end
+
+  defp collect_all(ids, by_parent),
+    do: ids ++ collect(Enum.flat_map(ids, &Map.get(by_parent, &1, [])), by_parent, [])
 
   # Nodes, then edges, each checked against the graph as it grows.
   defp put_all(graph, nodes, edges) do
-    with {:ok, graph} <- reduce_ok(nodes, graph, &put_node/2) do
+    with {:ok, graph} <- reduce_ok(nodes, graph, &put_node/2),
+         {:ok, graph} <- reduce_ok(nodes, graph, &check_parent/2) do
       reduce_ok(edges, graph, &put_edge/2)
     end
+  end
+
+  defp check_parent(%Node{parent: nil}, graph), do: {:ok, graph}
+
+  defp check_parent(%Node{id: id, parent: parent}, graph) do
+    with :ok <- parent_ok(graph, id, parent), do: {:ok, graph}
   end
 
   defp reduce_ok(list, acc, fun) do
@@ -333,7 +474,7 @@ defmodule Hakushi.Graph do
         Enum.map(nodes(graph), fn node ->
           node
           |> Map.from_struct()
-          |> Map.reject(fn {k, v} -> k in [:width, :height] and is_nil(v) end)
+          |> Map.reject(fn {k, v} -> k in [:width, :height, :parent] and is_nil(v) end)
           |> stringify()
         end),
       "edges" =>

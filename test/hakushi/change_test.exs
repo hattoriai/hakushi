@@ -26,6 +26,30 @@ defmodule Hakushi.ChangeTest do
     assert {:ok, %Change{op: :delete, nodes: ["a"], edges: []}} =
              Change.from_client(%{"op" => "delete", "nodes" => ["a", "a"]})
 
+    assert {:ok, %Change{op: :move, nodes: [%{id: "a", parent: "g"}]}} =
+             Change.from_client(%{
+               "op" => "move",
+               "nodes" => [%{"id" => "a", "x" => 1, "y" => 2, "parent" => "g"}]
+             })
+
+    assert {:ok, %Change{op: :move, nodes: [%{id: "a", parent: nil}]}} =
+             Change.from_client(%{
+               "op" => "move",
+               "nodes" => [%{"id" => "a", "x" => 1, "y" => 2, "parent" => nil}]
+             })
+
+    assert {:ok,
+            %Change{
+              op: :reconnect,
+              edges: [%{id: "e", source: "a", target: "c", target_handle: "in"}]
+            }} =
+             Change.from_client(%{
+               "op" => "reconnect",
+               "edges" => [
+                 %{"id" => "e", "source" => "a", "target" => "c", "targetHandle" => "in"}
+               ]
+             })
+
     assert {:ok, %Change{op: :update, edges: [%{id: "e", label: "yes"}]}} =
              Change.from_client(%{
                "op" => "update",
@@ -41,6 +65,8 @@ defmodule Hakushi.ChangeTest do
             "nodes" => [%{"id" => "a", "x" => 1, "y" => 2, "width" => -1, "height" => 2}]
           },
           %{"op" => "move", "nodes" => []},
+          %{"op" => "move", "nodes" => [%{"id" => "a", "x" => 1, "y" => 2, "parent" => 3}]},
+          %{"op" => "reconnect", "edges" => [%{"id" => "e", "source" => "a"}]},
           %{"op" => "add", "nodes" => [%{"id" => "x"}]},
           %{"op" => "delete", "nodes" => [1]},
           %{"op" => "delete"},

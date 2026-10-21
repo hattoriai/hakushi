@@ -79,6 +79,11 @@ the middle of the side that faces the other node when the node has none.
 
 `type`, `accepts` and `max` are the handle's rules: see [Edges](edges.md).
 
+## Groups
+
+A `:node` slot with `group` draws nodes that hold others, as frames do:
+see [Groups](groups.md).
+
 ## The label
 
 Screen readers name each node by `node_label`, a function of the node:

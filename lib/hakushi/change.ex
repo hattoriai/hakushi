@@ -15,15 +15,21 @@ defmodule Hakushi.Change do
       a paste, a duplicate, an undone delete.
     * `:connect` - `edges` is a list of `Hakushi.Edge`s, drawn by a person
       from a handle to a handle.
-    * `:move` - `nodes` is a list of maps with `:id`, `:x` and `:y`, and
-      `:width` and `:height` for a node that was resized.
+    * `:move` - `nodes` is a list of maps with `:id`, `:x` and `:y`,
+      `:width` and `:height` for a node that was resized, and `:parent`
+      for a node dropped into a group (an id) or out of one (`nil`). The
+      nodes in a moved node move with it: `Hakushi.Graph.apply/2` lists
+      them.
+    * `:reconnect` - `edges` is a list of maps with `:id` and the new
+      ends (`:source`, `:source_handle`, `:target`, `:target_handle`): an
+      edge's end dragged to another handle.
     * `:update` - `nodes` is a list of maps with `:id` and the keys that
       change (`:data`, `:type`, `:locked`), `edges` a list of maps with
       `:id` and the keys that change (`:label`, `:path`, `:marker`,
       `:animated`, `:data`).
     * `:delete` - `nodes` and `edges` are lists of ids. Deleting a node
-      deletes its edges: the change that `Hakushi.Graph.apply/2` gives back
-      lists them.
+      deletes the nodes in it and the edges of all of them: the change
+      that `Hakushi.Graph.apply/2` gives back lists them.
 
   `by` is the `user` of the canvas that made it (a map with an `:id`), or
   `nil` for the app's own.
@@ -31,12 +37,12 @@ defmodule Hakushi.Change do
 
   alias Hakushi.{Edge, Node}
 
-  @ops [:add, :connect, :move, :update, :delete]
+  @ops [:add, :connect, :move, :reconnect, :update, :delete]
 
   @enforce_keys [:op]
   defstruct op: nil, nodes: [], edges: [], by: nil
 
-  @type op :: :add | :connect | :move | :update | :delete
+  @type op :: :add | :connect | :move | :reconnect | :update | :delete
 
   @type t :: %__MODULE__{
           op: op(),
@@ -64,6 +70,13 @@ defmodule Hakushi.Change do
   @doc "Moves nodes: `[{id, x, y}]` or maps with `:id`, `:x` and `:y`."
   @spec move([{Node.id(), number(), number()} | map()]) :: t()
   def move(places), do: %__MODULE__{op: :move, nodes: Enum.map(places, &place/1)}
+
+  @doc """
+  Moves the ends of edges: maps with the edge's `:id` and its new
+  `:source`, `:source_handle`, `:target` or `:target_handle`.
+  """
+  @spec reconnect([map()]) :: t()
+  def reconnect(ends), do: %__MODULE__{op: :reconnect, edges: ends}
 
   @doc """
   Changes nodes and edges: maps with an `:id` and the keys that change.
@@ -121,6 +134,25 @@ defmodule Hakushi.Change do
     if Enum.all?(edges), do: {:ok, %__MODULE__{op: :connect, edges: edges}}, else: :error
   end
 
+  def from_client(%{"op" => "reconnect", "edges" => [%{"id" => id} = ends]}) when is_binary(id) do
+    with {:ok, source} <- node_id(ends["source"]),
+         {:ok, target} <- node_id(ends["target"]) do
+      {:ok,
+       %__MODULE__{
+         op: :reconnect,
+         edges: [
+           %{
+             id: id,
+             source: source,
+             source_handle: string_or_nil(ends["sourceHandle"]),
+             target: target,
+             target_handle: string_or_nil(ends["targetHandle"])
+           }
+         ]
+       }}
+    end
+  end
+
   def from_client(%{"op" => "delete"} = params) do
     nodes = Map.get(params, "nodes", [])
     edges = Map.get(params, "edges", [])
@@ -139,23 +171,36 @@ defmodule Hakushi.Change do
 
   def from_client(_params), do: :error
 
+  defp node_id(id) when is_binary(id) and id != "", do: {:ok, id}
+  defp node_id(_id), do: :error
+
   defp ids?(list), do: is_list(list) and Enum.all?(list, &(is_binary(&1) and &1 != ""))
 
   defp client_place(%{"id" => id, "x" => x, "y" => y} = place)
        when is_binary(id) and is_number(x) and is_number(y) do
-    case {place["width"], place["height"]} do
-      {nil, nil} ->
-        %{id: id, x: x, y: y}
-
-      {w, h} when is_number(w) and is_number(h) and w > 0 and h > 0 ->
-        %{id: id, x: x, y: y, width: w, height: h}
-
-      _other ->
-        nil
-    end
+    %{id: id, x: x, y: y}
+    |> client_size(place["width"], place["height"])
+    |> client_parent(Map.fetch(place, "parent"))
   end
 
   defp client_place(_place), do: nil
+
+  defp client_size(place, nil, nil), do: place
+
+  defp client_size(place, w, h) when is_number(w) and is_number(h) and w > 0 and h > 0,
+    do: Map.merge(place, %{width: w, height: h})
+
+  defp client_size(_place, _w, _h), do: nil
+
+  # A drop into a group (its id) or out of one (nil); no key, no change.
+  defp client_parent(nil, _parent), do: nil
+  defp client_parent(place, :error), do: place
+  defp client_parent(place, {:ok, nil}), do: Map.put(place, :parent, nil)
+
+  defp client_parent(place, {:ok, parent}) when is_binary(parent) and parent != "",
+    do: Map.put(place, :parent, parent)
+
+  defp client_parent(_place, _parent), do: nil
 
   defp client_edge(%{"source" => source, "target" => target} = edge)
        when is_binary(source) and is_binary(target) do

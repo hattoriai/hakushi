@@ -29,7 +29,19 @@ The first release.
 - `on_change`, the app's check of every change, where it saves it; a
   refused change taken back in the browser, with its reason.
 - `canvas_item/1` and `new_node`: nodes dragged onto the canvas, or made
-  with a double click.
+  with a double click; in a group, when dropped on one.
+- Groups (`group` on a `:node` slot, a node's `parent`): nodes that hold
+  others, which move, copy and go with them; a drop on a group puts a node
+  in it, a drag off takes it out, in one `:move` change.
+- Edges whose ends people drag to other handles: the `:reconnect` change,
+  checked by the rules.
+- A tidy up (⇧L, the controls, `Hakushi.Live.layout/2`): a layered layout
+  of the selection or of every node, left to right or top to bottom, as one
+  change.
+- The canvas as an image: a PNG or an SVG of every node and edge (the
+  controls, `Hakushi.Live.export/2`, `exportImage()` in JavaScript).
+- `mix hakushi.install`: the hook in `app.js` and the style sheet in
+  `app.css`.
 - Shared canvases (`live`): `Hakushi.Room`, one process for each canvas
   that orders, checks and broadcasts the changes, registered with
   `:global`; people with their avatars, cursors, selections and drags.

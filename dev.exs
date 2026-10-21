@@ -260,16 +260,28 @@ defmodule HakushiDev.Seeds do
           y: 200,
           data: %{family: "Cormorant Garamond", sample: "Aa", note: "Titles · light"}
         },
-        note.(
-          "wayfinding",
+        %{
+          id: "signage",
+          type: "frame",
+          x: 800,
+          y: -20,
+          width: 260,
+          height: 380,
+          data: %{title: "Signage"}
+        },
+        "wayfinding"
+        |> note.(
           820,
           40,
           220,
           130,
           "green",
           "Wayfinding: numbers big enough to read from the quay."
-        ),
-        note.("question", 820, 220, 220, 110, "yellow", "Can the logo work stamped in brass?")
+        )
+        |> Map.put(:parent, "signage"),
+        "question"
+        |> note.(820, 220, 220, 110, "yellow", "Can the logo work stamped in brass?")
+        |> Map.put(:parent, "signage")
       ],
       edges: [
         %{source: "tide", target: "palette", label: "sets", path: "bezier"},
@@ -381,7 +393,8 @@ defmodule HakushiDev.Icons do
     "plus" => ~s(<path d="M12 5v14M5 12h14"/>),
     "check" => ~s(<path d="M20 6 9 17l-5-5"/>),
     "note" =>
-      ~s(<path d="M15.5 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8.5z"/><path d="M15 3v6h6"/>)
+      ~s(<path d="M15.5 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8.5z"/><path d="M15 3v6h6"/>),
+    "frame" => ~s(<path d="M7 3v18M17 3v18M3 7h18M3 17h18"/>)
   }
 
   attr :name, :string, required: true
@@ -508,6 +521,9 @@ defmodule HakushiDev.Layouts do
           .note[data-tone="blue"] { --tone: #cfe3f7; }
           .note[data-tone="green"] { --tone: #d3ecd0; }
           .board-title { padding: 0.25rem 0; white-space: nowrap; }
+          .frame { position: relative; width: 100%; height: 100%; border: 1.5px dashed color-mix(in oklab, var(--atelier-ink) 28%, transparent); border-radius: 14px; background: color-mix(in oklab, var(--atelier-ink) 3%, transparent); }
+          .frame span { position: absolute; top: -1.75rem; left: 0.25rem; padding: 0.125rem 0.5rem; border-radius: 6px; color: var(--atelier-muted); font-size: 0.8125rem; font-weight: 600; cursor: grab; }
+          .frame span:hover { background: color-mix(in oklab, var(--atelier-ink) 6%, transparent); color: var(--atelier-ink); }
           .board-title strong { display: block; font: 300 2.75rem/1.1 "Cormorant Garamond", Georgia, serif; letter-spacing: 0.02em; color: var(--atelier-ink); }
           .board-title span { color: var(--atelier-muted); font-size: 0.875rem; }
           .swatches, .specimen { position: relative; width: 13.5rem; padding: 0.75rem; border: 1px solid var(--atelier-line); border-radius: 10px; background: var(--atelier-card); box-shadow: 0 6px 16px -10px rgba(20, 18, 14, 0.25); }
@@ -907,6 +923,9 @@ defmodule HakushiDev.BoardLive do
     :ok
   end
 
+  def new_node("frame", {x, y}),
+    do: %{type: "frame", x: x, y: y, width: 360, height: 260, data: %{title: "A frame"}}
+
   def new_node(_item, {x, y}),
     do: %{
       type: "note",
@@ -922,7 +941,8 @@ defmodule HakushiDev.BoardLive do
     ~H"""
     <.app page={:board} me={@me} query={@query} title="Moodboard" crumb="Harbour Museum rebrand">
       <:actions>
-        <span class="hint">Double-click the paper for a note. Notes snap to the grid.</span>
+        <span class="hint">Double-click the paper for a note. Drop notes in a frame; move a frame by its name.</span>
+        <.canvas_item :if={!@readonly} for="board" item="frame" class="button"><.icon name="frame" /> Frame</.canvas_item>
         <.canvas_item :if={!@readonly} for="board" item="note" class="button"><.icon name="note" /> Note</.canvas_item>
       </:actions>
       <.canvas
@@ -942,6 +962,9 @@ defmodule HakushiDev.BoardLive do
             <.handle kind={:both} side={:right} /><.handle kind={:both} side={:left} />
             {node.data.text}
           </div>
+        </:node>
+        <:node type="frame" group resizable :let={node}>
+          <div class="frame"><span data-hakushi-drag>{node.data.title}</span></div>
         </:node>
         <:node type="title" :let={node}>
           <div class="board-title"><strong>{node.data.text}</strong><span>{node.data.sub}</span></div>

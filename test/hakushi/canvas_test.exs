@@ -99,6 +99,35 @@ defmodule Hakushi.CanvasTest do
     assert {:error, "Nothing to undo."} = undo(view, "schema")
   end
 
+  test "drops a node into another, and a delete of it takes the node in it" do
+    {view, _html} = open()
+    assert :ok = move(view, "schema", [%{id: "note", x: 10, y: 10, parent: "users"}])
+    assert %{parent: "users"} = Enum.find(nodes(view, "schema"), &(&1.id == "note"))
+
+    assert :ok = move(view, "schema", "users", {100, 100})
+    assert %{x: 110, y: 110} = Enum.find(nodes(view, "schema"), &(&1.id == "note"))
+
+    assert {:error, "A group cannot go inside itself."} =
+             move(view, "schema", [%{id: "users", x: 0, y: 0, parent: "note"}])
+
+    assert {:ok, [copy_users, copy_note]} = copy_paste(view, "schema", ["users"], {2000, 0})
+    assert %{parent: ^copy_users} = Enum.find(nodes(view, "schema"), &(&1.id == copy_note))
+  end
+
+  test "reconnects an edge with the rules" do
+    {view, _html} = open()
+    assert :ok = reconnect(view, "schema", "fk", target: "note")
+
+    assert [%{id: "fk", source: "orders", target: "note", target_handle: nil}] =
+             edges(view, "schema")
+
+    assert {:error, "A node cannot connect to itself."} =
+             reconnect(view, "schema", "fk", target: "orders")
+
+    assert :ok = undo(view, "schema")
+    assert [%{target: "users", target_handle: "id"}] = edges(view, "schema")
+  end
+
   test "labels an edge" do
     {view, _html} = open()
     assert :ok = label(view, "schema", "fk", "  belongs to ")
@@ -122,6 +151,11 @@ defmodule Hakushi.CanvasTest do
     assert %{type: "table", x: 50, y: 60} = Enum.find(nodes(view, "schema"), &(&1.id == id))
     assert {:ok, [_id]} = drop(view, "schema", nil, {0, 0})
     assert {:error, nil} = drop(view, "schema", "unknown", {0, 0})
+
+    assert {:ok, [inside]} = drop(view, "schema", nil, {5, 5}, parent: "users")
+    assert %{parent: "users"} = Enum.find(nodes(view, "schema"), &(&1.id == inside))
+    assert {:ok, [nowhere]} = drop(view, "schema", nil, {5, 5}, parent: "gone")
+    assert %{parent: nil} = Enum.find(nodes(view, "schema"), &(&1.id == nowhere))
   end
 
   test "a new graph from the LiveView, and the app's own changes" do

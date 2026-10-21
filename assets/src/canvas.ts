@@ -9,9 +9,11 @@
 // a MutationObserver reads them again and puts back what this file sets on
 // them (the place of a node being dragged, its selection, its culling).
 
-import { editable, el, interactive, isApple, numberAttr, svg } from "./dom";
+import { editable, el, interactive, isApple, numberAttr, prefersReducedMotion, svg } from "./dom";
 import { contains, edgePath, facing, fromCorners, grow, intersects, sidePoint, union } from "./geometry";
+import { exportImage, type ExportOptions } from "./export";
 import { icons } from "./icons";
+import { layered } from "./layout";
 import { Messages } from "./messages";
 import { Minimap } from "./minimap";
 import { check } from "./rules";
@@ -45,7 +47,7 @@ type Gesture =
       origin: Map<string, Point>;
       others: Rect[];
     }
-  | { kind: "box"; pointer: number; start: Point; end: Point; base: Set<string> }
+  | { kind: "box"; pointer: number; start: Point; end: Point; base: Set<string>; within: Set<string> }
   | {
       kind: "connect";
       pointer: number | null;
@@ -57,6 +59,8 @@ type Gesture =
       // Keyboard: the targets in turn, and the one chosen.
       choices?: { end: End; handle: Handle | null }[];
       index?: number;
+      // An end of an edge dragged to another handle: the edge.
+      reconnect?: string;
     }
   | { kind: "resize"; pointer: number; id: string; corner: string; start: Point; rect: Rect }
   | { kind: "pinch"; distance: number; mid: Point; view: View };
@@ -134,6 +138,7 @@ export class Canvas {
   private connected = true;
   private lastFocus: Element | null = null;
   private pendingSelect: string[] | null = null;
+  private parentsChanged = false;
   // Changes whenever a node moves, comes, goes or is selected: for the minimap.
   private layoutVersion = 0;
   private boundsVersion = -1;
@@ -243,6 +248,8 @@ export class Canvas {
       fixed: width !== null,
       locked: element.dataset.locked === "true",
       resizable: element.dataset.resizable === "true",
+      parent: element.dataset.parent || null,
+      group: element.dataset.group === "true",
       label: element.getAttribute("aria-label") || id,
       handles: old && old.el === element ? old.handles : [],
       measured: false,
@@ -250,6 +257,8 @@ export class Canvas {
     };
     this.nodes.set(id, node);
     if (!old) this.order.push(id);
+    // A node in another group: the nodes in it are deeper or shallower too.
+    if (old && (old.parent !== node.parent || old.group !== node.group)) this.parentsChanged = true;
     this.measureHandles(node);
     this.decorate(node);
     this.touchNode(id);
@@ -294,6 +303,11 @@ export class Canvas {
     }
     toggle(element, "data-ui-selected", this.selected.has(node.id));
     toggle(element, "data-ui-gone", this.gone.has(node.id));
+    // Groups under their nodes, deeper groups over shallower ones.
+    const lifted = this.gesture?.kind === "drag" && this.gesture.moved && this.gesture.origin.has(node.id);
+    // Dragged nodes over every other, groups or not, until they land.
+    const z = lifted ? String(10_000 + this.depth(node) * 3 + (node.group ? 0 : 1)) : String(this.depth(node) * 3 + (node.group ? 0 : 1) + (this.selected.has(node.id) ? 1 : 0));
+    if (element.style.zIndex !== z) element.style.zIndex = z;
     toggle(element, "data-ui-culled", this.culled.has(node.id));
     const peer = this.peerOf(node.id);
     if (peer) {
@@ -314,6 +328,49 @@ export class Canvas {
     for (const corner of ["nw", "ne", "sw", "se"]) {
       node.el.append(el("span", { class: "hakushi-resizer", "data-corner": corner, "aria-hidden": "true" }));
     }
+  }
+
+  // How many groups a node is in.
+  private depth(node: NodeModel): number {
+    let depth = 0;
+    let parent = node.parent;
+    while (parent && depth < 50) {
+      depth++;
+      parent = this.nodes.get(parent)?.parent ?? null;
+    }
+    return depth;
+  }
+
+  /** The nodes of the ids, and the nodes in them, all the way down. */
+  private withDescendants(ids: Iterable<string>): Set<string> {
+    const all = new Set(ids);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const node of this.nodes.values()) {
+        if (node.parent && all.has(node.parent) && !all.has(node.id)) {
+          all.add(node.id);
+          grew = true;
+        }
+      }
+    }
+    return all;
+  }
+
+  // The innermost group under a point, but those of `except`.
+  private groupAt(p: Point, except: Set<string>): NodeModel | null {
+    let best: NodeModel | null = null;
+    let bestDepth = -1;
+    for (const node of this.nodes.values()) {
+      if (!node.group || except.has(node.id) || this.gone.has(node.id)) continue;
+      if (!contains(this.rect(node), p)) continue;
+      const depth = this.depth(node);
+      if (depth > bestDepth) {
+        best = node;
+        bestDepth = depth;
+      }
+    }
+    return best;
   }
 
   // The place a node shows at: its own, or where a person drags it.
@@ -465,6 +522,10 @@ export class Canvas {
         this.sizes.observe(element);
         this.order = [...this.nodesEl.children].map((n) => (n as HTMLElement).dataset.id!).filter((id) => this.nodes.has(id));
       }
+    }
+    if (this.parentsChanged) {
+      this.parentsChanged = false;
+      for (const node of this.nodes.values()) this.decorate(node);
     }
     this.allDirty = true;
     this.layoutVersion++;
@@ -621,7 +682,8 @@ export class Canvas {
       view.hit.setAttribute("d", path.d);
       view.line.setAttribute("marker-end", edge.marker === "none" ? "" : `url(#${this.id}-${edge.marker}${this.selectedEdges.has(id) ? "-on" : ""})`);
       toggle(view.g, "data-ui-selected", this.selectedEdges.has(id));
-      toggle(view.g, "data-ui-gone", this.gone.has(id));
+      const g = this.gesture;
+      toggle(view.g, "data-ui-gone", this.gone.has(id) || (g?.kind === "connect" && g.reconnect === id));
       toggle(view.g, "data-animated", edge.animated);
       if (edge.label) {
         if (!view.label) {
@@ -754,6 +816,17 @@ export class Canvas {
         this.overlay.append(svg("path", { class: "hakushi-edge-pending", d: path.d, "data-ui-valid": g.target ? "true" : "false" }));
       }
     }
+    // The ends of the one selected edge, to drag to other handles.
+    if (this.selectedEdges.size === 1 && !this.config.readonly && this.gesture?.kind !== "connect") {
+      const id = [...this.selectedEdges][0];
+      const edge = this.edges.get(id);
+      const geometry = edge && this.geometry(edge);
+      if (geometry) {
+        for (const [end, p] of [["source", geometry.from], ["target", geometry.to]] as const) {
+          this.overlay.append(svg("circle", { class: "hakushi-knob", "data-edge": id, "data-end": end, cx: `${p.x}`, cy: `${p.y}`, r: `${6 / this.view.zoom}` }));
+        }
+      }
+    }
     if (this.pending) {
       const source = this.nodes.get(this.pending.source.node);
       const target = this.nodes.get(this.pending.target.node);
@@ -823,8 +896,13 @@ export class Canvas {
         button("fit", t("fit"), icons.fit, () => this.fitAll()),
       ]);
       if (!this.config.readonly) {
-        group.append(button("undo", t("undo"), icons.undo, () => this.undo()), button("redo", t("redo"), icons.redo, () => this.redo()));
+        group.append(
+          button("layout", t("layout"), icons.layout, () => this.layout()),
+          button("undo", t("undo"), icons.undo, () => this.undo()),
+          button("redo", t("redo"), icons.redo, () => this.redo()),
+        );
       }
+      if (this.config.exportable) group.append(button("export", t("export"), icons.download, () => void this.download()));
       group.addEventListener("pointerdown", (event) => event.stopPropagation());
       this.controlsEl = group;
       this.ui.append(group);
@@ -955,6 +1033,13 @@ export class Canvas {
     }
     if (event.button !== 0) return;
 
+    // The ends of the selected edge come first, over the handles they sit on.
+    const knob = this.knobAt(event);
+    if (knob && !this.config.readonly) {
+      event.preventDefault();
+      this.startReconnect(event, knob.edge, knob.end, at);
+      return;
+    }
     if (handleEl && node && !this.config.readonly && !node.locked) {
       event.preventDefault();
       this.startConnect(event, node, handleEl, at);
@@ -967,10 +1052,12 @@ export class Canvas {
       this.gesture = { kind: "resize", pointer: event.pointerId, id: node.id, corner: resizer.dataset.corner!, start: at, rect: this.rect(node) };
       return;
     }
-    if (node) {
+    const grips = node?.el.querySelectorAll("[data-hakushi-drag]");
+    const onGrip = !grips || grips.length === 0 || target.closest("[data-hakushi-drag]") !== null;
+    // Inside a group, off the part it is dragged by: the paper of the group,
+    // where a drag draws a box over its nodes.
+    if (node && !(node.group && !onGrip)) {
       if (interactive(target, node.el)) return;
-      const grips = node.el.querySelectorAll("[data-hakushi-drag]");
-      const onGrip = grips.length === 0 || target.closest("[data-hakushi-drag]") !== null;
       if (event.shiftKey || event.metaKey || event.ctrlKey) {
         this.toggleSelect(node.id);
       } else if (!this.selected.has(node.id)) {
@@ -1006,8 +1093,11 @@ export class Canvas {
     }
     const base = event.shiftKey ? new Set(this.selected) : new Set<string>();
     if (!event.shiftKey) this.select([]);
+    // A box drawn in a group selects in it: not the group, nor those around it.
+    const within = new Set<string>();
+    for (let g = node?.group ? node : undefined; g; g = g.parent ? this.nodes.get(g.parent) : undefined) within.add(g.id);
     this.capture(event);
-    this.gesture = { kind: "box", pointer: event.pointerId, start: at, end: at, base };
+    this.gesture = { kind: "box", pointer: event.pointerId, start: at, end: at, base, within };
   }
 
   private capture(event: PointerEvent) {
@@ -1025,8 +1115,10 @@ export class Canvas {
   }
 
   private startDrag(event: PointerEvent, primary: string, at: Point) {
-    const ids = [...this.selected].filter((id) => !this.nodes.get(id)?.locked);
-    if (!ids.includes(primary)) return;
+    const chosen = [...this.selected].filter((id) => !this.nodes.get(id)?.locked);
+    if (!chosen.includes(primary)) return;
+    // The nodes in a dragged group go with it.
+    const ids = [...this.withDescendants(chosen)].filter((id) => !this.nodes.get(id)?.locked);
     const origin = new Map(ids.map((id) => [id, { x: this.nodes.get(id)!.x, y: this.nodes.get(id)!.y }]));
     const area = grow(visible(this.view, this.size.width, this.size.height), 200 / this.view.zoom);
     const others: Rect[] = [];
@@ -1037,6 +1129,37 @@ export class Canvas {
     }
     this.capture(event);
     this.gesture = { kind: "drag", pointer: event.pointerId, start: at, moved: false, primary, origin, others };
+  }
+
+  // An end of the one selected edge within reach of the pointer.
+  private knobAt(event: PointerEvent): { edge: string; end: "source" | "target" } | null {
+    if (this.selectedEdges.size !== 1) return null;
+    const id = [...this.selectedEdges][0];
+    const edge = this.edges.get(id);
+    const geometry = edge && this.geometry(edge);
+    if (!geometry) return null;
+    const p = this.local(event);
+    for (const [end, at] of [["target", geometry.to], ["source", geometry.from]] as const) {
+      const screen = { x: at.x * this.view.zoom + this.view.x, y: at.y * this.view.zoom + this.view.y };
+      if (Math.hypot(screen.x - p.x, screen.y - p.y) <= 10) return { edge: id, end };
+    }
+    return null;
+  }
+
+  // The end of a selected edge, dragged: the other end stays, and the
+  // edge is drawn from it as a new one would be.
+  private startReconnect(event: PointerEvent, id: string, end: "source" | "target", at: Point) {
+    const edge = this.edges.get(id);
+    if (!edge) return;
+    const fixed = end === "target" ? { node: edge.source, handle: edge.sourceHandle } : { node: edge.target, handle: edge.targetHandle };
+    const fixedNode = this.nodes.get(fixed.node);
+    if (!fixedNode) return;
+    const fixedHandle = this.handleOf(fixedNode, fixed.handle, end === "target" ? "source" : "target");
+    this.capture(event);
+    this.gesture = { kind: "connect", pointer: event.pointerId, from: fixed, fromHandle: fixedHandle, reverse: end === "source", at, target: null, reconnect: id };
+    this.dirty.add(id);
+    this.markTargets();
+    this.schedule();
   }
 
   private startConnect(event: PointerEvent, node: NodeModel, handleEl: HTMLElement, at: Point) {
@@ -1081,7 +1204,7 @@ export class Canvas {
         g.end = at;
         const box = fromCorners(g.start, g.end);
         const ids = new Set(g.base);
-        for (const node of this.nodes.values()) if (intersects(box, this.rect(node))) ids.add(node.id);
+        for (const node of this.nodes.values()) if (!g.within.has(node.id) && intersects(box, this.rect(node))) ids.add(node.id);
         this.setSelection(ids);
         const tl = { x: box.x * this.view.zoom + this.view.x, y: box.y * this.view.zoom + this.view.y };
         Object.assign(this.boxEl.style, { left: `${tl.x}px`, top: `${tl.y}px`, width: `${box.width * this.view.zoom}px`, height: `${box.height * this.view.zoom}px` });
@@ -1093,7 +1216,13 @@ export class Canvas {
         let dx = at.x - g.start.x;
         let dy = at.y - g.start.y;
         if (!g.moved && Math.hypot(dx, dy) * this.view.zoom < CLICK_SLOP) return;
-        g.moved = true;
+        if (!g.moved) {
+          g.moved = true;
+          for (const id of g.origin.keys()) {
+            const n = this.nodes.get(id);
+            if (n) this.decorate(n);
+          }
+        }
         this.root.setAttribute("data-ui-dragging", "");
         const primary = this.nodes.get(g.primary)!;
         const origin = g.origin.get(g.primary)!;
@@ -1116,6 +1245,7 @@ export class Canvas {
           node.el.style.translate = `${node.x}px ${node.y}px`;
           this.touchNode(id);
         }
+        this.markDropTarget(g);
         this.sendPeer();
         this.schedule();
         return;
@@ -1176,7 +1306,12 @@ export class Canvas {
         break;
       case "drag":
         this.guides = [];
-        if (g.moved && !cancelled) this.commitMove(g.origin);
+        for (const id of g.origin.keys()) {
+          const n = this.nodes.get(id);
+          if (n) this.decorate(n);
+        }
+        this.root.querySelectorAll("[data-ui-drop-target]").forEach((e) => e.removeAttribute("data-ui-drop-target"));
+        if (g.moved && !cancelled) this.commitMove(g.origin, this.dropParents(g.origin));
         else if (g.moved) this.revert(g.origin);
         else if (!event.shiftKey && !event.metaKey && !event.ctrlKey) this.select([g.primary]);
         break;
@@ -1192,6 +1327,7 @@ export class Canvas {
       }
       case "connect":
         this.unmarkTargets();
+        if (g.reconnect) this.dirty.add(g.reconnect);
         if (!cancelled && g.target) this.commitConnect(g);
         break;
     }
@@ -1204,7 +1340,10 @@ export class Canvas {
     if (!g) return;
     this.gesture = null;
     if (g.kind === "drag" && g.moved) this.revert(g.origin);
-    if (g.kind === "connect") this.unmarkTargets();
+    if (g.kind === "connect") {
+      this.unmarkTargets();
+      if (g.reconnect) this.dirty.add(g.reconnect);
+    }
     if (g.kind === "box") this.boxEl.hidden = true;
     if (g.kind === "resize") {
       const node = this.nodes.get(g.id);
@@ -1241,7 +1380,11 @@ export class Canvas {
       this.editLabel(edgeId);
       return;
     }
-    if (target.closest(".hakushi-node, .hakushi-controls, .hakushi-minimap") || this.config.readonly || !this.config.newNode) return;
+    const nodeEl = target.closest<HTMLElement>(".hakushi-node");
+    const group = nodeEl && this.nodes.get(nodeEl.dataset.id || "")?.group;
+    // On the paper, or on a group's inside.
+    if ((nodeEl && (!group || interactive(target, nodeEl) || target.closest("[data-hakushi-drag]"))) || target.closest(".hakushi-controls, .hakushi-minimap")) return;
+    if (this.config.readonly || !this.config.newNode) return;
     const at = this.canvasPoint(event);
     this.drop(null, this.config.snap ? { x: snapToGrid(at.x, this.config.grid), y: snapToGrid(at.y, this.config.grid) } : at);
   }
@@ -1252,6 +1395,7 @@ export class Canvas {
   private validTargets(g: Extract<Gesture, { kind: "connect" }>): { end: End; handle: Handle | null }[] {
     const out: { end: End; handle: Handle | null }[] = [];
     const want = g.reverse ? "source" : "target";
+    const edges = g.reconnect ? [...this.edges.values()].filter((e) => e.id !== g.reconnect) : [...this.edges.values()];
     for (const node of this.nodes.values()) {
       if (this.gone.has(node.id)) continue;
       const handles = node.handles.filter((h) => h.kind === "both" || h.kind === want);
@@ -1259,8 +1403,8 @@ export class Canvas {
       for (const handle of candidates) {
         const end = { node: node.id, handle: handle?.id ?? null };
         const ok = g.reverse
-          ? check(this.config.rules, this.edges.values(), end, handle, g.from, g.fromHandle)
-          : check(this.config.rules, this.edges.values(), g.from, g.fromHandle, end, handle);
+          ? check(this.config.rules, edges, end, handle, g.from, g.fromHandle)
+          : check(this.config.rules, edges, g.from, g.fromHandle, end, handle);
         if (ok === null) out.push({ end, handle });
       }
     }
@@ -1315,6 +1459,14 @@ export class Canvas {
     if (!g.target) return;
     const source = g.reverse ? g.target.end : g.from;
     const target = g.reverse ? g.from : g.target.end;
+    if (g.reconnect) {
+      const id = g.reconnect;
+      this.push("hakushi:change", { op: "reconnect", edges: [{ id, source: source.node, sourceHandle: source.handle, target: target.node, targetHandle: target.handle }] }, () => {
+        this.dirty.add(id);
+        this.schedule();
+      });
+      return;
+    }
     this.pending = { id: "pending", source, target };
     const names = { source: this.nodes.get(source.node)?.label ?? source.node, target: this.nodes.get(target.node)?.label ?? target.node };
     this.push("hakushi:change", { op: "connect", edges: [{ source: source.node, sourceHandle: source.handle, target: target.node, targetHandle: target.handle }] }, (reply) => {
@@ -1349,16 +1501,40 @@ export class Canvas {
     if (ids.length && !ids.some((id) => this.isOnScreen(id))) this.revealNodes(ids);
   }
 
-  private commitMove(origin: Map<string, Point>) {
+  // The groups the dragged nodes land in: for each node whose group is
+  // not dragged with it, the innermost group under its middle, if that is
+  // not the group it is in.
+  private dropParents(origin: Map<string, Point>): Map<string, string | null> {
+    const parents = new Map<string, string | null>();
+    const dragged = new Set(origin.keys());
+    for (const id of dragged) {
+      const node = this.nodes.get(id);
+      if (!node || (node.parent && dragged.has(node.parent))) continue;
+      const target = this.groupAt(this.center(node), dragged);
+      const parent = target?.id ?? null;
+      if (parent !== node.parent) parents.set(id, parent);
+    }
+    return parents;
+  }
+
+  private markDropTarget(g: Extract<Gesture, { kind: "drag" }>) {
+    const primary = this.nodes.get(g.primary);
+    const target = primary && !(primary.parent && g.origin.has(primary.parent)) ? this.groupAt(this.center(primary), new Set(g.origin.keys())) : null;
+    for (const el of this.root.querySelectorAll("[data-ui-drop-target]")) if (el !== target?.el) el.removeAttribute("data-ui-drop-target");
+    if (target && target.id !== primary?.parent) target.el.setAttribute("data-ui-drop-target", "");
+    else target?.el.removeAttribute("data-ui-drop-target");
+  }
+
+  private commitMove(origin: Map<string, Point>, parents: Map<string, string | null> = new Map(), said?: string) {
     const places = [...origin.keys()].map((id) => {
       const node = this.nodes.get(id)!;
-      return { id, x: node.x, y: node.y };
+      return parents.has(id) ? { id, x: node.x, y: node.y, parent: parents.get(id) } : { id, x: node.x, y: node.y };
     });
-    if (places.every((p) => p.x === origin.get(p.id)!.x && p.y === origin.get(p.id)!.y)) return;
+    if (!parents.size && places.every((p) => p.x === origin.get(p.id)!.x && p.y === origin.get(p.id)!.y)) return;
     const name = this.nodes.get(places[0].id)?.label ?? places[0].id;
     this.push("hakushi:change", { op: "move", nodes: places }, (reply) => {
       if (reply.error) this.revert(origin);
-      else this.announce(places.length === 1 ? this.messages.t("movedOne", { name }) : this.messages.count("moved", places.length));
+      else this.announce(said ?? (places.length === 1 ? this.messages.t("movedOne", { name }) : this.messages.count("moved", places.length)));
     });
   }
 
@@ -1379,8 +1555,9 @@ export class Canvas {
     const nodes = [...this.selected].filter((id) => !this.nodes.get(id)?.locked);
     const edges = [...this.selectedEdges];
     if (!nodes.length && !edges.length) return;
-    const hide = new Set([...nodes, ...edges]);
-    for (const id of nodes) for (const e of this.byNode.get(id) ?? []) hide.add(e);
+    // The nodes in a deleted group go with it, and the edges of all.
+    const hide = new Set([...this.withDescendants(nodes), ...edges]);
+    for (const id of [...hide]) for (const e of this.byNode.get(id) ?? []) hide.add(e);
     for (const id of hide) this.gone.add(id);
     const name = nodes.length === 1 && !edges.length ? this.nodes.get(nodes[0])?.label : null;
     // The focus stays in the canvas when its node goes.
@@ -1441,7 +1618,9 @@ export class Canvas {
   drop(item: string | null, at?: Point) {
     if (this.config.readonly || !this.config.newNode) return;
     const p = at ?? toCanvas(this.view, this.size.width / 2, this.size.height / 2);
-    this.push("hakushi:drop", { item, x: round(p.x), y: round(p.y) });
+    // Dropped in a group, the new node is in it.
+    const group = this.groupAt(p, new Set());
+    this.push("hakushi:drop", { item, x: round(p.x), y: round(p.y), parent: group?.id ?? null });
   }
 
   private editLabel(id: string) {
@@ -1547,7 +1726,11 @@ export class Canvas {
     if (event.defaultPrevented) return;
     if (event.key === "Tab" || event.key.startsWith("Arrow")) this.root.setAttribute("data-ui-keyboard", "");
     const target = event.target as HTMLElement;
-    if (editable(target) || (target !== this.root && !target.classList.contains("hakushi-node") && interactive(target, this.root))) {
+    // The buttons of the controls are the canvas's: its keys work there, but
+    // Enter and Space, which press them, and Tab.
+    if (target.closest(".hakushi-controls")) {
+      if (event.key === "Enter" || event.key === " " || event.key === "Tab") return;
+    } else if (editable(target) || (target !== this.root && !target.classList.contains("hakushi-node") && interactive(target, this.root))) {
       // Escape from a field of a node goes back to the node.
       if (event.key === "Escape") {
         const node = target.closest<HTMLElement>(".hakushi-node");
@@ -1620,7 +1803,11 @@ export class Canvas {
     if (key === "-" || key === "_") return this.zoomBy(1 / 1.25);
     if (key === "!" || (event.shiftKey && event.code === "Digit1")) return this.fitAll();
     if (key === ")" || (event.shiftKey && event.code === "Digit0")) return this.zoomTo(1);
-    if ((key === "c" || key === "C") && !mod && !event.altKey) {
+    if (key === "L" && event.shiftKey && !mod) {
+      event.preventDefault();
+      return void this.layout();
+    }
+    if ((key === "c" || key === "C") && !mod && !event.altKey && !event.shiftKey) {
       event.preventDefault();
       return this.startKeyboardConnect();
     }
@@ -1699,7 +1886,7 @@ export class Canvas {
     const step = this.config.snap ? this.config.grid : shift ? 10 : 1;
     const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[key]!;
     if (!this.nudge) this.nudge = { origin: new Map(), timer: 0 };
-    for (const id of this.selected) {
+    for (const id of this.withDescendants(this.selected)) {
       const node = this.nodes.get(id);
       if (!node || node.locked) continue;
       if (!this.nudge.origin.has(id)) this.nudge.origin.set(id, { x: node.x, y: node.y });
@@ -1961,6 +2148,131 @@ export class Canvas {
   }
 
   private peerQueued = false;
+
+  // -- Layout ------------------------------------------------------------------
+
+  /**
+   * Arranges the nodes in layers along their edges (`direction`, the
+   * canvas's `layout` unless given): the selected nodes when two or more
+   * are, else every node. A group is laid out as one box, with what is in
+   * it; locked nodes stay. The nodes glide to their places, and the change
+   * is one move, which undoes at once.
+   */
+  async layout(options: { direction?: "right" | "down" } = {}): Promise<void> {
+    if (this.config.readonly || this.gesture) return;
+    const chosen = this.selected.size >= 2 ? [...this.selected] : [...this.order];
+    // The nodes laid out: those of no group among the chosen ones, so that a
+    // group moves with what is in it.
+    const set = new Set(chosen);
+    const top = (id: string): string => {
+      let node = this.nodes.get(id);
+      while (node?.parent && set.has(node.parent)) node = this.nodes.get(node.parent);
+      return node?.id ?? id;
+    };
+    const boxes = chosen
+      .map((id) => this.nodes.get(id)!)
+      .filter((n) => n && top(n.id) === n.id && !n.locked && !this.gone.has(n.id))
+      .map((n) => ({ id: n.id, width: n.width, height: n.height }));
+    if (boxes.length < 2) return;
+    const laid = new Set(boxes.map((b) => b.id));
+    const edges = [...this.edges.values()]
+      .map((e) => ({ source: top(e.source), target: top(e.target) }))
+      .filter((e) => laid.has(e.source) && laid.has(e.target));
+
+    const places = layered(boxes, edges, { direction: options.direction ?? this.config.layout ?? "right" });
+    // In place: the laid out nodes keep the top left corner they had.
+    const before = union(boxes.map((b) => this.rect(this.nodes.get(b.id)!)))!;
+    const after = union(boxes.map((b) => ({ ...places.get(b.id)!, width: b.width, height: b.height })))!;
+    const shift = { x: before.x - after.x, y: before.y - after.y };
+
+    const origin = new Map<string, Point>();
+    const target = new Map<string, Point>();
+    for (const b of boxes) {
+      const node = this.nodes.get(b.id)!;
+      const p = places.get(b.id)!;
+      const to = { x: round(p.x + shift.x), y: round(p.y + shift.y) };
+      const dx = to.x - node.x;
+      const dy = to.y - node.y;
+      for (const id of this.withDescendants([b.id])) {
+        const n = this.nodes.get(id);
+        if (!n || n.locked) continue;
+        origin.set(id, { x: n.x, y: n.y });
+        target.set(id, { x: round(n.x + dx), y: round(n.y + dy) });
+      }
+    }
+
+    await this.glide(origin, target);
+    this.commitMove(origin, new Map(), this.messages.t("laidOut", { n: boxes.length }));
+  }
+
+  // The nodes from their places to others, in a quarter of a second (at
+  // once with reduced motion).
+  private glide(origin: Map<string, Point>, target: Map<string, Point>): Promise<void> {
+    const set = (t: number) => {
+      const k = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      for (const [id, from] of origin) {
+        const node = this.nodes.get(id);
+        const to = target.get(id)!;
+        if (!node) continue;
+        node.x = t >= 1 ? to.x : from.x + (to.x - from.x) * k;
+        node.y = t >= 1 ? to.y : from.y + (to.y - from.y) * k;
+        node.el.style.translate = `${node.x}px ${node.y}px`;
+        this.touchNode(id);
+      }
+      this.schedule();
+    };
+    if (prefersReducedMotion()) {
+      set(1);
+      return Promise.resolve();
+    }
+    return new Promise((done) => {
+      const start = performance.now();
+      const step = (now: number) => {
+        const t = Math.min(1, (now - start) / 250);
+        set(t);
+        if (t < 1) requestAnimationFrame(step);
+        else done();
+      };
+      requestAnimationFrame(step);
+    });
+  }
+
+  // -- Export --------------------------------------------------------------------
+
+  /** The whole canvas as an image (a PNG, unless `format: "svg"`): every node and edge, not only those on the screen. */
+  async exportImage(options: Partial<ExportOptions> = {}): Promise<Blob> {
+    this.drawAllEdges();
+    const boxes = [...this.nodes.values()].filter((n) => !this.gone.has(n.id)).map((n) => this.rect(n));
+    for (const view of this.edgeViews.values()) boxes.push(grow(view.box, -80));
+    const box = union(boxes) ?? { x: 0, y: 0, width: 1, height: 1 };
+    return exportImage(this.root, this.world, box, options);
+  }
+
+  /** Downloads the canvas as an image, named after the canvas. */
+  async download(options: Partial<ExportOptions> = {}): Promise<void> {
+    const format = options.format ?? "png";
+    let blob: Blob;
+    try {
+      blob = await this.exportImage({ ...options, format });
+    } catch {
+      // A browser that will not draw the canvas's SVG to a PNG (a node with
+      // an image of another origin): the SVG itself.
+      blob = await this.exportImage({ ...options, format: "svg" });
+    }
+    const a = el("a", { href: URL.createObjectURL(blob), download: `${options.filename ?? this.id}.${blob.type === "image/svg+xml" ? "svg" : "png"}` });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+  }
+
+  // Every edge's path, the culled ones too, for an export.
+  private drawAllEdges() {
+    this.allDirty = true;
+    this.drawEdges(false);
+    for (const view of this.edgeViews.values()) this.showEdge(view, true);
+    this.culledView = null;
+  }
 
   destroy() {
     for (const o of this.observers) o.disconnect();

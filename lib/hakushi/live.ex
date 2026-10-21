@@ -55,6 +55,36 @@ defmodule Hakushi.Live do
     :ok
   end
 
+  @doc """
+  Tidies up the canvas `canvas` of this LiveView, as its tidy up button
+  does: its nodes in layers along their edges (`direction: :right` or
+  `:down`, the canvas's `layout` unless given). The person's browser lays
+  them out, and the new places are a change as any: checked, shared, and
+  undone with ⌘Z.
+  """
+  @spec layout(String.t(), keyword()) :: :ok
+  def layout(canvas, opts \\ []) when is_binary(canvas) do
+    payload = if dir = opts[:direction], do: %{"direction" => Atom.to_string(dir)}, else: %{}
+    send_update(Hakushi.Canvas, id: canvas, hakushi_push: {"hakushi:layout", payload})
+    :ok
+  end
+
+  @doc """
+  Downloads the canvas `canvas` of this LiveView as an image, in the
+  person's browser: `format: :png` (the default) or `:svg`, and
+  `filename` (the canvas's id unless given), without its extension.
+  """
+  @spec export(String.t(), keyword()) :: :ok
+  def export(canvas, opts \\ []) when is_binary(canvas) do
+    payload = %{
+      "format" => Atom.to_string(opts[:format] || :png),
+      "filename" => opts[:filename] || canvas
+    }
+
+    send_update(Hakushi.Canvas, id: canvas, hakushi_push: {"hakushi:export", payload})
+    :ok
+  end
+
   @doc false
   @spec ensure_mounted!(String.t()) :: :ok
   def ensure_mounted!(canvas) do

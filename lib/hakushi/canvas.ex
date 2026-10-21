@@ -65,6 +65,10 @@ defmodule Hakushi.Canvas do
   @impl true
   def update(%{hakushi: message}, socket), do: {:ok, receive_message(socket, message)}
 
+  def update(%{hakushi_push: {event, payload}}, socket) do
+    {:ok, push_event(socket, event, Map.put(payload, "canvas", socket.assigns.id))}
+  end
+
   def update(%{hakushi_change: %Change{} = change}, socket) do
     {socket, _result} = commit(socket, %{change | by: nil}, false)
     {:ok, socket}
@@ -303,7 +307,7 @@ defmodule Hakushi.Canvas do
         {:reply, %{"ok" => false}, socket}
 
       node ->
-        node = node |> with_id() |> Node.new()
+        node = node |> with_id() |> Node.new() |> in_group(socket.assigns.graph, params["parent"])
         socket |> commit(Change.add([node]), true) |> reply(%{"select" => [node.id]})
     end
   end
@@ -339,9 +343,11 @@ defmodule Hakushi.Canvas do
 
   def handle_event("hakushi:peer", _params, socket), do: {:noreply, socket}
 
-  # The nodes of the ids, with the edges between them.
+  # The nodes of the ids, and the nodes in them, with the edges between
+  # them.
   defp copy(graph, ids) do
-    ids = ids |> Enum.filter(&is_binary/1) |> Enum.take(@max_items) |> MapSet.new()
+    ids = ids |> Enum.filter(&is_binary/1) |> Enum.take(@max_items)
+    ids = MapSet.new(ids ++ Enum.flat_map(ids, &Graph.descendants(graph, &1)))
     nodes = Enum.filter(Graph.nodes(graph), &MapSet.member?(ids, &1.id))
 
     edges =
@@ -364,7 +370,13 @@ defmodule Hakushi.Canvas do
     {dx, dy} = if at, do: {elem(at, 0) - left, elem(at, 1) - top}, else: {24, 24}
     ids = Map.new(nodes, &{&1.id, new_id()})
 
-    nodes = Enum.map(nodes, &%{&1 | id: ids[&1.id], x: &1.x + dx, y: &1.y + dy, locked: false})
+    # A copy in a copied group is in the copy of the group; a copy next to
+    # its node stays in the node's group; a copy put somewhere is in none.
+    nodes =
+      Enum.map(nodes, fn node ->
+        parent = ids[node.parent] || if(at, do: nil, else: node.parent)
+        %{node | id: ids[node.id], x: node.x + dx, y: node.y + dy, locked: false, parent: parent}
+      end)
 
     edges =
       Enum.map(edges, fn edge ->
@@ -458,6 +470,13 @@ defmodule Hakushi.Canvas do
       user -> %{id: own_id(socket), name: Map.get(user, :name) || Map.get(user, "name")}
     end
   end
+
+  # A node dropped in a group is in it, unless new_node put it elsewhere.
+  defp in_group(%Node{parent: nil} = node, graph, parent) when is_binary(parent) do
+    if Graph.node(graph, parent), do: %{node | parent: parent}, else: node
+  end
+
+  defp in_group(node, _graph, _parent), do: node
 
   defp with_id(%Node{id: nil} = node), do: %{node | id: new_id()}
   defp with_id(%Node{} = node), do: node
@@ -553,7 +572,9 @@ defmodule Hakushi.Canvas do
             data-width={node.width}
             data-height={node.height}
             data-locked={node.locked && "true"}
-            data-resizable={resizable?(@node_slots, node) && "true"}
+            data-resizable={slot_flag?(@node_slots, node, :resizable) && "true"}
+            data-group={slot_flag?(@node_slots, node, :group) && "true"}
+            data-parent={node.parent}
             style={node_style(node)}
             tabindex="-1"
             role="group"
@@ -627,10 +648,10 @@ defmodule Hakushi.Canvas do
   defp slot_for(slots, node),
     do: Enum.find(slots, &(&1[:type] == node.type)) || Enum.find(slots, &is_nil(&1[:type]))
 
-  defp resizable?(slots, node) do
+  defp slot_flag?(slots, node, flag) do
     case slot_for(slots, node) do
       nil -> false
-      slot -> slot[:resizable] == true
+      slot -> slot[flag] == true
     end
   end
 
@@ -694,6 +715,8 @@ defmodule Hakushi.Canvas do
       "readonly" => assigns.readonly,
       "newNode" => assigns.new_node != nil,
       "wheel" => Atom.to_string(assigns.wheel),
+      "layout" => Atom.to_string(assigns.layout),
+      "exportable" => assigns.export,
       "live" => assigns.live != nil,
       "user" => own_id(%{assigns: assigns}),
       "messages" => assigns.messages,
