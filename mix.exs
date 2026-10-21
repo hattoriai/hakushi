@@ -113,6 +113,8 @@ defmodule Hakushi.MixProject do
         "guides/nodes.md",
         "guides/edges.md",
         "guides/groups.md",
+        "guides/kits.md",
+        "guides/embedding.md",
         "guides/layout.md",
         "guides/changes.md",
         "guides/collaboration.md",
@@ -132,6 +134,8 @@ defmodule Hakushi.MixProject do
           "guides/nodes.md",
           "guides/edges.md",
           "guides/groups.md",
+          "guides/kits.md",
+          "guides/embedding.md",
           "guides/layout.md",
           "guides/changes.md",
           "guides/collaboration.md",
@@ -147,6 +151,14 @@ defmodule Hakushi.MixProject do
       ],
       groups_for_modules: [
         Canvas: [Hakushi, Hakushi.Components, Hakushi.Canvas, Hakushi.Live, Hakushi.Messages],
+        Kits: [
+          Hakushi.Kit,
+          Hakushi.Kits.Schema,
+          Hakushi.Kits.Flow,
+          Hakushi.Kits.Notes,
+          Hakushi.Mermaid,
+          Hakushi.Icons
+        ],
         Graph: [Hakushi.Graph, Hakushi.Node, Hakushi.Edge, Hakushi.Change, Hakushi.Rules],
         Collaboration: [Hakushi.Room],
         Storage: [Hakushi.Graph.Type],
