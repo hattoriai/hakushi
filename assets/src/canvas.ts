@@ -224,6 +224,15 @@ export class Canvas {
     const pointer = (x: number, y: number) => this.pointAt(x, y);
     element[Symbol.for("issho.locator")] = locator;
     element[Symbol.for("issho.point")] = pointer;
+    const forget = () => {
+      if (element[Symbol.for("issho.locator")] === locator) delete element[Symbol.for("issho.locator")];
+      if (element[Symbol.for("issho.point")] === pointer) delete element[Symbol.for("issho.point")];
+    };
+    // A canvas that takes no part in following (follow={false}): its pointers, and no more.
+    if (this.config.follow === false) {
+      this.cleanups.push(forget);
+      return;
+    }
     const onFollowing = (event: Event) => {
       const detail = (event as CustomEvent<{ room?: string; key?: string | null }>).detail;
       if (detail?.room === this.room) this.followPerson(detail.key ?? null);
@@ -247,8 +256,7 @@ export class Canvas {
     };
     this.root.addEventListener("click", onAvatar);
     this.cleanups.push(() => {
-      if (element[Symbol.for("issho.locator")] === locator) delete element[Symbol.for("issho.locator")];
-      if (element[Symbol.for("issho.point")] === pointer) delete element[Symbol.for("issho.point")];
+      forget();
       document.removeEventListener("issho:following", onFollowing);
       for (const type of types) this.root.removeEventListener(type, ownWay, { capture: true });
       this.root.removeEventListener("click", onAvatar);
@@ -292,8 +300,41 @@ export class Canvas {
     for (const avatar of this.root.querySelectorAll<HTMLElement>(".hakushi-person[data-person]")) {
       avatar.setAttribute("aria-pressed", String(avatar.dataset.person === key));
     }
+    this.drawFollowing();
     const peer = key ? this.peers.get(key) : undefined;
     if (peer) this.showFollowed(peer);
+  }
+
+  // Whom the room follows, when they are on this canvas and it shows its
+  // people (its avatars): "Following Ada", with Stop, in their colour, and
+  // a ring of it around the canvas.
+  private drawFollowing() {
+    const key = this.followKey;
+    const avatar = key ? [...this.root.querySelectorAll<HTMLElement>("[data-hakushi-people] .hakushi-person[data-person]")].find((a) => a.dataset.person === key) : undefined;
+    let line = this.ui.querySelector<HTMLElement>(":scope > .hakushi-following");
+    const ring = this.ui.querySelector<HTMLElement>(":scope > .hakushi-following-ring");
+    if (!avatar || !key) {
+      line?.remove();
+      ring?.remove();
+      this.root.removeAttribute("data-ui-following");
+      this.root.style.removeProperty("--hakushi-follow-color");
+      return;
+    }
+    const color = avatar.style.getPropertyValue("--hakushi-person").trim();
+    if (color) this.root.style.setProperty("--hakushi-follow-color", color);
+    this.root.setAttribute("data-ui-following", "");
+    if (!ring) this.ui.prepend(el("div", { class: "hakushi-following-ring", "aria-hidden": "true" }));
+    const name = avatar.title || key;
+    if (line?.dataset.followed === key && line.dataset.name === name) return;
+    line ??= this.ui.appendChild(el("p", { class: "hakushi-following", role: "status", "data-issho-follow-control": "" }));
+    line.dataset.followed = key;
+    line.dataset.name = name;
+    const text = el("span", {});
+    text.textContent = this.messages.t("following", { name });
+    const stop = el("button", { type: "button", class: "hakushi-following-stop" });
+    stop.textContent = this.messages.t("stopFollowing", {});
+    stop.addEventListener("click", () => followIn(this.room, null));
+    line.replaceChildren(text, stop);
   }
 
   // The followed person's view, when their canvas shares it (a person's);
@@ -1191,7 +1232,7 @@ export class Canvas {
   private pointerDown(event: PointerEvent) {
     const target = event.target as Element;
     this.root.removeAttribute("data-ui-keyboard");
-    if (target.closest(".hakushi-controls, .hakushi-minimap, .hakushi-edge-input, [data-hakushi-people]")) return;
+    if (target.closest(".hakushi-controls, .hakushi-minimap, .hakushi-edge-input, [data-hakushi-people], .hakushi-following")) return;
     this.bounds = this.root.getBoundingClientRect();
     this.pointers.set(event.pointerId, this.local(event));
 
@@ -1572,7 +1613,7 @@ export class Canvas {
     const nodeEl = target.closest<HTMLElement>(".hakushi-node");
     const group = nodeEl && this.nodes.get(nodeEl.dataset.id || "")?.group;
     // On the paper, or on a group's inside.
-    if ((nodeEl && (!group || interactive(target, nodeEl) || target.closest("[data-hakushi-drag]"))) || target.closest(".hakushi-controls, .hakushi-minimap, [data-hakushi-people]")) return;
+    if ((nodeEl && (!group || interactive(target, nodeEl) || target.closest("[data-hakushi-drag]"))) || target.closest(".hakushi-controls, .hakushi-minimap, [data-hakushi-people], .hakushi-following")) return;
     if (this.config.readonly || !this.config.newNode) return;
     const at = this.canvasPoint(event);
     this.drop(null, this.config.snap ? { x: snapToGrid(at.x, this.config.grid), y: snapToGrid(at.y, this.config.grid) } : at);
@@ -2274,7 +2315,10 @@ export class Canvas {
     peer.dragging = dragging;
     peer.seen = Date.now();
     this.peers.set(id, peer);
-    if (id === this.followKey) this.showFollowed(peer);
+    if (id === this.followKey) {
+      this.showFollowed(peer);
+      this.drawFollowing();
+    }
     for (const n of new Set([...before, ...peer.selected, ...peer.dragging.keys()])) {
       const node = this.nodes.get(n);
       if (!node) continue;

@@ -67,6 +67,7 @@ defmodule Hakushi.Canvas do
        redo: [],
        clipboard: nil,
        people: [],
+       follow: true,
        notice: nil,
        notice_seq: 0,
        configured: false
@@ -683,14 +684,15 @@ defmodule Hakushi.Canvas do
         ></i>
       </div>
       <div :if={@people != []} class="hakushi-people" data-hakushi-people>
-        <button
+        <.dynamic_tag
           :for={person <- @people}
-          type="button"
+          tag_name={if @follow, do: "button", else: "span"}
+          {if @follow, do: %{type: "button"}, else: %{}}
           class="hakushi-person"
           data-person={person["id"]}
-          data-issho-follow-control
+          data-issho-follow-control={@follow}
           title={person["name"]}
-          aria-label={"Follow #{person["name"] || person["id"]}"}
+          aria-label={@follow && "Follow #{person["name"] || person["id"]}"}
           phx-mounted={JS.ignore_attributes(["aria-pressed"])}
           style={"--hakushi-person: #{person["color"]}"}
         >
@@ -700,7 +702,7 @@ defmodule Hakushi.Canvas do
             <img :if={person["avatar"]} src={person["avatar"]} alt="" />
             <span :if={!person["avatar"]}>{initials(person["name"] || person["id"])}</span>
           <% end %>
-        </button>
+        </.dynamic_tag>
       </div>
       <div
         :if={@empty_slot != [] and map_size(@graph.nodes) == 0}
@@ -843,6 +845,7 @@ defmodule Hakushi.Canvas do
       "minZoom" => assigns.min_zoom,
       "maxZoom" => assigns.max_zoom,
       "readonly" => assigns.readonly,
+      "follow" => assigns.follow,
       "newNode" => assigns.new_node != nil or assigns.kits != [],
       "wheel" => Atom.to_string(assigns.wheel),
       "refit" => assigns.refit,

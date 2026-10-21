@@ -156,6 +156,11 @@ defmodule Hakushi.Components do
     default: false,
     doc: "when `true`, people pan, zoom and select, and change nothing"
 
+  attr :follow, :boolean,
+    default: true,
+    doc:
+      "on a shared canvas: `false` for a canvas that takes no part in following, though its room's other blocks do: its avatars follow no one, it shows no one followed, and its view does not move when the room follows someone"
+
   attr :label, :string, default: nil, doc: "the name of the canvas, for screen readers"
 
   attr :node_label, :any,
@@ -219,6 +224,7 @@ defmodule Hakushi.Components do
       export={@export}
       controls={@controls}
       readonly={@readonly}
+      follow={@follow}
       label={@label}
       node_label={@node_label}
       locale={@locale || Application.get_env(:hakushi, :locale, "en")}
