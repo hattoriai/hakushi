@@ -41,29 +41,23 @@ if Code.ensure_loaded?(Issho.Tool) do
     # The agent's pointer, selection and drags, as the canvas draws a person's.
     def aware(%__MODULE__{} = canvas, state), do: Participant.aware(canvas.participant, state)
 
-    # Moves the pointer to a point, over a few frames, as a hand does.
+    # Whether the agent goes to where it works, and drags, as a hand does
+    # (`config :hakushi, Hakushi.Issho, travel: true`), or is there at once.
+    def travel?, do: Keyword.get(Application.get_env(:hakushi, Hakushi.Issho, []), :travel, true)
+
+    # As long as a browser takes to draw the way (Hakushi's GLIDE_MAX).
+    @glide 400
+
+    # Moves the pointer to a point: only where it goes is sent, each browser
+    # draws the way there, and the agent waits as long as that takes.
     def glide(%__MODULE__{} = canvas, {x, y}, extra \\ %{}) do
-      {from_x, from_y} = pointer(canvas) || {x - 80, y - 60}
-
-      for step <- 1..8 do
-        t = step / 8
-
-        aware(
-          canvas,
-          Map.put(extra, "cursor", [from_x + (x - from_x) * t, from_y + (y - from_y) * t])
-        )
-
-        Process.sleep(30)
-      end
-
-      :ok
+      with :ok <- aware(canvas, Map.put(extra, "cursor", [x, y])), do: wait()
     end
 
-    defp pointer(canvas) do
-      case Participant.awareness(canvas.participant) do
-        %{"cursor" => [x, y]} -> {x, y}
-        _ -> nil
-      end
+    # Waits for the way to be drawn, when the agent travels.
+    def wait do
+      if travel?(), do: Process.sleep(@glide)
+      :ok
     end
 
     # A point on a node, to point at it.
@@ -267,8 +261,6 @@ if Code.ensure_loaded?(Issho.Tool) do
     alias Hakushi.Change
     alias Hakushi.Issho.Tools.Canvas
 
-    @steps 12
-
     @impl true
     def call(%{node: id, x: x, y: y} = args, ctx) do
       with {:ok, canvas} <- Canvas.open(ctx, args.canvas),
@@ -283,23 +275,17 @@ if Code.ensure_loaded?(Issho.Tool) do
       end
     end
 
-    # The node goes with the pointer, frame by frame, as the canvas shows a drag.
+    # The node goes with the pointer, as the canvas shows a drag: where it
+    # lands is sent, and each browser draws it on its way there.
     defp drag(canvas, node, x, y) do
       {grab_x, grab_y} = Canvas.on(node)
 
-      for step <- 1..@steps do
-        t = step / @steps
-        {nx, ny} = {node.x + (x - node.x) * t, node.y + (y - node.y) * t}
-
-        Canvas.aware(canvas, %{
-          "cursor" => [nx + grab_x - node.x, ny + grab_y - node.y],
-          "dragging" => [[node.id, nx, ny]]
-        })
-
-        Process.sleep(40)
-      end
-
-      :ok
+      with :ok <-
+             Canvas.aware(canvas, %{
+               "cursor" => [x + grab_x - node.x, y + grab_y - node.y],
+               "dragging" => [[node.id, x, y]]
+             }),
+           do: Canvas.wait()
     end
   end
 

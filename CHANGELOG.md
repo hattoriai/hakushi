@@ -5,7 +5,20 @@ All notable changes to Hakushi are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.1] - 2026-10-21
+
+### Added
+
+- An agent's pointer travels as a hand does, in a straight line, and the
+  node it drags goes with it: only where it goes is sent (once for a
+  move, once for a drag, rather than a stream of frames), each browser
+  draws the way there, and the agent waits as long as that takes before
+  its change lands. `config :hakushi, Hakushi.Issho, travel: false` for
+  changes that land at once.
+- Others' pointers and the nodes they drag glide to each new place,
+  longer the farther they go (up to 400ms; none with reduced motion), in
+  the canvas's coordinates, so a pan or a zoom on the way keeps them
+  right; a person's pointer is smoother for it.
 
 ### Fixed
 

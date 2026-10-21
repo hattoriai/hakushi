@@ -21,8 +21,13 @@ test("an agent works on a canvas as a person does, and the person sees it", asyn
   await agent(page, "point_at", { canvas, node: "invoices", select: ["invoices"] });
   await expect(page.locator("#schema .hakushi-cursor")).toContainText("Claude Code");
 
-  // It drags a table; Ada sees it land there.
-  await agent(page, "move_node", { canvas, node: "invoices", x: 900, y: 520 });
+  // It drags a table: only where it lands is sent, and Ada's canvas draws it
+  // on its way there; then it lands.
+  const drawn = async (): Promise<number> => Number((await node(page, "invoices").evaluate((el) => (el as HTMLElement).style.translate)).split("px")[0]);
+  const from = await drawn();
+  const moving = agent(page, "move_node", { canvas, node: "invoices", x: 900, y: 520 });
+  await expect.poll(async () => { const x = await drawn(); return x > from + 5 && x < 895; }, { intervals: [15] }).toBe(true);
+  await moving;
   await expect.poll(() => place(page, "invoices")).toEqual({ x: 900, y: 520 });
 
   // It adds a table, as the canvas's other tables are.

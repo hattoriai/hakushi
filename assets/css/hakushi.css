@@ -593,11 +593,11 @@
   pointer-events: none !important;
 }
 
+/* Drawn where it is at each frame, on its way: the canvas moves it. */
 .hakushi-cursor {
   position: absolute;
   top: 0;
   left: 0;
-  transition: translate 80ms linear;
 }
 
 .hakushi-cursor::before {

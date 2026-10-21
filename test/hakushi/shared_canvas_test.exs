@@ -201,6 +201,28 @@ defmodule Hakushi.SharedCanvasTest do
     assert %{label: "Renamed"} = Enum.find(nodes(ada, "schema"), &(&1.id == "note"))
   end
 
+  test "an agent waits while the browsers draw its way, unless it does not travel" do
+    topic = topic()
+    ada = open(topic, "ada")
+    tools = Hakushi.Issho.tools()
+    agent = Context.new(HakushiTest.Issho, %{id: "assistant", name: "Assistant", kind: :agent})
+    move = %{"canvas" => "canvas:" <> topic, "node" => "note", "x" => 40, "y" => 80}
+
+    # To the node, then the drag: only where it goes is sent, each a wait.
+    {travelled, {:ok, _}} = :timer.tc(fn -> Issho.Tools.call(tools, "move_node", move, agent) end)
+    assert travelled >= 800_000
+
+    Application.put_env(:hakushi, Hakushi.Issho, travel: false)
+    on_exit(fn -> Application.delete_env(:hakushi, Hakushi.Issho) end)
+
+    {at_once, {:ok, _}} =
+      :timer.tc(fn -> Issho.Tools.call(tools, "move_node", %{move | "x" => 60}, agent) end)
+
+    assert at_once < 400_000
+    settle(ada)
+    assert %{x: 60, y: 80} = Enum.find(nodes(ada, "schema"), &(&1.id == "note"))
+  end
+
   test "an agent works on a board no one has open, which the app's policy says" do
     tools = Hakushi.Issho.tools()
     agent = Context.new(HakushiTest.Issho, %{id: "assistant", name: "Assistant", kind: :agent})

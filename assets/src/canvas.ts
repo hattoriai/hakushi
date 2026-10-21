@@ -81,7 +81,17 @@ interface Peer {
   dragging: Map<string, Point>;
   seen: number;
   el: HTMLElement | null;
+  // Where the cursor and the dragged nodes come from: each browser draws the
+  // way to where a person (an agent, a jump) said they went.
+  from: Point | null;
+  dragFrom: Map<string, Point>;
+  start: number;
+  duration: number;
 }
+
+// The way to a new place: longer the farther it goes, never longer than this.
+const GLIDE_MAX = 400;
+const ease = (t: number): number => 1 - (1 - t) ** 3;
 
 export class Canvas {
   readonly id: string;
@@ -380,13 +390,24 @@ export class Canvas {
     return best;
   }
 
-  // The place a node shows at: its own, or where a person drags it.
+  // The place a node shows at: its own, or where a person drags it (on its way there).
   private placeOf(node: NodeModel): Point {
     for (const peer of this.peers.values()) {
       const at = peer.dragging.get(node.id);
-      if (at && !(this.gesture?.kind === "drag" && this.gesture.origin.has(node.id))) return at;
+      if (at && !(this.gesture?.kind === "drag" && this.gesture.origin.has(node.id))) return this.onTheWay(peer, peer.dragFrom.get(node.id) ?? at, at);
     }
     return { x: node.x, y: node.y };
+  }
+
+  // A point on the way from one place to another, now.
+  private onTheWay(peer: Peer, from: Point, to: Point): Point {
+    const t = peer.duration > 0 ? Math.min(1, (performance.now() - peer.start) / peer.duration) : 1;
+    const e = ease(t);
+    return { x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e };
+  }
+
+  private moving(peer: Peer): boolean {
+    return peer.duration > 0 && performance.now() - peer.start < peer.duration;
   }
 
   private peerOf(id: string): { color: string; name: string; dragging: boolean } | null {
@@ -2078,12 +2099,30 @@ export class Canvas {
 
   receivePeer(payload: Record<string, unknown>) {
     const id = String(payload.person);
-    const peer = this.peers.get(id) ?? { cursor: null, selected: [], dragging: new Map(), seen: 0, el: null };
+    const peer: Peer = this.peers.get(id) ?? { cursor: null, selected: [], dragging: new Map(), seen: 0, el: null, from: null, dragFrom: new Map(), start: 0, duration: 0 };
     const cursor = payload.cursor as [number, number] | null;
+    const dragging = new Map(((payload.dragging as [string, number, number][]) ?? []).map(([n, x, y]) => [n, { x, y }]));
+    // From where the cursor and the nodes are drawn now, to where they go.
+    const here = peer.cursor && peer.from ? this.onTheWay(peer, peer.from, peer.cursor) : peer.cursor;
+    const dragFrom = new Map<string, Point>();
+    for (const [n, to] of dragging) {
+      const before = peer.dragging.get(n);
+      const node = this.nodes.get(n);
+      const from = before ? this.onTheWay(peer, peer.dragFrom.get(n) ?? before, before) : node ? { x: node.x, y: node.y } : to;
+      dragFrom.set(n, from);
+    }
     peer.cursor = cursor ? { x: cursor[0], y: cursor[1] } : null;
+    peer.from = here && peer.cursor ? here : peer.cursor;
+    peer.dragFrom = dragFrom;
+    const far = Math.max(
+      peer.from && peer.cursor ? Math.hypot(peer.cursor.x - peer.from.x, peer.cursor.y - peer.from.y) : 0,
+      ...[...dragging].map(([n, to]) => Math.hypot(to.x - dragFrom.get(n)!.x, to.y - dragFrom.get(n)!.y)),
+    ) * this.view.zoom;
+    peer.start = performance.now();
+    peer.duration = far < 1 || reducedMotion() ? 0 : Math.min(GLIDE_MAX, Math.max(60, far * 0.8));
     const before = new Set([...peer.selected, ...peer.dragging.keys()]);
     peer.selected = (payload.selected as string[]) ?? [];
-    peer.dragging = new Map(((payload.dragging as [string, number, number][]) ?? []).map(([n, x, y]) => [n, { x, y }]));
+    peer.dragging = dragging;
     peer.seen = Date.now();
     this.peers.set(id, peer);
     for (const n of [...before, ...peer.selected, ...peer.dragging.keys()]) {
@@ -2129,6 +2168,17 @@ export class Canvas {
 
   private drawPeers() {
     for (const [id, peer] of this.peers) {
+      // On their way: drawn again at the next frame, with the nodes they drag.
+      if (this.moving(peer)) {
+        for (const n of peer.dragging.keys()) {
+          const node = this.nodes.get(n);
+          if (node) {
+            this.decorate(node);
+            this.touchNode(n);
+          }
+        }
+        this.schedule();
+      }
       const person = this.people.get(id);
       if (!peer.cursor || !person) {
         if (peer.el) peer.el.hidden = true;
@@ -2140,7 +2190,8 @@ export class Canvas {
         this.cursorsEl.append(peer.el);
       }
       peer.el.hidden = false;
-      peer.el.style.translate = `${peer.cursor.x * this.view.zoom + this.view.x}px ${peer.cursor.y * this.view.zoom + this.view.y}px`;
+      const at = peer.from ? this.onTheWay(peer, peer.from, peer.cursor) : peer.cursor;
+      peer.el.style.translate = `${at.x * this.view.zoom + this.view.x}px ${at.y * this.view.zoom + this.view.y}px`;
     }
   }
 
@@ -2313,4 +2364,8 @@ function toggle(element: Element, name: string, on: boolean) {
 
 function round(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+function reducedMotion(): boolean {
+  return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
