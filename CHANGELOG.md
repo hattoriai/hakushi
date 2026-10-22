@@ -13,6 +13,23 @@ Issho's motion, and following is the room's.
 ### Changed (breaking)
 
 - Requires `{:issho, "~> 0.3"}`.
+- A shared canvas joins with `issho`, the keys of every component
+  (`Issho.Join`: `:instance`, `:document`, `:can`, `:people`, `:follow`,
+  `:on_behalf_of`, `:claims`): `<.canvas issho={[instance: MyApp.Issho,
+  document: id]}>`. `live` and `follow` are removed, and raise with what to
+  write instead; an unknown key raises. `people: false` hides the
+  canvas's avatars.
+- The canvas's own keys of a person's state (`cursor`, `selected`,
+  `viewport`, `dragging`) are under its document, in `"blocks"`; Issho
+  owns the top-level keys.
+- `on_change`'s context has `by`, who made the change: on a shared canvas
+  an `Issho.Identity` (a person, an agent with its real name and whom it
+  acts for, or the server); alone, the canvas's `user`. `user` stays, for
+  now.
+- `Hakushi.Issho.change/4` takes a change or a list, and an `:author` (a
+  key or the app's actor, `"server"` unless given, was `"app"`).
+- An agent's tools name a canvas by its document, whose room is the
+  part before the first `"/"`.
 - An agent moves with `Issho.Motion`: only when someone of the room sees
   the canvas, within a tool call's time budget (Hakushi's `travel` still
   turns it off for the canvas's agents, Issho's for every component).
@@ -33,6 +50,10 @@ Issho's motion, and following is the room's.
   several places.
 
 ### Added
+
+- A place on a canvas has a documented format, part of the API
+  (`Hakushi.Issho.Place`: a point, a node or nodes), which Issho checks
+  for the canvas's document.
 
 - Kits: a kind of canvas in a module (`Hakushi.Kit`), its nodes, how
   people make and edit them, its paper and its rules, used in one line

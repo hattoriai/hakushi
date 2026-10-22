@@ -1,11 +1,51 @@
 if Code.ensure_loaded?(Issho.Engine) do
+  defmodule Hakushi.Issho.Place do
+    @moduledoc """
+    A place on a Hakushi canvas, in the canvas's own terms (never screen
+    pixels, as each person has their own pan and zoom): where a person's
+    pointer is, where an agent goes (`Issho.Motion`), what an app keeps of
+    them. Its format is part of Hakushi's public API, and only grows.
+
+        %{"point" => [x, y]}          # a point, in the canvas's coordinates
+        %{"node" => node_id}          # a node
+        %{"nodes" => [node_id, ...]}  # nodes (the first is where it is drawn)
+
+    In the room, it is the `"at"` of a place of the canvas's document:
+    `%{"doc" => "board:42", "at" => %{"point" => [120, 80]}}`.
+    """
+    @behaviour Issho.Place
+
+    @max_ids 5_000
+
+    @impl true
+    def validate(nil), do: :ok
+
+    def validate(%{"point" => [x, y]}) when is_number(x) and is_number(y), do: :ok
+    def validate(%{"node" => id}) when is_binary(id) and byte_size(id) <= 160, do: :ok
+
+    def validate(%{"nodes" => ids}) when is_list(ids) and length(ids) <= @max_ids do
+      if Enum.all?(ids, &(is_binary(&1) and byte_size(&1) <= 160)),
+        do: :ok,
+        else: {:error, :invalid_place}
+    end
+
+    def validate(_other), do: {:error, :invalid_place}
+  end
+
   defmodule Hakushi.Issho do
     @moduledoc """
     A shared canvas on [Issho](https://hex.pm/packages/issho): the canvas's
     graph is a document of an Issho room, the canvas's LiveView is one of
     the room's sessions, and Issho is the room's people and their cursors.
 
-        <.canvas id="schema" graph={@graph} live={{MyApp.Issho, "schema:42"}} user={@current_user} />
+        <.canvas id="schema" graph={@graph} issho={[instance: MyApp.Issho, document: "schema:42"]} user={@current_user} />
+
+    `issho` takes the keys of every component (`Issho.Join`): `:instance`
+    and `:document` (required; the room is the part before the first
+    `"/"`), `:can` (`:read` for a viewer), `:people` (`false` hides the
+    canvas's avatars, on a page that lists the room's people), `:follow`
+    (`false` for a canvas that takes no part in following),
+    `:on_behalf_of` and `:claims`.
 
     The first canvas to open the room's document gives it its graph, its
     rules and its `on_change`; the others get the document as it is. Each
@@ -15,13 +55,14 @@ if Code.ensure_loaded?(Issho.Engine) do
     canvas has it open: your app's tables, which `on_change` writes, are
     the truth, and the next canvas starts from the graph you give it.
 
-    `change/3` makes your app's own change, from anywhere (a job, another
-    LiveView), on a canvas someone has open.
+    `change/4` makes your app's own change, from anywhere (a job, another
+    LiveView), on a canvas someone has open. A place on the canvas is
+    `Hakushi.Issho.Place`.
     """
 
     alias Hakushi.{Change, Commit, Graph, Rules}
 
-    defmodule Engine do
+    defmodule GraphEngine do
       @moduledoc false
       # The graph as an Issho engine: each transaction is a list of
       # Hakushi.Change structs, checked by the rules and applied in order.
@@ -55,6 +96,8 @@ if Code.ensure_loaded?(Issho.Engine) do
       end
     end
 
+    use Issho.Binding, engine: Hakushi.Issho.GraphEngine, place: Hakushi.Issho.Place
+
     @doc ~S"""
     A shared canvas's document, for your policy's `document/2`
     (`Issho.Policy`): what the room's canvas is, whoever opens it first (its
@@ -82,7 +125,7 @@ if Code.ensure_loaded?(Issho.Engine) do
     @spec spec(Graph.t(), Rules.t(), function() | nil, String.t()) :: map()
     def spec(%Graph{} = graph, %Rules{} = rules, on_change, canvas) do
       %{
-        engine: Engine,
+        engine: __MODULE__,
         initial: graph,
         opts: [rules: rules],
         store: :none,
@@ -95,23 +138,26 @@ if Code.ensure_loaded?(Issho.Engine) do
     defp hook(_rules, nil, _canvas), do: nil
 
     defp hook(rules, on_change, canvas) do
-      fn changes, %{before: before} -> ask_each(changes, before, rules, on_change, canvas) end
+      fn changes, %{before: before} = context ->
+        ask_each(changes, before, rules, on_change, {canvas, context[:by]})
+      end
     end
 
     # Each change is asked about with the graph the ones before it made.
-    defp ask_each([], _graph, _rules, _on_change, _canvas), do: :ok
+    defp ask_each([], _graph, _rules, _on_change, _who), do: :ok
 
-    defp ask_each([change | rest], graph, rules, on_change, canvas) do
-      with {:ok, result} <- ask(graph, change, rules, on_change, canvas),
-           do: ask_each(rest, result, rules, on_change, canvas)
+    defp ask_each([change | rest], graph, rules, on_change, who) do
+      with {:ok, result} <- ask(graph, change, rules, on_change, who),
+           do: ask_each(rest, result, rules, on_change, who)
     end
 
-    defp ask(graph, change, rules, on_change, canvas) do
+    defp ask(graph, change, rules, on_change, {canvas, by}) do
       with {:ok, result, applied, _inverse} <- Commit.check_and_apply(graph, change, rules),
            :ok <-
              Commit.ask(on_change, applied, %{
                graph: graph,
                result: result,
+               by: by,
                user: change.by,
                canvas: canvas
              }) do
@@ -122,23 +168,43 @@ if Code.ensure_loaded?(Issho.Engine) do
     @doc """
     Makes your app's own change on a shared canvas: the way of a person's
     (the rules, `on_change`), to everyone in the room, and not a person's to
-    undo (`by` is `nil`). Gives `:ok`, `{:error, reason}`, or
-    `{:error, :not_running}` when no canvas has the room open (then change
-    your own copy, in your database).
+    undo. `changes` is a `Hakushi.Change` or a list of them, applied
+    together. Gives `:ok`, `{:error, reason}`, or `{:error, :not_running}`
+    when no canvas has the document open (then change your own copy, in
+    your database).
+
+    Options: `:author`, who makes it: a key (`"server"`, the default) or
+    your actor (`current_user`); `on_change` gets it as `:by`, an
+    `Issho.Identity`, as everyone's.
     """
-    @spec change(atom(), String.t(), Change.t()) :: :ok | {:error, term()}
-    def change(instance, topic, %Change{} = change) do
-      case Issho.Documents.whereis(instance, topic) do
+    @spec change(atom(), String.t(), Change.t() | [Change.t()], keyword()) ::
+            :ok | {:error, term()}
+    def change(instance, document, changes, opts \\ [])
+
+    def change(instance, document, %Change{} = change, opts),
+      do: change(instance, document, [change], opts)
+
+    def change(instance, document, changes, opts) when is_list(changes) do
+      case Issho.Documents.whereis(instance, document) do
         nil ->
           {:error, :not_running}
 
         _pid ->
-          case Issho.transact(instance, topic, [%{change | by: nil}], author: "app") do
+          changes = Enum.map(changes, fn %Change{} = change -> %{change | by: nil} end)
+          author = Keyword.get(opts, :author, "server")
+
+          case Issho.transact(instance, document, changes, author: author) do
             {:ok, _receipt} -> :ok
             {:error, reason} -> {:error, reason}
           end
       end
     end
+
+    @doc false
+    # The canvas's issho option, checked (Issho.Join): Hakushi has no keys
+    # of its own.
+    @spec join!(keyword() | map()) :: Issho.Join.t()
+    def join!(issho), do: Issho.Join.new!(issho)
 
     @doc ~S"""
     Hakushi's tools for agents (`Issho.Tool`): an agent reads a shared
@@ -150,7 +216,8 @@ if Code.ensure_loaded?(Issho.Engine) do
 
         tools = Issho.Tools.room() ++ Hakushi.Issho.tools()
 
-    A tool names its canvas by its room (`live={{MyApp.Issho, "schema:42"}}`);
+    A tool names its canvas by its document (`"schema:42"`, the canvas's
+    `issho` `:document`);
     an agent works on a canvas someone has open, or on one your policy's
     `document/2` describes with `document/2`.
 

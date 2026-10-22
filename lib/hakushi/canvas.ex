@@ -34,7 +34,7 @@ defmodule Hakushi.Canvas do
     * `"hakushi:peer"`, on a shared canvas: the person's cursor, the nodes
       they selected and the nodes they drag, for the others.
 
-  On a shared canvas (`live`), the component is a session of an Issho
+  On a shared canvas (`issho`), the component is a session of an Issho
   room (`Hakushi.Issho`): its changes go to the room's document, and the
   room's events come back to it through `update/2`.
   """
@@ -45,8 +45,9 @@ defmodule Hakushi.Canvas do
 
   alias Hakushi.{Change, Commit, Graph, Kit, Messages, Node, Rules}
 
-  # Issho is optional: a canvas without `live` never calls it.
-  @compile {:no_warn_undefined, [Issho.Live, Issho.Actor, Hakushi.Issho]}
+  # Issho is optional: a canvas without `issho` never calls it.
+  @compile {:no_warn_undefined,
+            [Issho.Live, Issho.Actor, Issho.Awareness, Issho.Join, Hakushi.Issho]}
 
   # The changes of each person that undo can take back.
   @undo_limit 100
@@ -63,6 +64,9 @@ defmodule Hakushi.Canvas do
        given: nil,
        version: 0,
        shared: nil,
+       room: nil,
+       join: nil,
+       show_people: true,
        undo: [],
        redo: [],
        clipboard: nil,
@@ -125,12 +129,12 @@ defmodule Hakushi.Canvas do
       |> stream_configure(:nodes, dom_id: &node_dom_id(id, &1.id))
       |> stream_configure(:edges, dom_id: &edge_dom_id(id, &1.id))
 
-    case {socket.assigns.live, connected?(socket)} do
-      {{instance, topic}, true} ->
+    case {socket.assigns.join, connected?(socket)} do
+      {%{} = join, true} ->
         Hakushi.Live.ensure_mounted!(id)
-        share(socket, instance, topic, graph)
+        share(socket, join, graph)
 
-      {{_instance, _topic}, false} ->
+      {%{}, false} ->
         Hakushi.Live.ensure_mounted!(id)
         reset(socket, graph)
 
@@ -143,23 +147,30 @@ defmodule Hakushi.Canvas do
     raise ArgumentError, "a canvas's graph must be a Hakushi.Graph, got: #{inspect(other)}"
   end
 
-  # A shared canvas: a session of the room, and the room's document (this
-  # canvas's graph, rules and on_change if it opens it first). A canvas the
-  # room refuses shows why, and stays read-only on the graph it was given.
-  defp share(socket, instance, topic, graph) do
+  # A shared canvas: a session of the document's room, and the document
+  # (this canvas's graph, rules and on_change if it opens it first). A
+  # canvas the room refuses shows why, and stays read-only on the graph it
+  # was given.
+  defp share(socket, join, graph) do
     spec =
       Hakushi.Issho.spec(graph, socket.assigns.rules, socket.assigns.on_change, socket.assigns.id)
 
     # A read-only canvas is a viewer of the room: it shares its person's
     # cursor and changes nothing.
-    can = if socket.assigns.readonly, do: :read, else: :write
+    readonly = socket.assigns.readonly or join.can == :read
+    opts = Keyword.put(Issho.Join.grant_opts(join), :can, if(readonly, do: :read, else: :write))
+    room = join.room
 
-    with {:ok, _session} <- Issho.Live.join(instance, actor(socket), topic, can: can),
+    with {:ok, _session} <- Issho.Live.join(join.instance, actor(socket), room, opts),
          {:ok, snapshot} <-
-           Issho.Live.open(topic, topic, spec: spec, notify: {__MODULE__, socket.assigns.id}) do
+           Issho.Live.open(room, join.document,
+             spec: spec,
+             notify: {__MODULE__, socket.assigns.id}
+           ) do
       socket
-      |> assign(shared: topic, version: snapshot["revision"])
-      |> assign_people(people(topic))
+      |> assign(shared: join.document, room: room, version: snapshot["revision"])
+      |> assign(readonly: readonly)
+      |> assign_people(people(room))
       |> reset(snapshot["state"])
     else
       {:error, reason} ->
@@ -262,29 +273,21 @@ defmodule Hakushi.Canvas do
   # The others' cursors, selections and drags, as the browser draws them.
   # A person may have other sessions in the room than a canvas's (Issho's
   # pointers of a page of the room): of those, only whether their pointer
-  # is on this canvas, which that page's pointers draw.
-  defp receive_event(socket, {"aware", topic, %{"states" => states}}) do
+  # is on this canvas, which that page's pointers draw. A canvas's own keys
+  # are under its document, in the state's `blocks`.
+  defp receive_event(socket, {"aware", _room, %{"states" => states}}) do
     own = room_key(socket)
+    doc = socket.assigns.shared
 
     Enum.reduce(states, socket, fn
       {_session, %{"key" => ^own}}, socket ->
         socket
 
-      {_session, %{"key" => person, "state" => %{"selected" => _} = state}}, socket ->
-        push_event(
-          socket,
-          "hakushi:peer",
-          Map.merge(state, %{"canvas" => socket.assigns.id, "person" => person})
-        )
-
       {_session, %{"key" => person, "state" => %{} = state}}, socket ->
-        paged = match?(%{"doc" => ^topic}, state["pointer"])
-
-        push_event(socket, "hakushi:peer", %{
-          "canvas" => socket.assigns.id,
-          "person" => person,
-          "paged" => paged
-        })
+        case Issho.Awareness.block(state, doc) do
+          block when map_size(block) > 0 -> peer(socket, person, state, block)
+          _none -> paged(socket, person, state, doc)
+        end
 
       _other, socket ->
         socket
@@ -298,6 +301,30 @@ defmodule Hakushi.Canvas do
   end
 
   defp receive_event(socket, _event), do: socket
+
+  # The person's canvas state as the browser draws it: Issho's keys (their
+  # motion) and the canvas's own.
+  defp peer(socket, person, state, block) do
+    push_event(
+      socket,
+      "hakushi:peer",
+      state
+      |> Map.delete("blocks")
+      |> Map.merge(%{"selected" => [], "dragging" => []})
+      |> Map.merge(block)
+      |> Map.merge(%{"canvas" => socket.assigns.id, "person" => person})
+    )
+  end
+
+  defp paged(socket, person, state, doc) do
+    paged = match?(%{"doc" => ^doc}, state["pointer"])
+
+    push_event(socket, "hakushi:peer", %{
+      "canvas" => socket.assigns.id,
+      "person" => person,
+      "paged" => paged
+    })
+  end
 
   defp apply_changes(socket, changes) do
     Enum.reduce_while(changes, socket, fn change, socket ->
@@ -314,8 +341,8 @@ defmodule Hakushi.Canvas do
 
   # The changes came out of order (a node of a cluster that fell behind):
   # the room's graph, whole.
-  defp resync(%{assigns: %{shared: topic}} = socket) when is_binary(topic) do
-    case Issho.Live.read(topic, topic) do
+  defp resync(%{assigns: %{shared: doc, room: room}} = socket) when is_binary(doc) do
+    case Issho.Live.read(room, doc) do
       {:ok, %{"state" => graph, "revision" => revision}} ->
         socket |> assign(:version, revision) |> reset(graph)
 
@@ -445,10 +472,11 @@ defmodule Hakushi.Canvas do
 
   # Issho's awareness sends the room one frame of what changed every 50 ms,
   # whatever the browser sends.
-  def handle_event("hakushi:peer", params, %{assigns: %{shared: topic}} = socket)
-      when is_binary(topic) and is_map(params) do
-    # Merged: the LiveView's other components in the room keep their keys.
-    Issho.Live.merge(topic, peer_state(params))
+  def handle_event("hakushi:peer", params, %{assigns: %{shared: doc, room: room}} = socket)
+      when is_binary(doc) and is_map(params) do
+    # Under the canvas's document: the LiveView's other components in the
+    # room keep their keys, and Issho its own.
+    Issho.Live.merge_block(room, doc, peer_state(params))
     {:noreply, socket}
   end
 
@@ -542,13 +570,14 @@ defmodule Hakushi.Canvas do
           Commit.run(socket.assigns.graph, change, %{
             rules: socket.assigns.rules,
             on_change: socket.assigns.on_change,
-            canvas: socket.assigns.id
+            canvas: socket.assigns.id,
+            by: change.by && socket.assigns.user
           })
 
-        topic ->
+        doc ->
           with {:ok, _graph, _change, inverse} <-
                  Commit.check_and_apply(socket.assigns.graph, change, socket.assigns.rules),
-               {:ok, _receipt} <- Issho.Live.transact(topic, topic, [change]) do
+               {:ok, _receipt} <- Issho.Live.transact(socket.assigns.room, doc, [change]) do
             {:ok, inverse}
           end
       end
@@ -731,7 +760,7 @@ defmodule Hakushi.Canvas do
           data-animated={edge.animated && "true"}
         ></i>
       </div>
-      <div :if={@people != []} class="hakushi-people" data-hakushi-people>
+      <div :if={@people != [] and @show_people} class="hakushi-people" data-hakushi-people>
         <.dynamic_tag
           :for={person <- @people}
           tag_name={if @follow, do: "button", else: "span"}
@@ -899,7 +928,7 @@ defmodule Hakushi.Canvas do
       "refit" => assigns.refit,
       "layout" => Atom.to_string(assigns.layout),
       "exportable" => assigns.export,
-      "live" => assigns.live != nil,
+      "live" => assigns.join != nil,
       "user" => own_id(%{assigns: assigns}),
       "messages" => assigns.messages,
       "locale" => assigns.locale

@@ -29,7 +29,9 @@ A `Hakushi.Change` has an `op`:
 | `:update` | set an edge's label (and the app's own changes of data) | maps of `:id` and the keys that change |
 | `:delete` | pressed Delete | ids; the nodes in deleted groups are in `nodes` too, and the edges of all of them in `edges` |
 
-`by` is the person (the canvas's `user`), or `nil` for the app's own.
+A change's `by` is the person (the canvas's `user`), or `nil` for the
+app's own: it says whose undo list the change is on. Who made it, for
+your checks and your records, is `on_change`'s `by` (below).
 
 ## `on_change`
 
@@ -38,9 +40,9 @@ A `Hakushi.Change` has an `op`:
 ```
 
 ```elixir
-def change(change, %{graph: before, result: graph, user: user, canvas: _id}, flow) do
+def change(change, %{graph: before, result: graph, by: by, canvas: _id}, flow) do
   cond do
-    not can_edit?(flow, user) -> {:error, "You can look at this flow, not change it."}
+    not can_edit?(flow, by) -> {:error, "You can look at this flow, not change it."}
     change.op == :delete and "start" in change.nodes -> {:error, "A flow keeps its start."}
     true -> save_graph(flow, graph)
   end
@@ -48,7 +50,13 @@ end
 ```
 
 It gets the change, and a map with the `graph` before the change, the
-`result` after it, the `user` and the `canvas`'s id. It returns:
+`result` after it, `by`, who made it, and the `canvas`'s id. On a shared
+canvas, `by` is an `Issho.Identity`, the same in every component's
+callback: a person (`key` is your actor's, `"user:4"`), an agent (and
+whom it acts for, `on_behalf_of`) or your server (`kind: :service`, from
+`Hakushi.Issho.change/4`). On a canvas alone, it is the canvas's `user`.
+(`user`, the change's `by`, is there too, as in 0.2, and goes in a later
+version.) It returns:
 
 * `:ok`, or `{:ok, anything}`: the change happens;
 * `{:error, reason}`: it does not, and `reason` (a string) is shown;
@@ -82,7 +90,7 @@ end
 From anywhere (a job, another LiveView), for a shared canvas:
 `Hakushi.Issho.change(MyApp.Issho, topic, change)`.
 
-Or give the canvas a new `graph`: without `live`, it shows what changed
+Or give the canvas a new `graph`: without `issho`, it shows what changed
 from the graph it had.
 
 The app's changes go the same way as a person's, `on_change` included,

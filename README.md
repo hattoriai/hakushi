@@ -86,8 +86,8 @@ the schema and the workflow are shared.
 | Selection | a click, Shift or ⌘ and a click, a box on the paper, ⌘A, Escape |
 | Moving | a drag, of every selected node; helper lines that line a node up with the others (Alt to drag freely); the arrow keys, Shift for ten |
 | Changes | moves, resizes, edges, deletes (with their edges), labels, copy and paste, duplicate, items dragged from outside the canvas (`canvas_item/1`) or a double click on the paper (`new_node`); undo and redo of each person's own changes, checked again |
-| Server | `on_change` for each change, with the graph before and after it and the person; the rules (`loops`, `duplicates`, `cycles`); a refused change taken back, its reason shown; the app's own changes (`Hakushi.Live.change/2`, `Hakushi.Issho.change/3`) |
-| Shared | `live={{issho, topic}}`, on [Issho](https://github.com/hattoriai/issho): one room for each canvas (in a cluster too), your policy asked for every change, changes in one order for everyone, the people with their avatars, cursors, selections and drags in their colours |
+| Server | `on_change` for each change, with the graph before and after it and the person; the rules (`loops`, `duplicates`, `cycles`); a refused change taken back, its reason shown; the app's own changes (`Hakushi.Live.change/2`, `Hakushi.Issho.change/4`) |
+| Shared | `issho={[instance: MyApp.Issho, document: id]}`, on [Issho](https://github.com/hattoriai/issho): one room for each canvas (in a cluster too), your policy asked for every change, changes in one order for everyone, the people with their avatars, cursors, selections and drags in their colours |
 | Keyboard | Tab and Shift+Tab from node to node, Alt and an arrow to the nearest node that way, Enter into a node's fields and Escape out, C to connect with the arrows and Enter |
 | Screen readers | the canvas, its nodes and their connections, named; the moves, selections, connections and refusals said in a live region |
 | Scale | nodes and edges sent as LiveView streams: a change sends what it touches; the nodes and edges far from the screen are not laid out or painted |
@@ -185,8 +185,8 @@ graph =
 And `on_change` is where you check each change and save it:
 
 ```elixir
-def change(%Hakushi.Change{} = change, %{result: graph, user: user}, flow) do
-  if Flows.can_edit?(flow, user),
+def change(%Hakushi.Change{} = change, %{result: graph, by: by}, flow) do
+  if Flows.can_edit?(flow, by),
     do: Flows.save_graph(flow, graph),
     else: {:error, "You can look at this flow, not change it."}
 end

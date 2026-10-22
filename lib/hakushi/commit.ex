@@ -12,7 +12,8 @@ defmodule Hakushi.Commit do
   @type opts :: %{
           required(:rules) => Rules.t(),
           required(:on_change) => (Change.t(), map() -> term()) | nil,
-          required(:canvas) => String.t() | nil
+          required(:canvas) => String.t() | nil,
+          optional(:by) => term()
         }
 
   @spec run(Graph.t(), Change.t(), opts()) ::
@@ -23,6 +24,7 @@ defmodule Hakushi.Commit do
            ask(opts.on_change, change, %{
              graph: graph,
              result: result,
+             by: Map.get(opts, :by),
              user: change.by,
              canvas: opts.canvas
            }) do
