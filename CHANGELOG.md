@@ -24,6 +24,13 @@ Issho's motion, and following is the room's.
   the canvas, however theirs is panned. Alone on a page, the canvas draws
   its people's cursors itself, as before.
 - The avatars are buttons that follow someone (`data-issho-follow-control`).
+- A canvas's document is what your Issho policy says
+  (`Hakushi.Issho.document/2` in its `document/2`), whoever opens it
+  first: its page, an embed of it in a document, an agent with no
+  browser. A canvas's own `graph`, `rules` and `on_change` make the
+  document only when the policy does not say (Issho 0.3). The
+  Collaboration and In a page guides show how to share one canvas in
+  several places.
 
 ### Added
 
