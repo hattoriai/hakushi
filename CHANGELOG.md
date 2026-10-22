@@ -7,6 +7,11 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-22
+
+Agents read what a person sees of a shared canvas, and a selected node's
+edges are drawn above the nodes.
+
 ### Added
 
 - An agent reads what a person sees of a shared canvas, which the graph
@@ -250,4 +255,8 @@ The first release.
   Japanese.
 - `hakushi.css` and the Sumi theme, `hakushi-sumi.css`.
 
+[Unreleased]: https://github.com/hattoriai/hakushi/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/hattoriai/hakushi/releases/tag/v0.3.1
+[0.3.0]: https://github.com/hattoriai/hakushi/releases/tag/v0.3.0
+[0.2.0]: https://github.com/hattoriai/hakushi/releases/tag/v0.2.0
 [0.1.0]: https://github.com/hattoriai/hakushi/releases/tag/v0.1.0

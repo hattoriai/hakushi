@@ -105,7 +105,7 @@ Add `hakushi` to the deps in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:hakushi, "~> 0.2"}
+    {:hakushi, "~> 0.3"}
   ]
 end
 ```
