@@ -57,7 +57,7 @@ defmodule Hakushi.MixProject do
       {:esbuild, "~> 0.10", only: :dev, runtime: false},
       # Shared canvases (`live`): Issho is the room, its people and their
       # cursors. A canvas without `live` never needs it.
-      {:issho, github: "hattoriai/issho", branch: "main", optional: true},
+      {:issho, "~> 0.3", optional: true},
       # MCP for the development app's agents.
       {:sake, "~> 0.4", only: [:dev, :test]},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
