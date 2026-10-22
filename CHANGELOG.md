@@ -100,6 +100,9 @@ Issho's motion, and following is the room's.
 
 ### Fixed
 
+- A shared canvas that goes with its page (a navigation) throws no
+  error: it let its room go through a LiveView already gone, whose
+  promise no one awaited.
 - A canvas's box clips what is outside it, rather than hiding it: a
   focused node half out of the canvas no longer scrolls the canvas
   (`overflow: clip`).

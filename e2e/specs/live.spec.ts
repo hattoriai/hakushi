@@ -103,3 +103,17 @@ test("a canvas with follow={false}: its avatars follow no one, and it shows no o
   await ada.context().close();
   await kenji.context().close();
 });
+
+// A shared canvas lets its room go when it goes: on a navigation away its
+// LiveView is gone too, which is no error of the page.
+test("a shared canvas that goes with its page, by a navigation, throws nothing", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await openCanvas(page, "/", undefined, "&as=ada");
+  await expect(page.locator("[data-issho-doc]").first()).toBeAttached();
+  await page.evaluate(() => (window as unknown as { liveSocket: { js(): { navigate(href: string): void } } }).liveSocket.js().navigate("/board"));
+  await expect(page).toHaveURL(/\/board/);
+  await expect(page.locator("[data-phx-main].phx-connected")).toBeVisible();
+  await page.waitForTimeout(300);
+  expect(errors).toEqual([]);
+});

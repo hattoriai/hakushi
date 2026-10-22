@@ -11,7 +11,7 @@ import type { Person } from "./types";
 interface HookContext {
   el: HTMLElement;
   pushEventTo(target: string | HTMLElement, event: string, payload: object, onReply?: (reply: Record<string, unknown>, ref: number) => void): void;
-  pushEvent(event: string, payload: object): void;
+  pushEvent(event: string, payload: object, onReply?: (reply: Record<string, unknown>, ref: number) => void): void;
   handleEvent(event: string, callback: (payload: Record<string, unknown>) => void): void;
 }
 
@@ -67,8 +67,10 @@ export const Hakushi = {
     // LiveView leaves it with its last canvas there.
     const room = this.canvas?.root.dataset.isshoDoc;
     if (room && this.canvas) {
+      // A reply of no use: the LiveView may have gone with it (a navigation), and so did its rooms;
+      // without one, LiveView rejects a promise no one awaits.
       try {
-        this.pushEvent("issho:release", { room, component: this.canvas.id });
+        this.pushEvent("issho:release", { room, component: this.canvas.id }, () => {});
       } catch {
         // The LiveView went with it: so did its rooms.
       }
