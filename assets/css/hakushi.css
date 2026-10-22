@@ -229,6 +229,17 @@
   stroke-width: calc(var(--hakushi-edge-width) + 0.5px);
 }
 
+/* An edge of a selected node, above the nodes, in the colour of a
+   selection: it is seen to its own end where it goes under another node.
+   A click on it there is the node's under it. */
+.hakushi-edge[data-ui-connected] .hakushi-edge-line {
+  stroke: var(--hakushi-edge-selected);
+}
+
+.hakushi-edge[data-ui-connected] .hakushi-edge-hit {
+  pointer-events: none;
+}
+
 .hakushi-edge[data-animated] .hakushi-edge-line {
   stroke-dasharray: 6 4;
   animation: hakushi-flow 0.6s linear infinite;

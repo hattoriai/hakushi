@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { center, mod, openCanvas } from "./support";
+import { center, mod, node, openCanvas } from "./support";
 
 test("the end of a selected edge goes to another handle", async ({ page }) => {
   await openCanvas(page, "/");
@@ -25,4 +25,23 @@ test("the end of a selected edge goes to another handle", async ({ page }) => {
   await expect(page.locator(`#schema-edge-data > i[data-id="${id}"]`)).toHaveAttribute("data-target", "clients");
   await page.keyboard.press(`${await mod(page)}+z`);
   await expect(page.locator(`#schema-edge-data > i[data-id="${id}"]`)).toHaveAttribute("data-target", "people");
+});
+
+// A selected node's edges are drawn above the nodes, in the colour of a
+// selection, so that an edge that passes under another node is seen going
+// to its own end, not to that node. Others stay under the nodes.
+test("a selected node's edges are drawn above the nodes, to their own ends", async ({ page }) => {
+  await openCanvas(page, "/");
+  const mine = await page.locator('#schema-edge-data > i[data-source="tasks"]').first().getAttribute("data-id");
+  const other = await page.locator('#schema-edge-data > i:not([data-source="tasks"]):not([data-target="tasks"])').first().getAttribute("data-id");
+  const raised = (id: string | null) => page.locator(`#schema .hakushi-edges-raised .hakushi-edge[data-edge="${id}"]`);
+  await expect(raised(mine)).toHaveCount(0);
+
+  await node(page, "tasks").locator("strong").first().click();
+  await expect(raised(mine)).toHaveAttribute("data-ui-connected", "");
+  await expect(raised(other)).toHaveCount(0);
+
+  await page.keyboard.press("Escape");
+  await expect(raised(mine)).toHaveCount(0);
+  await expect(page.locator(`#schema .hakushi-edges:not(.hakushi-edges-raised) .hakushi-edge[data-edge="${mine}"]`)).toHaveCount(1);
 });

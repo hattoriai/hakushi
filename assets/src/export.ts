@@ -64,6 +64,15 @@ async function serialize(root: HTMLElement, world: HTMLElement, box: Rect, paddi
   }
   clone.querySelectorAll(".hakushi-resizer, .hakushi-overlay, .hakushi-edge-input").forEach((el) => el.remove());
   clone.querySelectorAll<SVGGElement>(".hakushi-edge").forEach((g) => (g.style.display = ""));
+  // The edges raised above the nodes (of a selection) go back under them, as they are drawn.
+  const lines = clone.querySelector(".hakushi-edges:not(.hakushi-edges-raised) .hakushi-edge-lines");
+  clone.querySelectorAll<SVGGElement>(".hakushi-edges-raised .hakushi-edge").forEach((g) => {
+    g.removeAttribute("data-ui-connected");
+    const marker = g.querySelector(".hakushi-edge-line");
+    const end = marker?.getAttribute("marker-end");
+    if (end) marker!.setAttribute("marker-end", end.replace(/-on\)$/, ")"));
+    lines?.append(g);
+  });
   clone.querySelectorAll<HTMLElement>(".hakushi-edge-label").forEach((l) => (l.style.display = ""));
 
   // The custom properties of the canvas, as they are on it: its theme.

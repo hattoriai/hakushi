@@ -743,6 +743,9 @@ defmodule Hakushi.Canvas do
             />
           </div>
         </div>
+        <%!-- The edges of the selected nodes, and a selected edge, above
+             the nodes: the whole of each, where it goes under another node. --%>
+        <svg id={@id <> "-svg-raised"} class="hakushi-edges hakushi-edges-raised" phx-update="ignore" aria-hidden="true"></svg>
         <div id={@id <> "-labels"} class="hakushi-labels" phx-update="ignore"></div>
       </div>
       <div id={@id <> "-edge-data"} phx-update="stream" hidden>

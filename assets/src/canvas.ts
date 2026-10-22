@@ -118,6 +118,9 @@ export class Canvas {
   private labelsEl: HTMLElement;
   private edgesSvg: SVGSVGElement;
   private edgesG: SVGGElement;
+  // Above the nodes: the edges of the selected nodes, a selected edge, and
+  // the overlay (the knobs of a selected edge, an edge being drawn).
+  private raisedG: SVGGElement;
   private overlay: SVGGElement;
   private ui: HTMLElement;
   private status: HTMLElement;
@@ -197,7 +200,14 @@ export class Canvas {
     this.edgesSvg.append(this.defs());
     this.edgesG = svg("g", { class: "hakushi-edge-lines" });
     this.overlay = svg("g", { class: "hakushi-overlay" });
-    this.edgesSvg.append(this.edgesG, this.overlay);
+    this.raisedG = svg("g", { class: "hakushi-edge-lines" });
+    const raisedSvg = root.querySelector<SVGSVGElement>(`#${CSS.escape(this.id)}-svg-raised`);
+    if (raisedSvg) {
+      this.edgesSvg.append(this.edgesG);
+      raisedSvg.append(this.raisedG, this.overlay);
+    } else {
+      this.edgesSvg.append(this.edgesG, this.raisedG, this.overlay);
+    }
 
     this.status = el("div", { class: "hakushi-status", role: "status", "aria-live": "polite" });
     this.boxEl = el("div", { class: "hakushi-box", hidden: "" });
@@ -932,7 +942,14 @@ export class Canvas {
         view.line.setAttribute("d", path.d);
         view.hit.setAttribute("d", path.d);
       }
-      const marker = edge.marker === "none" ? "" : `url(#${this.id}-${edge.marker}${this.selectedEdges.has(id) ? "-on" : ""})`;
+      // A selected edge, and the edges of the selected nodes, are drawn
+      // above the nodes, in the colour of a selection: where an edge passes
+      // under another node, it is seen going to its own end.
+      const raised = this.raisedEdge(edge);
+      const layer = raised ? this.raisedG : this.edgesG;
+      if (view.g.parentNode !== layer) layer.append(view.g);
+      toggle(view.g, "data-ui-connected", raised && !this.selectedEdges.has(id));
+      const marker = edge.marker === "none" ? "" : `url(#${this.id}-${edge.marker}${raised ? "-on" : ""})`;
       if (view.marker !== marker) {
         view.marker = marker;
         view.line.setAttribute("marker-end", marker);
@@ -954,13 +971,21 @@ export class Canvas {
         view.label.remove();
         view.label = null;
       }
-      if (!viewChanged) this.showEdge(view, all || intersects(view.box, area) || this.selectedEdges.has(id));
+      if (!viewChanged) this.showEdge(view, all || intersects(view.box, area) || raised);
     }
     if (viewChanged) {
-      for (const [id, view] of this.edgeViews) this.showEdge(view, all || intersects(view.box, area) || this.selectedEdges.has(id));
+      for (const [id, view] of this.edgeViews) {
+        const edge = this.edges.get(id);
+        this.showEdge(view, all || intersects(view.box, area) || (!!edge && this.raisedEdge(edge)));
+      }
     }
     this.dirty.clear();
     this.allDirty = false;
+  }
+
+  /** A selected edge, or an edge of a selected node: drawn above the nodes. */
+  private raisedEdge(edge: EdgeModel): boolean {
+    return this.selectedEdges.has(edge.id) || this.selected.has(edge.source) || this.selected.has(edge.target);
   }
 
   private showEdge(view: EdgeView, shown: boolean) {
