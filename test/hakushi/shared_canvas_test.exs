@@ -1,5 +1,5 @@
 defmodule Hakushi.SharedCanvasTest do
-  # Shared canvases (`live`): every canvas of a topic is a session of one
+  # Shared canvases (`issho`): every canvas of a document is a session of one
   # Issho room, whose document is the graph.
   use ExUnit.Case, async: true
 
@@ -116,6 +116,82 @@ defmodule Hakushi.SharedCanvasTest do
     })
   end
 
+  test "a canvas's own keys are under its document; Issho's stay Issho's" do
+    topic = topic()
+    ada = open(topic, "ada")
+    doc = "canvas:" <> topic
+    {:ok, watcher} = Issho.join_as(HakushiTest.Issho, %{id: "watcher"}, doc)
+
+    ada
+    |> element("#schema-hook")
+    |> render_hook("hakushi:peer", %{"cursor" => [1, 2], "selected" => ["note"]})
+
+    assert_receive {Issho.Participant, ^watcher, "aware", %{"states" => states}}, 1_000
+    [state] = for {_session, %{"key" => "ada", "state" => state}} <- states, do: state
+
+    assert %{"blocks" => %{^doc => %{"cursor" => [1, 2], "selected" => ["note"]}}} = state
+    refute Map.has_key?(state, "cursor")
+    refute Map.has_key?(state, "selected")
+  end
+
+  test "the app changes a canvas as someone: on_change gets them as :by" do
+    topic = topic()
+    _ada = open(topic, "ada", self())
+    doc = "canvas:" <> topic
+
+    assert :ok =
+             Hakushi.Issho.change(HakushiTest.Issho, doc, Hakushi.Change.move([{"note", 3, 4}]),
+               author: %{id: "ops", name: "Ops"}
+             )
+
+    assert_receive {:on_change, %Hakushi.Change{by: nil}, %{by: %Issho.Identity{key: "ops"}}}
+
+    assert :ok =
+             Hakushi.Issho.change(HakushiTest.Issho, doc, [Hakushi.Change.move([{"note", 5, 6}])])
+
+    assert_receive {:on_change, _change, %{by: %Issho.Identity{key: "server", kind: :service}}}
+  end
+
+  test "a canvas joins with issho, whose keys are checked; live and follow say what replaces them" do
+    canvas = fn assigns ->
+      render_component(
+        &Hakushi.Components.canvas/1,
+        [id: "c", graph: Hakushi.Graph.new()] ++ assigns
+      )
+    end
+
+    assert_raise ArgumentError, ~r/issho=/, fn -> canvas.(live: {HakushiTest.Issho, "c:1"}) end
+    assert_raise ArgumentError, ~r/follow: false/, fn -> canvas.(follow: false) end
+
+    assert_raise ArgumentError, ~r/not \[:room\]/, fn ->
+      canvas.(issho: [instance: HakushiTest.Issho, document: "c:1", room: "c:1"])
+    end
+  end
+
+  test "a canvas with people: false leaves the room's people to the page" do
+    topic = topic()
+    _ada = open(topic, "ada")
+    grace = open(topic, "grace", nil, "&people=false")
+    settle(grace)
+    refute has_element?(grace, "[data-hakushi-people]")
+
+    ken = open(topic, "ken")
+    settle(ken)
+    assert has_element?(ken, "[data-hakushi-people]")
+  end
+
+  test "a place on a canvas is a point, a node or nodes" do
+    alias Hakushi.Issho.Place
+
+    for place <- [nil, %{"point" => [1, 2.5]}, %{"node" => "a"}, %{"nodes" => ["a", "b"]}],
+        do: assert(:ok = Place.validate(place))
+
+    for place <- [%{"point" => [1]}, %{"node" => 7}, %{"nodes" => [1]}, %{"x" => 1}, "a"],
+        do: assert({:error, _} = Place.validate(place))
+
+    assert Hakushi.Issho.place() == Place
+  end
+
   test "a peer's viewport goes to the others, apart from Issho's view of the page" do
     topic = topic()
     ada = open(topic, "ada")
@@ -202,8 +278,13 @@ defmodule Hakushi.SharedCanvasTest do
     grace = open(topic, "grace")
 
     assert :ok = move(grace, "schema", "note", {40, 50})
-    assert_receive {:on_change, %Hakushi.Change{op: :move, by: %{id: "grace"}}, %{result: result}}
+
+    assert_receive {:on_change, %Hakushi.Change{op: :move, by: %{id: "grace"}},
+                    %{result: result, by: by}}
+
     assert Hakushi.Graph.node(result, "note").x == 40
+    # Who made it, as Issho says them: the same in every component's callback.
+    assert %Issho.Identity{key: "grace", name: "Grace", kind: :human} = by
     refute_received {:on_change, _, _}
 
     assert {:error, "The users table stays."} = remove(grace, "schema", nodes: ["users"])

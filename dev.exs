@@ -931,10 +931,9 @@ defmodule HakushiDev.SchemaLive do
         graph={@graph}
         on_change={&on_change(&1, &2, @room)}
         new_node={&new_node/2}
-        live={{HakushiDev.Issho, topic("schema", @room)}}
+        issho={[instance: HakushiDev.Issho, document: topic("schema", @room), follow: @follow]}
         user={@me}
         readonly={@readonly}
-        follow={@follow}
         background={:lines}
         grid={20}
         label="The tables of Atelier"
@@ -1033,7 +1032,7 @@ defmodule HakushiDev.WorkflowLive do
         graph={@graph}
         on_change={&on_change(&1, &2, @room)}
         new_node={&new_node/2}
-        live={{HakushiDev.Issho, topic("workflow", @room)}}
+        issho={[instance: HakushiDev.Issho, document: topic("workflow", @room)]}
         user={@me}
         readonly={@readonly}
         rules={[cycles: false]}

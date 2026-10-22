@@ -11,10 +11,11 @@ if Code.ensure_loaded?(Issho.Tool) do
 
     defstruct [:ctx, :participant, :canvas, :graph]
 
-    # A canvas someone has open: the first canvas to open it gives its
-    # graph, its rules and its on_change.
+    # A canvas someone has open (or one the policy describes), by its
+    # document: the first canvas to open it gives its graph, its rules and
+    # its on_change. The room is the document's.
     def open(ctx, canvas) do
-      with {:ok, participant} <- Context.join(ctx, canvas),
+      with {:ok, participant} <- Context.join(ctx, Issho.Policy.room(canvas)),
            {:ok, %{"state" => %Graph{} = graph}} <- Participant.open(participant, canvas) do
         {:ok, %__MODULE__{ctx: ctx, participant: participant, canvas: canvas, graph: graph}}
       else
@@ -30,7 +31,8 @@ if Code.ensure_loaded?(Issho.Tool) do
     end
 
     def change(%__MODULE__{} = canvas, %Change{} = change) do
-      who = %{id: Context.key(canvas.ctx), name: "agent"}
+      identity = Issho.Identity.new(canvas.ctx.actor)
+      who = %{id: identity.key, name: identity.name}
 
       case Participant.transact(canvas.participant, canvas.canvas, [%{change | by: who}]) do
         {:ok, _receipt} -> :ok
@@ -38,8 +40,10 @@ if Code.ensure_loaded?(Issho.Tool) do
       end
     end
 
-    # The agent's pointer, selection and drags, as the canvas draws a person's.
-    def aware(%__MODULE__{} = canvas, state), do: Participant.aware(canvas.participant, state)
+    # The agent's pointer, selection and drags, as the canvas draws a
+    # person's: the canvas's own keys, under its document.
+    def aware(%__MODULE__{} = canvas, state),
+      do: Participant.aware_block(canvas.participant, canvas.canvas, state)
 
     # Whether the agent goes to where it works, and drags, as a hand does
     # (`config :hakushi, Hakushi.Issho, travel: true`), or is there at once.
@@ -53,7 +57,7 @@ if Code.ensure_loaded?(Issho.Tool) do
       Issho.Motion.go(canvas.participant, %{"doc" => canvas.canvas, "at" => %{"point" => [x, y]}},
         gesture: gesture,
         travel: travel?(),
-        aware: Map.put(extra, "cursor", [x, y])
+        block: Map.put(extra, "cursor", [x, y])
       )
     end
 
@@ -122,7 +126,7 @@ if Code.ensure_loaded?(Issho.Tool) do
       """,
       annotations: [read_only: true, idempotent: true]
 
-    arg :canvas, :string, required: true, description: "The canvas's room: \"atelier:schema\""
+    arg :canvas, :string, required: true, description: "The canvas's document: \"atelier:schema\""
     arg :of, :string, description: "A person in the room, by name: what they have selected"
 
     alias Hakushi.Graph
@@ -142,10 +146,15 @@ if Code.ensure_loaded?(Issho.Tool) do
     defp selected(read, _canvas, nil), do: {:ok, read}
 
     # A person's selection and pointer, from the session of theirs that has
-    # the canvas open (its awareness: "selected", "cursor").
+    # the canvas open (its keys under the canvas's document: "selected",
+    # "cursor").
     defp selected(read, canvas, who) do
       with {:ok, %{name: name, states: states}} <- Issho.Tools.person_of(canvas.participant, who) do
-        state = Enum.find(states, &Map.has_key?(&1, "selected")) || %{}
+        state =
+          states
+          |> Enum.map(&Issho.Awareness.block(&1, canvas.canvas))
+          |> Enum.find(%{}, &Map.has_key?(&1, "selected"))
+
         ids = Enum.filter(state["selected"] || [], &Graph.node(canvas.graph, &1))
 
         {:ok,

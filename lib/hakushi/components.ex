@@ -63,7 +63,9 @@ defmodule Hakushi.Components do
     doc: """
     `fn change, context -> :ok | {:error, reason} end`: the app's own check of each change, and \
     where it saves it. `context` has the `graph` before the change and the `result` after it, \
-    the `user` and the `canvas`. See the [Changes](changes.md) guide.\
+    `by`, who made it (on a shared canvas an `Issho.Identity`: a person, an agent and whom it \
+    acts for, or the server; alone, the canvas's `user`), and the `canvas`. See the \
+    [Changes](changes.md) guide.\
     """
 
   attr :new_node, :any,
@@ -85,10 +87,15 @@ defmodule Hakushi.Components do
     `[Hakushi.Kits.Schema]`; see the [Kits](kits.md) guide\
     """
 
-  attr :live, :any,
+  attr :issho, :any,
     default: nil,
-    doc:
-      "`{issho, topic}`: a canvas that everyone in the Issho room `topic` shares, see `Hakushi.Issho`"
+    doc: """
+    a canvas that everyone in its Issho room shares: `[instance: MyApp.Issho, document: id]`, \
+    with the keys of every component (`Issho.Join`: `:can`, `:people`, `:follow`, \
+    `:on_behalf_of`, `:claims`); see `Hakushi.Issho`\
+    """
+
+  attr :live, :any, default: nil, doc: "removed in 0.3: `issho`; see the Upgrading guide"
 
   attr :user, :map,
     default: nil,
@@ -156,10 +163,7 @@ defmodule Hakushi.Components do
     default: false,
     doc: "when `true`, people pan, zoom and select, and change nothing"
 
-  attr :follow, :boolean,
-    default: true,
-    doc:
-      "on a shared canvas: `false` for a canvas that takes no part in following, though its room's other blocks do: its avatars follow no one, it shows no one followed, and its view does not move when the room follows someone"
+  attr :follow, :any, default: nil, doc: "removed in 0.3: `issho`'s `:follow`"
 
   attr :label, :string, default: nil, doc: "the name of the canvas, for screen readers"
 
@@ -198,7 +202,7 @@ defmodule Hakushi.Components do
   slot :empty, doc: "shows on a canvas without nodes"
 
   def canvas(assigns) do
-    assigns = with_kits(assigns)
+    assigns = assigns |> with_kits() |> with_join()
 
     ~H"""
     <.live_component
@@ -209,7 +213,7 @@ defmodule Hakushi.Components do
       new_node={@new_node}
       rules={@rules}
       kits={@kits}
-      live={@live}
+      join={@join}
       user={@user}
       background={@background}
       grid={@grid}
@@ -224,7 +228,8 @@ defmodule Hakushi.Components do
       export={@export}
       controls={@controls}
       readonly={@readonly}
-      follow={@follow}
+      follow={@join == nil or @join.follow}
+      show_people={@join == nil or @join.people}
       label={@label}
       node_label={@node_label}
       locale={@locale || Application.get_env(:hakushi, :locale, "en")}
@@ -240,6 +245,36 @@ defmodule Hakushi.Components do
 
   # The paper, the tidy up and the rules: the app's, then its kits', then
   # Hakushi's own.
+  # The canvas's issho option, checked (Issho.Join).
+  defp with_join(%{live: live}) when live != nil,
+    do:
+      raise(
+        ArgumentError,
+        "<.canvas live={...}> was removed in Hakushi 0.3: give it issho={[instance: MyApp.Issho, document: id]}; see the Upgrading guide"
+      )
+
+  defp with_join(%{follow: follow}) when follow != nil,
+    do:
+      raise(
+        ArgumentError,
+        "<.canvas follow={...}> was removed in Hakushi 0.3: give it issho={[..., follow: false]}"
+      )
+
+  defp with_join(%{issho: nil} = assigns), do: assign(assigns, :join, nil)
+
+  defp with_join(%{issho: issho} = assigns) do
+    hakushi_issho = Hakushi.Issho
+
+    unless Code.ensure_loaded?(hakushi_issho),
+      do:
+        raise(
+          ArgumentError,
+          "<.canvas issho={...}> needs {:issho, \"~> 0.3\"} in your dependencies"
+        )
+
+    assign(assigns, :join, hakushi_issho.join!(issho))
+  end
+
   defp with_kits(%{kits: kits} = assigns) do
     prefs = Hakushi.Kit.canvas_prefs(kits)
 

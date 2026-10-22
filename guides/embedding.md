@@ -90,8 +90,8 @@ LiveView renders the frame and its canvas for it.
 ```
 
 * Give the canvas an id of the embed's (`"canvas-" <> embed.id`): the same
-  diagram can be in a document twice. Its topic (`live`) stays the
-  diagram's: each copy has its own element id, and all of them are one
+  diagram can be in a document twice. Its document (`issho`'s `:document`)
+  stays the diagram's: each copy has its own element id, and all of them are one
   canvas.
 * The embed's `ref` is the person's input: whoever edits the document can
   put any ref there. Load what it shows as the diagram's own page does,
@@ -108,7 +108,7 @@ LiveView renders the frame and its canvas for it.
 
 ### Shared, in a document
 
-A canvas with `live` in a document is shared in its own room, the
+A canvas with `issho` in a document is shared in its own room, the
 canvas's, whatever the document's room: everyone with the canvas open, in
 the document or on its own page, is there, and sees the others' cursors,
 changes and avatars.
@@ -117,7 +117,7 @@ changes and avatars.
 <.canvas
   id={"canvas-" <> embed.id}
   graph={diagram.graph}
-  live={{MyApp.Issho, "diagram:" <> diagram.id}}
+  issho={[instance: MyApp.Issho, document: "diagram:" <> diagram.id]}
   user={@current_user}
   readonly={embed.readonly}
   ...

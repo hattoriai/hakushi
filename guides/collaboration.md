@@ -14,17 +14,27 @@ and no service besides your app.
   id="schema"
   graph={@schema.graph}
   on_change={&Schemas.change(&1, &2, @schema)}
-  live={{MyApp.Issho, "schema:#{@schema.id}"}}
+  issho={[instance: MyApp.Issho, document: "schema:#{@schema.id}"]}
   user={%{id: @current_user.id, name: @current_user.name}}
 >
 ```
+
+`issho` takes the keys of every component of an Issho page (`Issho.Join`,
+the same for Kotoba's editor and Masu's grid): `:instance` and
+`:document` (required: the canvas's document; its room is the part
+before the first `"/"`, so the blocks of a page whose documents share a
+room share its people); `:can`, `:read` for a viewer (as `readonly`);
+`:people`, `false` to hide the canvas's avatars on a page that lists the
+room's people (`Issho.Components.people/1`); `:follow`, `false` for a
+canvas that takes no part in following; `:on_behalf_of` and `:claims`,
+for your policy. Any other key raises.
 
 ## Setting up
 
 1. Issho in your dependencies:
 
    ```elixir
-   {:issho, "~> 0.2"}
+   {:issho, "~> 0.3"}
    ```
 
 2. An Issho instance in your supervision tree, after the PubSub, with
@@ -121,13 +131,13 @@ lists), else one of Hakushi's, by their key. A person with the canvas
 open in two tabs is one person, and does not see themselves. Without a
 `user`, a canvas joins as someone anonymous.
 
-A read-only canvas (`readonly`) is a viewer of the room: Issho's lists
+A read-only canvas (`readonly`, or `issho`'s `can: :read`) is a viewer of the room: Issho's lists
 show them viewing, their cursor still goes to the others, and the room
 takes no change from them.
 
-The avatars of the others show in the corner of the canvas. Draw them
-yourself with the `:person` slot, which gets a map with `"id"`,
-`"name"`, `"color"` and `"avatar"`.
+The avatars of the others show in the corner of the canvas (not with
+`people: false`). Draw them yourself with the `:person` slot, which gets
+a map with `"id"`, `"name"`, `"color"` and `"avatar"`.
 
 ## Cursors and drags
 
@@ -136,6 +146,26 @@ to the others as they move, in Issho's awareness frames: one frame of
 what changed, about twenty times a second, whatever the number of people.
 A node someone drags moves for everyone while they drag it, with their
 name; it lands where they drop it when the room has the move.
+
+They are the canvas's own keys of the person's state, under the canvas's
+document (`"blocks"`, see `Issho.Awareness`): `cursor`, `selected`,
+`viewport` and `dragging`. Issho's own keys (`place`, `pointer`, `view`,
+`motion`) stay Issho's, so the other blocks of the page never collide
+with the canvas's.
+
+## A place on the canvas
+
+Where someone is on the canvas, in a pointer, in an agent's motion or in
+what your app keeps, is a place of the canvas's document, in the
+canvas's own terms (never screen pixels, as each person has their own
+pan and zoom). Its format is part of Hakushi's API, and only grows
+(`Hakushi.Issho.Place`):
+
+```elixir
+%{"point" => [x, y]}          # a point, in the canvas's coordinates
+%{"node" => node_id}          # a node
+%{"nodes" => [node_id, ...]}  # nodes (the first is where it is drawn)
+```
 
 ## A cluster
 
@@ -146,10 +176,11 @@ reach every node, as Phoenix's does.
 ## The app's own changes
 
 In the LiveView of the canvas, `Hakushi.Live.change/2`. From anywhere (a
-job, another LiveView), `Hakushi.Issho.change(MyApp.Issho, topic,
-change)`, while someone has the canvas open; it answers
-`{:error, :not_running}` when no one has, and then you change your own
-tables. `Hakushi.Issho.graph/2` reads the graph a room has.
+job, another LiveView), `Hakushi.Issho.change(MyApp.Issho, document,
+change, author: current_user)`, while someone has the canvas open; it
+answers `{:error, :not_running}` when no one has, and then you change
+your own tables. `:author` is a key (`"server"`, the default) or your
+actor: `on_change` gets it as `by`, as everyone's. `Hakushi.Issho.graph/2` reads the graph a room has.
 
 ## Agents
 
@@ -235,7 +266,7 @@ the page, restyle all of them at once:
 rules; the words are the `following` and `stopFollowing` messages.
 
 A canvas that should take no part in following, though the other blocks
-of its room do, says so with `follow={false}`: its avatars are not
+of its room do, says so with `issho`'s `follow: false`: its avatars are not
 buttons, it shows no one followed, and its view stays its person's.
 
 Its changes go the way of everyone's: the canvas's rules check them, and

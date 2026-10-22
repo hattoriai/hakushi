@@ -50,7 +50,7 @@ edge means in `on_change`. The rules of the graph (`loops`,
 
 * The room keeps the graph in memory while anyone has the canvas open.
   A change made to your database by other means (a migration, a script)
-  does not reach an open room: make it through `Hakushi.Issho.change/3`.
+  does not reach an open room: make it through `Hakushi.Issho.change/4`.
 * `on_change` runs in the room's process: a slow `on_change` makes the
   others' changes wait for it.
 * The room is registered with `:global` (unless your Issho instance

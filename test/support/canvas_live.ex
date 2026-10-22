@@ -59,7 +59,14 @@ defmodule HakushiTest.CanvasLive do
      assign(socket,
        graph: graph(),
        test: test,
-       live: if(params["live"], do: {HakushiTest.Issho, "canvas:" <> params["live"]}),
+       issho:
+         if(params["live"],
+           do: [
+             instance: HakushiTest.Issho,
+             document: "canvas:" <> params["live"],
+             people: params["people"] != "false"
+           ]
+         ),
        user: user(params),
        readonly: params["readonly"] == "true"
      )}
@@ -99,7 +106,7 @@ defmodule HakushiTest.CanvasLive do
       graph={@graph}
       on_change={&on_change(&1, &2, @test)}
       new_node={&new_node/2}
-      live={@live}
+      issho={@issho}
       user={@user}
       readonly={@readonly}
       rules={[cycles: false]}

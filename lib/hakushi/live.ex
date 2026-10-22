@@ -1,6 +1,6 @@
 defmodule Hakushi.Live do
   @moduledoc ~S"""
-  The `on_mount` hook of a LiveView with a shared canvas (`live`), and the
+  The `on_mount` hook of a LiveView with a shared canvas (`issho`), and the
   app's own changes to a canvas.
 
       live_session :default, on_mount: [Hakushi.Live] do
@@ -13,7 +13,7 @@ defmodule Hakushi.Live do
   hook is Issho's (`Issho.Live`), which takes the room's events in the
   LiveView's process and gives them to its canvases, so the LiveView needs
   no `handle_info` of its own for them. A LiveView that has `on_mount
-  Issho.Live` already needs no other. A canvas with `live` in a LiveView
+  Issho.Live` already needs no other. A canvas with `issho` in a LiveView
   without the hook raises, saying so.
   """
 
@@ -45,7 +45,7 @@ defmodule Hakushi.Live do
 
   A change the canvas refuses shows its reason on the canvas. From outside
   the LiveView (a job), change a shared canvas with
-  `Hakushi.Issho.change/3`.
+  `Hakushi.Issho.change/4`.
   """
   @spec change(String.t(), Change.t()) :: :ok
   def change(canvas, %Change{} = change) when is_binary(canvas) do
@@ -89,7 +89,7 @@ defmodule Hakushi.Live do
     cond do
       not Code.ensure_loaded?(Issho.Live) ->
         raise ArgumentError, """
-        the canvas #{inspect(canvas)} has `live`, which needs Issho: add {:issho, "~> 0.2"} \
+        the canvas #{inspect(canvas)} has `issho`, which needs Issho: add {:issho, "~> 0.3"} \
         to your dependencies\
         """
 
@@ -98,7 +98,7 @@ defmodule Hakushi.Live do
 
       true ->
         raise ArgumentError, """
-        the canvas #{inspect(canvas)} has `live`, which needs the Hakushi.Live hook in its \
+        the canvas #{inspect(canvas)} has `issho`, which needs the Hakushi.Live hook in its \
         LiveView: `on_mount Hakushi.Live`, or `live_session :default, on_mount: [Hakushi.Live]`\
         """
     end

@@ -14,6 +14,11 @@ following someone is the room's. A canvas that is not shared needs nothing.
 | an agent's moves were the canvas's own | they are Issho's motion: only when someone sees the canvas, within a tool call's budget |
 | the canvas drew every cursor on it | on a page with Issho's pointers, they draw everyone's pointer on the canvas too, at the same point of the canvas for each person; alone, the canvas draws its own |
 | the avatars were images | they are buttons that follow someone, in the room |
+| `live={{MyApp.Issho, topic}}` | `issho={[instance: MyApp.Issho, document: topic]}`: the keys of every component (`Issho.Join`), with `can:`, `people:` and `follow:` |
+| `follow={false}` | `issho={[..., follow: false]}` |
+| `on_change`'s `user` (`%{id, name}`, agents named "agent") | `by`, an `Issho.Identity`: the person, the agent and whom it acts for, or the server (`user` stays, for now) |
+| `Hakushi.Issho.change(instance, topic, change)` (author `"app"`) | `Hakushi.Issho.change(instance, document, change_or_changes, author: ...)` (author `"server"` unless given) |
+| the canvas's `cursor`, `selected`, `viewport` and `dragging` at the top of a person's state | under the canvas's document, in `"blocks"` |
 
 ### Steps
 
@@ -22,5 +27,17 @@ following someone is the room's. A canvas that is not shared needs nothing.
    (`Issho.Components.pointers/1`, `Issho.Components.people/1`): one
    pointer for each person across the page, the canvas included, and
    following from the page.
-3. **If you styled `.hakushi-person`**, it is a `<button>` now, with
+3. **Join with `issho`.** `live` and `follow` raise with what to write
+   instead:
+
+   ```diff
+   -<.canvas id="schema" graph={@graph} live={{MyApp.Issho, "schema:42"}} follow={false} user={@user} />
+   +<.canvas id="schema" graph={@graph} issho={[instance: MyApp.Issho, document: "schema:42", follow: false]} user={@user} />
+   ```
+4. **In `on_change`**, read `by` rather than `user`. On a shared canvas it
+   is an `Issho.Identity` (`by.key`, `by.kind`, `by.on_behalf_of`).
+5. **If you read a person's canvas state** (in an Issho room of your
+   own), read it under the canvas's document:
+   `Issho.Awareness.block(state, document)`.
+6. **If you styled `.hakushi-person`**, it is a `<button>` now, with
    `aria-pressed` on the one followed.
