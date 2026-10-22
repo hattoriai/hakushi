@@ -204,6 +204,12 @@
   will-change: auto;
 }
 
+/* The edges of a selection, above the nodes (whose z-index is their depth),
+   under a node being dragged (10000 and over). */
+.hakushi-edges-raised {
+  z-index: 9000;
+}
+
 .hakushi-edge-hit {
   fill: none;
   stroke: transparent;
@@ -227,6 +233,17 @@
 .hakushi-edge[data-ui-selected] .hakushi-edge-line {
   stroke: var(--hakushi-edge-selected);
   stroke-width: calc(var(--hakushi-edge-width) + 0.5px);
+}
+
+/* An edge of a selected node, above the nodes, in the colour of a
+   selection: it is seen to its own end where it goes under another node.
+   A click on it there is the node's under it. */
+.hakushi-edge[data-ui-connected] .hakushi-edge-line {
+  stroke: var(--hakushi-edge-selected);
+}
+
+.hakushi-edge[data-ui-connected] .hakushi-edge-hit {
+  pointer-events: none;
 }
 
 .hakushi-edge[data-animated] .hakushi-edge-line {

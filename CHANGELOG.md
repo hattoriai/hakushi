@@ -5,6 +5,27 @@ All notable changes to Hakushi are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- An agent reads what a person sees of a shared canvas, which the graph
+  does not say: `read_canvas` gives each node on their screen its `box`,
+  and an edge that passes under other nodes on its way `passes_under`,
+  their ids, with `seen_by`, whose screen it is (the person of `of`, else
+  the one the agent acts for, else anyone with it open). Each browser
+  says it in its person's awareness, once a second at most, when it
+  changes (see the Collaboration guide).
+
+### Fixed
+
+- A selected node's edges are drawn above the nodes, in the colour of a
+  selection, and so is a selected edge, with its knobs: an edge that
+  passes under another node on its way is seen going to its own end. Before,
+  the node it passed under hid the rest of it, and it looked as if it
+  joined that node. A click on such an edge over another node is that
+  node's. An exported image has every edge under the nodes, as before.
+
 ## [0.3.0] - 2026-10-22
 
 On Issho 0.3: the canvas is a block of an Issho page, agents move with

@@ -35,6 +35,8 @@ const ALIGN_THRESHOLD = 6;
 const PEER_INTERVAL = 50;
 // A person not heard of for this long has no cursor.
 const PEER_TIMEOUT = 30_000;
+// The most nodes, and edges, of what a person sees that go to the room.
+const SEEN_MAX = 200;
 
 type Gesture =
   | { kind: "pan"; pointer: number; start: Point; view: View }
@@ -118,6 +120,9 @@ export class Canvas {
   private labelsEl: HTMLElement;
   private edgesSvg: SVGSVGElement;
   private edgesG: SVGGElement;
+  // Above the nodes: the edges of the selected nodes, a selected edge, and
+  // the overlay (the knobs of a selected edge, an edge being drawn).
+  private raisedG: SVGGElement;
   private overlay: SVGGElement;
   private ui: HTMLElement;
   private status: HTMLElement;
@@ -197,7 +202,14 @@ export class Canvas {
     this.edgesSvg.append(this.defs());
     this.edgesG = svg("g", { class: "hakushi-edge-lines" });
     this.overlay = svg("g", { class: "hakushi-overlay" });
-    this.edgesSvg.append(this.edgesG, this.overlay);
+    this.raisedG = svg("g", { class: "hakushi-edge-lines" });
+    const raisedSvg = root.querySelector<SVGSVGElement>(`#${CSS.escape(this.id)}-svg-raised`);
+    if (raisedSvg) {
+      this.edgesSvg.append(this.edgesG);
+      raisedSvg.append(this.raisedG, this.overlay);
+    } else {
+      this.edgesSvg.append(this.edgesG, this.raisedG, this.overlay);
+    }
 
     this.status = el("div", { class: "hakushi-status", role: "status", "aria-live": "polite" });
     this.boxEl = el("div", { class: "hakushi-box", hidden: "" });
@@ -847,6 +859,7 @@ export class Canvas {
     this.drawEdges(recull && viewChanged);
     this.drawOverlay();
     this.drawPeers();
+    this.reportSeen();
     const percent = `${Math.round(this.view.zoom * 100)}%`;
     if (this.zoomLabel && this.zoomLabel.textContent !== percent) this.zoomLabel.textContent = percent;
     if (this.minimap) {
@@ -932,7 +945,14 @@ export class Canvas {
         view.line.setAttribute("d", path.d);
         view.hit.setAttribute("d", path.d);
       }
-      const marker = edge.marker === "none" ? "" : `url(#${this.id}-${edge.marker}${this.selectedEdges.has(id) ? "-on" : ""})`;
+      // A selected edge, and the edges of the selected nodes, are drawn
+      // above the nodes, in the colour of a selection: where an edge passes
+      // under another node, it is seen going to its own end.
+      const raised = this.raisedEdge(edge);
+      const layer = raised ? this.raisedG : this.edgesG;
+      if (view.g.parentNode !== layer) layer.append(view.g);
+      toggle(view.g, "data-ui-connected", raised && !this.selectedEdges.has(id));
+      const marker = edge.marker === "none" ? "" : `url(#${this.id}-${edge.marker}${raised ? "-on" : ""})`;
       if (view.marker !== marker) {
         view.marker = marker;
         view.line.setAttribute("marker-end", marker);
@@ -954,13 +974,90 @@ export class Canvas {
         view.label.remove();
         view.label = null;
       }
-      if (!viewChanged) this.showEdge(view, all || intersects(view.box, area) || this.selectedEdges.has(id));
+      if (!viewChanged) this.showEdge(view, all || intersects(view.box, area) || raised);
     }
     if (viewChanged) {
-      for (const [id, view] of this.edgeViews) this.showEdge(view, all || intersects(view.box, area) || this.selectedEdges.has(id));
+      for (const [id, view] of this.edgeViews) {
+        const edge = this.edges.get(id);
+        this.showEdge(view, all || intersects(view.box, area) || (!!edge && this.raisedEdge(edge)));
+      }
     }
     this.dirty.clear();
     this.allDirty = false;
+  }
+
+  // What this person sees of a shared canvas, for an agent of the room,
+  // which reads the graph and not the screen: the nodes on the screen
+  // (their boxes, in the canvas's terms) and the nodes each edge there
+  // passes under, which hide that part of it ("the line from the note
+  // seems to end at the green note; it goes on under it to the card").
+  // At most every second, when the layout or the view changed.
+  private seenTimer = 0;
+  private seenAt = "";
+  private sentSeen = "";
+
+  private reportSeen() {
+    if (!this.config.live || !this.connected || !this.docEl || this.seenTimer) return;
+    const at = `${this.layoutVersion} ${Math.round(this.view.x)} ${Math.round(this.view.y)} ${this.view.zoom.toFixed(3)} ${this.edges.size}`;
+    if (at === this.seenAt) return;
+    this.seenTimer = window.setTimeout(() => {
+      this.seenTimer = 0;
+      this.seenAt = at;
+      const seen = this.seen();
+      const json = JSON.stringify(seen);
+      if (json === this.sentSeen) return;
+      this.sentSeen = json;
+      this.live.push("hakushi:seen", seen);
+    }, 1_000);
+  }
+
+  private seen(): { nodes: Record<string, number[]>; edges: Record<string, { under: string[] }> } {
+    const area = visible(this.view, this.size.width, this.size.height);
+    const boxes = new Map<string, Rect>();
+    for (const id of this.order) {
+      if (boxes.size >= SEEN_MAX) break;
+      const node = this.nodes.get(id);
+      if (!node) continue;
+      const box = this.rect(node);
+      if (intersects(box, area)) boxes.set(id, box);
+    }
+    const nodes: Record<string, number[]> = {};
+    for (const [id, box] of boxes) nodes[id] = [Math.round(box.x), Math.round(box.y), Math.round(box.width), Math.round(box.height)];
+    const edges: Record<string, { under: string[] }> = {};
+    let count = 0;
+    for (const [id, view] of this.edgeViews) {
+      if (count >= SEEN_MAX) break;
+      const edge = this.edges.get(id);
+      if (!edge || !view.shown || !intersects(view.box, area)) continue;
+      // The nodes over the line (not its ends, nor the groups around them,
+      // which are drawn under it): a few points along it, in each box.
+      const ends = new Set([edge.source, edge.target, ...this.ancestors(edge.source), ...this.ancestors(edge.target)]);
+      const over = [...boxes].filter(([nid, box]) => !ends.has(nid) && !this.nodes.get(nid)?.group && intersects(box, view.box));
+      if (over.length === 0) continue;
+      const length = view.line.getTotalLength();
+      const steps = Math.min(64, Math.max(8, Math.ceil(length / 12)));
+      const under = new Set<string>();
+      for (let i = 1; i < steps; i++) {
+        const p = view.line.getPointAtLength((length * i) / steps);
+        for (const [nid, box] of over) if (p.x > box.x + 2 && p.x < box.x + box.width - 2 && p.y > box.y + 2 && p.y < box.y + box.height - 2) under.add(nid);
+      }
+      if (under.size > 0) {
+        edges[id] = { under: [...under] };
+        count++;
+      }
+    }
+    return { nodes, edges };
+  }
+
+  private ancestors(id: string): string[] {
+    const found: string[] = [];
+    for (let parent = this.nodes.get(id)?.parent; parent && found.length < 32; parent = this.nodes.get(parent)?.parent) found.push(parent);
+    return found;
+  }
+
+  /** A selected edge, or an edge of a selected node: drawn above the nodes. */
+  private raisedEdge(edge: EdgeModel): boolean {
+    return this.selectedEdges.has(edge.id) || this.selected.has(edge.source) || this.selected.has(edge.target);
   }
 
   private showEdge(view: EdgeView, shown: boolean) {

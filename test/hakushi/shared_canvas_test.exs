@@ -426,4 +426,36 @@ defmodule Hakushi.SharedCanvasTest do
                agent
              )
   end
+
+  test "an agent reads what a person sees: each node's box and the nodes an edge passes under" do
+    topic = topic()
+    ada = open(topic, "ada")
+    grace = open(topic, "grace")
+
+    render_hook(element(ada, "#schema-hook"), "hakushi:seen", %{
+      "nodes" => %{"users" => [0, 0, 200, 80], "note" => [0, 300, 160, 60], "bad" => [1, 2]},
+      "edges" => %{"fk" => %{"under" => ["note"]}, "none" => %{"under" => []}}
+    })
+
+    settle(ada)
+    # What a person sees is for the agents: the others' browsers get none of it.
+    assert_push_event(grace, "hakushi:peer", %{"person" => "ada"} = peer)
+    refute Map.has_key?(peer, "seen")
+
+    agent = Context.new(HakushiTest.Issho, %{id: "assistant", name: "Assistant", kind: :agent})
+
+    assert {:ok, %{"nodes" => nodes, "edges" => edges, "seen_by" => "Ada"}} =
+             Issho.Tools.call(
+               Hakushi.Issho.tools(),
+               "read_canvas",
+               %{"canvas" => "canvas:" <> topic},
+               agent
+             )
+
+    boxes = Map.new(nodes, &{&1.id, &1["box"]})
+    assert boxes["users"] == [0, 0, 200, 80]
+    assert boxes["orders"] == nil
+    assert [%{id: "fk", source: "orders", target: "users"} = fk] = edges
+    assert fk["passes_under"] == ["note"]
+  end
 end
