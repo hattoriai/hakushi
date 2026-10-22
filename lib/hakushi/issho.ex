@@ -57,11 +57,11 @@ if Code.ensure_loaded?(Issho.Engine) do
 
     @doc ~S"""
     A shared canvas's document, for your policy's `document/2`
-    (`Issho.Policy`): what the room's canvas is when an agent opens it
-    before anyone has it open in a browser. Give it the graph your app
-    keeps, and the canvas's `rules` and `on_change` (as `canvas/1` takes
-    them), so that the agent's changes go the way of everyone's; a canvas
-    that opens the room later gets the document as it is.
+    (`Issho.Policy`): what the room's canvas is, whoever opens it first (its
+    page, an embed of it in a document, an agent with no browser). Give it
+    the graph your app keeps, and the canvas's `rules` and `on_change` (as
+    `canvas/1` takes them): a canvas that opens the room gets the document
+    as it is, and its own `graph`, `rules` and `on_change` are not used.
 
         def document(_identity, "board:" <> id = room) do
           board = MyApp.Boards.get!(id)

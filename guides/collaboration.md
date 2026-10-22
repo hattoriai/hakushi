@@ -68,9 +68,32 @@ and no service besides your app.
 ## The room's document
 
 The canvases of a topic share one document, the graph, with one process
-in your cluster that puts the changes of everyone in order. The first
-canvas to open it gives it its `graph`, `rules` and `on_change`; the
-others get the graph as it is then.
+in your cluster that puts the changes of everyone in order. It runs while
+anyone has the canvas open, wherever: on its own page, embedded in a
+document of another page (see [In a page](embedding.md)), or for an
+agent. Nobody needs to be on the canvas's page for the others to share it.
+
+What the document is (its graph, rules and `on_change`) comes from your
+Issho policy when it says, whoever opens it first:
+
+```elixir
+defmodule MyApp.Collaboration do
+  @behaviour Issho.Policy
+
+  @impl true
+  def document(_who, "schema:" <> id) do
+    schema = MyApp.Schemas.get!(id)
+    Hakushi.Issho.document(schema.graph, rules: [cycles: false], on_change: &MyApp.Schemas.change(schema, &1, &2))
+  end
+end
+```
+
+Define it there when the canvas opens in more than one place, or for
+agents: it is then the same document whichever opens it first, and an
+agent works on it with no browser at all. Without it, the first canvas to
+open the topic gives it its `graph`, `rules` and `on_change`, the others
+get the graph as it is then, and their own `rules` and `on_change` are not
+used: two places that pass different ones would differ by who came first.
 
 Each change of each person goes to that process, which checks the rules,
 applies it, asks `on_change` (once, whoever made it, with the graph
@@ -216,8 +239,12 @@ of its room do, says so with `follow={false}`: its avatars are not
 buttons, it shows no one followed, and its view stays its person's.
 
 Its changes go the way of everyone's: the canvas's rules check them, and
-your `on_change` is asked once for each. It works on a canvas someone has
-open, whose first canvas gave the room its graph, rules and `on_change`.
+your `on_change` is asked once for each. A canvas no one has open is the
+document your policy defines for it (`Hakushi.Issho.document/2`, see
+[The room's document](#the-room-s-document)): the agent opens it from
+there, with no browser at all, and people who open the canvas later see
+its changes. Without it, the agent works only on a canvas someone has
+open.
 
 Give them to your app's own model, through its API, with Issho's room
 tools:

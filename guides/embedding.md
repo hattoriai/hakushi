@@ -90,7 +90,14 @@ LiveView renders the frame and its canvas for it.
 ```
 
 * Give the canvas an id of the embed's (`"canvas-" <> embed.id`): the same
-  diagram can be in a document twice.
+  diagram can be in a document twice. Its topic (`live`) stays the
+  diagram's: each copy has its own element id, and all of them are one
+  canvas.
+* The embed's `ref` is the person's input: whoever edits the document can
+  put any ref there. Load what it shows as the diagram's own page does,
+  with the viewer's permission (`Diagrams.get_for(user, embed.ref)`, not
+  `@diagrams[embed.ref]` of every diagram), and render nothing, or its
+  title, for a ref they may not see.
 * Kotoba keeps the keys of an embed in it: Delete in the canvas deletes
   its nodes, not the embed.
 * Full screen is Kotoba's (`embed.full`, `embed.toggle_full`): the same
@@ -117,6 +124,15 @@ changes and avatars.
 />
 ```
 
+* The document's LiveView renders this canvas: the canvas's own page (a
+  LiveView of its own) need not be open, and when it is, the two are one
+  canvas, through the room.
+* Define the canvas's document in your Issho policy
+  (`Hakushi.Issho.document/2`, see
+  [The room's document](collaboration.md#the-room-s-document)): its
+  graph, rules and `on_change` are then the same whichever opens it first,
+  its page or an embed. Without it, the first to open it gives them, and
+  the embed's or the page's own are not used.
 * Give it the same `user` as the document's editor (`Kotoba.Collab.token/3`)
   and Issho's lists: the person is one in every room of the page.
 * On a page with Issho's pointers of the document's room, the canvas
