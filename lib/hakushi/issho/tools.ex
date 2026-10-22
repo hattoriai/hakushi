@@ -123,6 +123,14 @@ if Code.ensure_loaded?(Issho.Tool) do
       in the room, also the nodes they have selected and where their
       pointer is: act on them with the other tools ("connect what Ada
       selected to the invoice").
+
+      What a person sees, which the graph does not say (`seen_by`, the
+      person of `of`, else the one you act for, else anyone with the
+      canvas open): each node on their screen has its `box` there ([x, y,
+      width, height]), and an edge that passes under other nodes on its
+      way has `passes_under`, their ids. The node on top hides that part
+      of the line, so to a person it seems to end at that node: it does
+      not join it. Its ends are `source` and `target`, always.
       """,
       annotations: [read_only: true, idempotent: true]
 
@@ -135,12 +143,67 @@ if Code.ensure_loaded?(Issho.Tool) do
     @impl true
     def call(%{canvas: name} = args, ctx) do
       with {:ok, canvas} <- Canvas.open(ctx, name) do
+        {seer, seen} = seen(canvas, args[:of], ctx)
+        boxes = seen["nodes"] || %{}
+        under = seen["edges"] || %{}
+
         %{
-          "nodes" => canvas.graph |> Graph.nodes() |> Enum.map(&Map.from_struct/1),
-          "edges" => canvas.graph |> Graph.edges() |> Enum.map(&Map.from_struct/1)
+          "nodes" =>
+            canvas.graph
+            |> Graph.nodes()
+            |> Enum.map(&(&1 |> Map.from_struct() |> put_some("box", boxes[&1.id]))),
+          "edges" =>
+            canvas.graph
+            |> Graph.edges()
+            |> Enum.map(
+              &(&1
+                |> Map.from_struct()
+                |> put_some("passes_under", get_in(under, [&1.id, "under"])))
+            )
         }
+        |> put_some("seen_by", seer)
         |> selected(canvas, args[:of])
       end
+    end
+
+    defp put_some(map, _key, nil), do: map
+    defp put_some(map, key, value), do: Map.put(map, key, value)
+
+    # What a person sees of the canvas (its block's "seen", from their
+    # browser): the person asked about, else the one the agent acts for,
+    # else anyone with it open; their name and it, or {nil, %{}}.
+    defp seen(canvas, of, ctx) do
+      canvas.participant
+      |> Issho.Participant.people()
+      |> seers(of, ctx.opts[:on_behalf_of])
+      |> Enum.find_value({nil, %{}}, fn {key, entry} ->
+        case seen_of(entry, canvas.canvas) do
+          nil -> nil
+          seen -> {entry["person"]["name"] || key, seen}
+        end
+      end)
+    end
+
+    defp seers(people, of, _behalf) when is_binary(of) do
+      of = of |> String.trim() |> String.downcase()
+
+      Enum.filter(people, fn {key, %{"person" => person}} ->
+        String.downcase(key) == of or String.downcase(person["name"] || "") == of
+      end)
+    end
+
+    defp seers(people, nil, nil), do: Enum.to_list(people)
+
+    defp seers(people, nil, behalf) do
+      key = Issho.Actor.key(behalf)
+      {first, rest} = Enum.split_with(people, &(elem(&1, 0) == key))
+      first ++ rest
+    end
+
+    defp seen_of(entry, doc) do
+      entry
+      |> Map.get("states", [])
+      |> Enum.find_value(&Issho.Awareness.block(&1, doc)["seen"])
     end
 
     defp selected(read, _canvas, nil), do: {:ok, read}

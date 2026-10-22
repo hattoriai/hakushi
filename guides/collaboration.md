@@ -212,6 +212,25 @@ config :hakushi, Hakushi.Issho, travel: false
 It moves with Issho's motion (`Issho.Motion`): only when someone of the
 room sees the canvas, within a tool call's time budget.
 
+### What a person sees
+
+An agent reads the graph, not the screen, and some of what a person sees
+is not in the graph: how big a node is drawn, and what is on top of what.
+Each browser with the canvas open says what its person sees (once a
+second at most, when it changes, in their awareness), and `read_canvas`
+gives it, of the person it reads about (`of`), else of the one it acts
+for, else of anyone with the canvas open (`seen_by`):
+
+* a node on their screen has its `box` there, `[x, y, width, height]` in
+  the canvas's coordinates;
+* an edge that passes under other nodes on its way has `passes_under`,
+  their ids: to the person, the line seems to end at such a node, which
+  it does not join.
+
+So an agent asked "why is this note connected to that one?" can say that
+it is not: the edge goes from the note to another card, under it. The
+others' browsers get none of it.
+
 ### Following, and the page
 
 A click on someone's avatar, on the canvas or in the page's people list

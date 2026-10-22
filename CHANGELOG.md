@@ -7,6 +7,16 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- An agent reads what a person sees of a shared canvas, which the graph
+  does not say: `read_canvas` gives each node on their screen its `box`,
+  and an edge that passes under other nodes on its way `passes_under`,
+  their ids, with `seen_by`, whose screen it is (the person of `of`, else
+  the one the agent acts for, else anyone with it open). Each browser
+  says it in its person's awareness, once a second at most, when it
+  changes (see the Collaboration guide).
+
 ### Fixed
 
 - A selected node's edges are drawn above the nodes, in the colour of a

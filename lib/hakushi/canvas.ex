@@ -311,7 +311,7 @@ defmodule Hakushi.Canvas do
       state
       |> Map.delete("blocks")
       |> Map.merge(%{"selected" => [], "dragging" => []})
-      |> Map.merge(block)
+      |> Map.merge(Map.delete(block, "seen"))
       |> Map.merge(%{"canvas" => socket.assigns.id, "person" => person})
     )
   end
@@ -403,7 +403,7 @@ defmodule Hakushi.Canvas do
 
   @impl true
   def handle_event(event, _params, %{assigns: %{readonly: true}} = socket)
-      when event != "hakushi:peer" do
+      when event not in ["hakushi:peer", "hakushi:seen"] do
     {:reply, %{"error" => Messages.reason(socket.assigns.messages, :readonly)}, socket}
   end
 
@@ -481,6 +481,16 @@ defmodule Hakushi.Canvas do
   end
 
   def handle_event("hakushi:peer", _params, socket), do: {:noreply, socket}
+
+  # What the person sees, for the room's agents (`read_canvas`): the
+  # nodes on their screen and the nodes each edge passes under there.
+  def handle_event("hakushi:seen", params, %{assigns: %{shared: doc, room: room}} = socket)
+      when is_binary(doc) and is_map(params) do
+    Issho.Live.merge_block(room, doc, %{"seen" => seen(params)})
+    {:noreply, socket}
+  end
+
+  def handle_event("hakushi:seen", _params, socket), do: {:noreply, socket}
 
   # The nodes of the ids, and the nodes in them, with the edges between
   # them.
@@ -655,6 +665,31 @@ defmodule Hakushi.Canvas do
         )
     }
   end
+
+  # What a person sees, checked: a node's box is four numbers, an edge's
+  # `under` the ids of nodes; at most 200 of each.
+  defp seen(params) do
+    nodes =
+      for {id, box} <- Map.get(params, "nodes") |> map_or_empty() |> Enum.take(200),
+          is_binary(id),
+          box = numbers(box, 4),
+          into: %{},
+          do: {id, box}
+
+    edges =
+      for {id, %{"under" => under}} <-
+            Map.get(params, "edges") |> map_or_empty() |> Enum.take(200),
+          is_binary(id),
+          under = under |> ids_only() |> Enum.take(50),
+          under != [],
+          into: %{},
+          do: {id, %{"under" => under}}
+
+    %{"nodes" => nodes, "edges" => edges}
+  end
+
+  defp map_or_empty(map) when is_map(map), do: map
+  defp map_or_empty(_other), do: %{}
 
   # A list of `count` numbers, or nil.
   defp numbers(list, count) when is_list(list) and length(list) == count,

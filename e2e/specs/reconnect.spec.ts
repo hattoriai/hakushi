@@ -40,6 +40,9 @@ test("a selected node's edges are drawn above the nodes, to their own ends", asy
   await node(page, "tasks").locator("strong").first().click();
   await expect(raised(mine)).toHaveAttribute("data-ui-connected", "");
   await expect(raised(other)).toHaveCount(0);
+  // Above every node, not only after them.
+  const top = await page.locator("#schema .hakushi-node").evaluateAll((els) => Math.max(...els.map((e) => Number(getComputedStyle(e).zIndex) || 0)));
+  expect(await page.locator("#schema .hakushi-edges-raised").evaluate((e) => Number(getComputedStyle(e).zIndex))).toBeGreaterThan(top);
 
   await page.keyboard.press("Escape");
   await expect(raised(mine)).toHaveCount(0);
