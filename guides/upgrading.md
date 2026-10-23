@@ -3,7 +3,7 @@
 ## To Issho 0.4
 
 Shared canvases now run on [Issho](https://hex.pm/packages/issho) 0.4:
-`{:issho, "~> 0.4"}`. Nothing else changes in your code: the canvas, its
+`{:issho, "~> 0.4.2"}`. Nothing else changes in your code: the canvas, its
 document, `Hakushi.Issho.change/4` and the agents' tools are as they
 were. What is new is Issho's, and the canvas's part in it:
 

@@ -9,7 +9,7 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed (breaking)
 
-- Requires `{:issho, "~> 0.4"}` for shared canvases. A canvas's code
+- Requires `{:issho, "~> 0.4.2"}` for shared canvases. A canvas's code
   stays as it was; see the Upgrading guide.
 
 ### Added
