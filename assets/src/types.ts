@@ -24,6 +24,8 @@ export interface Config {
   minZoom: number;
   maxZoom: number;
   readonly: boolean;
+  /** With `readonly`: people still move the nodes and tidy them up, and undo that (the canvas's `readonly={:arrange}`). */
+  arrange?: boolean;
   /** Whether a shared canvas takes part in following, the room's (false: it follows no one, and shows no one followed). */
   follow?: boolean;
   newNode: boolean;

@@ -173,6 +173,40 @@ defmodule Hakushi.CanvasTest do
     assert {:error, "This canvas is read-only."} = move(view, "schema", "note", {1, 1})
   end
 
+  describe "an arrange-only canvas" do
+    test "moves nodes, and undoes and redoes the moves" do
+      {view, html} = open("?readonly=arrange")
+      assert html =~ ~s(&quot;arrange&quot;:true)
+      assert html =~ ~s(&quot;readonly&quot;:true)
+
+      assert :ok = move(view, "schema", "note", {11, 12})
+      assert %{x: 11, y: 12} = Enum.find(nodes(view, "schema"), &(&1.id == "note"))
+
+      assert :ok = undo(view, "schema")
+      refute match?(%{x: 11}, Enum.find(nodes(view, "schema"), &(&1.id == "note")))
+      assert :ok = redo(view, "schema")
+      assert %{x: 11, y: 12} = Enum.find(nodes(view, "schema"), &(&1.id == "note"))
+    end
+
+    test "changes nothing else" do
+      {view, _html} = open("?readonly=arrange")
+      readonly = {:error, "This canvas is read-only."}
+
+      assert ^readonly = move(view, "schema", [{"note", 1, 1, 50, 50}])
+      assert ^readonly = move(view, "schema", [%{id: "note", x: 1, y: 1, parent: nil}])
+      assert ^readonly = connect(view, "schema", "users", "note")
+      assert ^readonly = remove(view, "schema", nodes: ["note"])
+      assert ^readonly = drop(view, "schema", nil, {5, 5})
+      assert ^readonly = label(view, "schema", "fk", "owns")
+    end
+
+    test "a read-only canvas does not arrange" do
+      {view, html} = open("?readonly=true")
+      assert html =~ ~s(&quot;arrange&quot;:false)
+      assert {:error, "This canvas is read-only."} = undo(view, "schema")
+    end
+  end
+
   test "refuses what a browser should not send" do
     {view, _html} = open()
     assert {:error, _} = Hakushi.Test.move(view, "schema", [{"note", "x", 1}])

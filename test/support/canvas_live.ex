@@ -68,9 +68,13 @@ defmodule HakushiTest.CanvasLive do
            ]
          ),
        user: user(params),
-       readonly: params["readonly"] == "true"
+       readonly: readonly(params["readonly"])
      )}
   end
+
+  defp readonly("true"), do: true
+  defp readonly("arrange"), do: :arrange
+  defp readonly(_other), do: false
 
   # ?member=true: a user of the app's own struct, whose Issho.Actor says its key.
   defp user(%{"user" => id, "member" => "true"}),

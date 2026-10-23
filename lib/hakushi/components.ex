@@ -168,9 +168,14 @@ defmodule Hakushi.Components do
     default: true,
     doc: "when `true`, a button of the controls downloads the canvas as an image"
 
-  attr :readonly, :boolean,
+  attr :readonly, :any,
     default: false,
-    doc: "when `true`, people pan, zoom and select, and change nothing"
+    values: [true, false, :arrange],
+    doc: """
+    when `true`, people pan, zoom and select, and change nothing; when `:arrange`, they also \
+    move the nodes and tidy them up (and undo that), and change nothing else, as a diagram \
+    made from data; see [Layout and export](layout.md)\
+    """
 
   attr :follow, :any, default: nil, doc: "removed in 0.3: `issho`'s `:follow`"
 
@@ -237,7 +242,8 @@ defmodule Hakushi.Components do
       layout={@layout}
       export={@export}
       controls={@controls}
-      readonly={@readonly}
+      readonly={@readonly != false}
+      arrange={@readonly == :arrange}
       follow={@join == nil or @join.follow}
       show_people={@join == nil or @join.people}
       label={@label}

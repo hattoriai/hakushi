@@ -86,6 +86,7 @@ defmodule Hakushi.Canvas do
        notice: nil,
        notice_seq: 0,
        configured: false,
+       arrange: false,
        places: %{}
      )}
   end
@@ -190,8 +191,11 @@ defmodule Hakushi.Canvas do
 
     # A read-only canvas is a viewer of the room: it shares its person's
     # cursor and changes nothing.
+    # An arrange-only canvas moves the room's nodes, so it writes.
     readonly = socket.assigns.readonly or join.can == :read
-    opts = Keyword.put(Issho.Join.grant_opts(join), :can, if(readonly, do: :read, else: :write))
+    arrange = socket.assigns.arrange and join.can != :read
+    can = if readonly and not arrange, do: :read, else: :write
+    opts = Keyword.put(Issho.Join.grant_opts(join), :can, can)
     room = join.room
 
     with {:ok, _session} <- Issho.Live.join(join.instance, actor(socket), room, opts),
@@ -203,13 +207,17 @@ defmodule Hakushi.Canvas do
       socket
       |> assign(shared: join.document, room: room)
       |> assign(version: snapshot["revision"], epoch: snapshot["epoch"])
-      |> assign(readonly: readonly)
+      |> assign(readonly: readonly, arrange: arrange)
       |> assign_people(people(room))
       |> reset(snapshot["state"])
     else
       {:error, reason} ->
         socket
-        |> assign(readonly: true, notice: Messages.reason(socket.assigns.messages, reason))
+        |> assign(
+          readonly: true,
+          arrange: false,
+          notice: Messages.reason(socket.assigns.messages, reason)
+        )
         |> reset(graph)
     end
   end
@@ -338,7 +346,7 @@ defmodule Hakushi.Canvas do
 
   defp receive_event(socket, {"bye", _topic, reason}) do
     socket
-    |> assign(shared: nil, readonly: true)
+    |> assign(shared: nil, readonly: true, arrange: false)
     |> assign(:notice, Messages.reason(socket.assigns.messages, bye_reason(reason)))
   end
 
@@ -444,9 +452,11 @@ defmodule Hakushi.Canvas do
   # -- Events of the browser -----------------------------------------------
 
   @impl true
-  def handle_event(event, _params, %{assigns: %{readonly: true}} = socket)
+  def handle_event(event, params, %{assigns: %{readonly: true}} = socket)
       when event not in ["hakushi:peer", "hakushi:seen"] do
-    {:reply, %{"error" => Messages.reason(socket.assigns.messages, :readonly)}, socket}
+    if socket.assigns[:arrange] and arrangement?(event, params, socket),
+      do: arrange(event, params, socket),
+      else: {:reply, %{"error" => Messages.reason(socket.assigns.messages, :readonly)}, socket}
   end
 
   # A paper of the picker: one the canvas offers, a change as any other.
@@ -457,12 +467,8 @@ defmodule Hakushi.Canvas do
     end
   end
 
-  def handle_event("hakushi:change", params, socket) when is_map(params) do
-    case Change.from_client(params) do
-      {:ok, change} -> reply(commit(socket, change, true))
-      :error -> {:reply, %{"error" => Messages.reason(socket.assigns.messages, :failed)}, socket}
-    end
-  end
+  def handle_event("hakushi:change", params, socket) when is_map(params),
+    do: client_change(params, socket)
 
   def handle_event("hakushi:copy", %{"nodes" => ids}, socket) when is_list(ids) do
     {:reply, %{"ok" => true}, assign(socket, :clipboard, copy(socket.assigns.graph, ids))}
@@ -776,6 +782,41 @@ defmodule Hakushi.Canvas do
     |> commit(Change.add(nodes, edges), true)
     |> reply(%{"select" => Enum.map(nodes, & &1.id)})
   end
+
+  defp client_change(params, socket) do
+    case Change.from_client(params) do
+      {:ok, change} -> reply(commit(socket, change, true))
+      :error -> {:reply, %{"error" => Messages.reason(socket.assigns.messages, :failed)}, socket}
+    end
+  end
+
+  # What an arrange-only canvas takes: a move of nodes to other places (not
+  # a resize, nor into or out of a group), and the undo and redo of those.
+  defp arrangement?("hakushi:change", params, _socket) do
+    case Change.from_client(params) do
+      {:ok, %Change{op: :move, nodes: places}} ->
+        Enum.all?(places, &(Map.keys(&1) -- [:id, :x, :y] == []))
+
+      _other ->
+        false
+    end
+  end
+
+  defp arrangement?(event, _params, socket) when event in ["hakushi:undo", "hakushi:redo"] do
+    from = if event == "hakushi:undo", do: :undo, else: :redo
+
+    case Map.fetch!(socket.assigns, from) do
+      [%Change{op: :move} | _rest] -> true
+      [] -> true
+      _other -> false
+    end
+  end
+
+  defp arrangement?(_event, _params, _socket), do: false
+
+  defp arrange("hakushi:change", params, socket), do: client_change(params, socket)
+  defp arrange("hakushi:undo", _params, socket), do: step(socket, :undo, :redo, "nothingToUndo")
+  defp arrange("hakushi:redo", _params, socket), do: step(socket, :redo, :undo, "nothingToRedo")
 
   defp step(socket, from, to, nothing) do
     case Map.fetch!(socket.assigns, from) do
@@ -1301,6 +1342,7 @@ defmodule Hakushi.Canvas do
       "minZoom" => assigns.min_zoom,
       "maxZoom" => assigns.max_zoom,
       "readonly" => assigns.readonly,
+      "arrange" => assigns[:arrange] == true,
       "follow" => assigns.follow,
       "newNode" => assigns.new_node != nil or assigns.kits != [],
       "wheel" => Atom.to_string(assigns.wheel),

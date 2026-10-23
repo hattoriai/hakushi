@@ -450,6 +450,11 @@
   cursor: default;
 }
 
+/* Arranged only: the nodes move, and nothing else changes. */
+.hakushi[data-ui-arrange][data-ui-readonly] .hakushi-node:not([data-locked]) {
+  cursor: grab;
+}
+
 .hakushi-node[data-ui-selected] {
   box-shadow: 0 0 0 2px var(--hakushi-selection);
 }

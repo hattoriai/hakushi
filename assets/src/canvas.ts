@@ -439,6 +439,11 @@ export class Canvas {
 
   private followScrolled: string | null = null;
 
+  /** Whether people move the nodes: on a canvas they edit, or one they only arrange. */
+  private get arranges(): boolean {
+    return !this.config.readonly || this.config.arrange === true;
+  }
+
   private part(suffix: string): HTMLElement {
     return this.root.querySelector<HTMLElement>(`#${CSS.escape(this.id + suffix)}`)!;
   }
@@ -447,6 +452,7 @@ export class Canvas {
     this.config = JSON.parse(this.hookEl.dataset.config || "{}") as Config;
     this.messages = new Messages(this.config.messages || {}, this.config.locale || "en");
     this.root.toggleAttribute("data-ui-readonly", this.config.readonly);
+    this.root.toggleAttribute("data-ui-arrange", this.arranges);
     this.root.dataset.uiWheel = this.config.wheel;
   }
 
@@ -458,7 +464,7 @@ export class Canvas {
     this.layoutVersion++;
     const minimap = this.config.minimap;
     const controls = this.config.controls;
-    const tools = JSON.stringify(this.config.tools ?? []) + this.config.readonly;
+    const tools = JSON.stringify(this.config.tools ?? []) + this.config.readonly + this.arranges;
     const papers = JSON.stringify(this.config.papers ?? []);
     const grid = this.config.grid;
     this.readConfig();
@@ -468,7 +474,10 @@ export class Canvas {
       this.togglePaperMenu(false);
       this.buildControls();
     }
-    if (tools !== JSON.stringify(this.config.tools ?? []) + this.config.readonly) this.buildTools();
+    if (tools !== JSON.stringify(this.config.tools ?? []) + this.config.readonly + this.arranges) {
+      this.buildTools();
+      this.buildControls();
+    }
     this.drawPaperMenu();
     this.showNotice();
     this.schedule();
@@ -1343,7 +1352,7 @@ export class Canvas {
         button("zoom-in", t("zoomIn"), icons.zoomIn, () => this.zoomBy(1.25)),
         button("fit", t("fit"), icons.fit, () => this.fitAll()),
       ]);
-      if (!this.config.readonly) {
+      if (this.arranges) {
         group.append(
           button("layout", t("layout"), icons.layout, () => this.layout()),
           button("undo", t("undo"), icons.undo, () => this.undo()),
@@ -2457,7 +2466,7 @@ export class Canvas {
       } else if (!this.selected.has(node.id)) {
         this.select([node.id]);
       }
-      if (!onGrip || this.config.readonly) return;
+      if (!onGrip || !this.arranges) return;
       event.preventDefault();
       this.root.focus({ preventScroll: true });
       this.startDrag(event, node.id, at);
@@ -2754,7 +2763,8 @@ export class Canvas {
           if (n) this.decorate(n);
         }
         this.root.querySelectorAll("[data-ui-drop-target]").forEach((e) => e.removeAttribute("data-ui-drop-target"));
-        if (g.moved && !cancelled) this.commitMove(g.origin, this.dropParents(g.origin));
+        // Arranged only, a node stays in its group.
+        if (g.moved && !cancelled) this.commitMove(g.origin, this.config.readonly ? new Map() : this.dropParents(g.origin));
         else if (g.moved) this.revert(g.origin);
         else if (!event.shiftKey && !event.metaKey && !event.ctrlKey) this.select([g.primary]);
         break;
@@ -3001,6 +3011,7 @@ export class Canvas {
   }
 
   private markDropTarget(g: Extract<Gesture, { kind: "drag" }>) {
+    if (this.config.readonly) return;
     const primary = this.nodes.get(g.primary);
     const target = primary && !(primary.parent && g.origin.has(primary.parent)) ? this.groupAt(this.center(primary), new Set(g.origin.keys())) : null;
     for (const el of this.root.querySelectorAll("[data-ui-drop-target]")) if (el !== target?.el) el.removeAttribute("data-ui-drop-target");
@@ -3090,11 +3101,11 @@ export class Canvas {
   }
 
   undo() {
-    if (!this.config.readonly) this.push("hakushi:undo", {}, (reply) => reply.error && this.announce(String(reply.error)));
+    if (this.arranges) this.push("hakushi:undo", {}, (reply) => reply.error && this.announce(String(reply.error)));
   }
 
   redo() {
-    if (!this.config.readonly) this.push("hakushi:redo", {}, (reply) => reply.error && this.announce(String(reply.error)));
+    if (this.arranges) this.push("hakushi:redo", {}, (reply) => reply.error && this.announce(String(reply.error)));
   }
 
   /** A new node at a point of the canvas: for an item, or a double click (`item` null). */
@@ -3351,7 +3362,7 @@ export class Canvas {
     if (key.startsWith("Arrow")) {
       event.preventDefault();
       if (event.altKey) return this.focusToward(key);
-      if (this.selected.size && !this.config.readonly) return this.nudgeBy(key, event.shiftKey);
+      if (this.selected.size && this.arranges) return this.nudgeBy(key, event.shiftKey);
       const step = event.shiftKey ? 200 : 50;
       const d = { ArrowLeft: [step, 0], ArrowRight: [-step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] }[key]!;
       this.view = { ...this.view, x: this.view.x + d[0], y: this.view.y + d[1] };
@@ -3747,7 +3758,7 @@ export class Canvas {
    * is one move, which undoes at once.
    */
   async layout(options: { direction?: "right" | "down" } = {}): Promise<void> {
-    if (this.config.readonly || this.gesture) return;
+    if (!this.arranges || this.gesture) return;
     const chosen = this.selected.size >= 2 ? [...this.selected] : [...this.order];
     // The nodes laid out: those of no group among the chosen ones, so that a
     // group moves with what is in it.
