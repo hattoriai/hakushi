@@ -384,7 +384,7 @@ defmodule Hakushi.Kit do
       Hakushi.Kits.Images keeps the images' files with Storehouse, which is \
       not in the app's deps. Add it to mix.exs, and run mix deps.get:
 
-          {:storehouse, "~> 0.1"}
+          {:storehouse, "~> 0.2"}
       """
     end
 

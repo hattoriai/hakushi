@@ -75,7 +75,7 @@ defmodule Hakushi.MixProject do
       {:stream_data, "~> 1.1", only: :test},
       # The files of the Images kit: checked, stored and served. A canvas
       # without images never needs it.
-      {:storehouse, "~> 0.1", optional: true}
+      {:storehouse, "~> 0.2", optional: true}
     ]
   end
 
