@@ -1298,7 +1298,7 @@ defmodule HakushiDev.WhiteboardLive do
     ~H"""
     <.app page={:whiteboard} me={@me} query={@query} title="Whiteboard" crumb="Release process">
       <:actions>
-        <span class="hint">R, O, D and T draw shapes, L a line or an arrow between two; double-click a shape to write in it.</span>
+        <span class="hint">R, O, D and T draw shapes, A an arrow (between two shapes, an edge); double-click a shape to write in it.</span>
       </:actions>
       <.canvas
         id="whiteboard"

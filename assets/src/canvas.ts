@@ -2857,12 +2857,15 @@ export class Canvas {
       else this.select([]);
       return;
     }
-    // The tools of the kits, by their letters, and V for the pointer.
+    // The tools of the kits, by their letters, and V for the pointer. Tools
+    // of two kits with one letter: the letter again takes the next.
     if (!mod && !event.altKey && !event.shiftKey && this.toolsEl && key.length === 1) {
       const letter = key.toLowerCase();
-      const tool = (this.config.tools ?? []).find((t) => t.key === letter);
-      if (tool || letter === "v") {
+      const tools = (this.config.tools ?? []).filter((t) => t.key === letter);
+      if (tools.length || letter === "v") {
         event.preventDefault();
+        const at = this.tool ? tools.indexOf(this.tool) : -1;
+        const tool = tools[(at + 1) % Math.max(tools.length, 1)];
         return this.setTool(tool ? `${tool.kit}:${tool.tool}` : null);
       }
     }

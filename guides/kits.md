@@ -84,7 +84,7 @@ whiteboards with no `:node` slot of yours:
 | --- | --- | --- |
 | Rectangle, ellipse, diamond, triangle | R, O, D | a drag on the paper draws the shape (Shift: a square, a circle); a click, one of the kind's size |
 | Text | T | a click or a drag: text with no box, written at once |
-| Line | L | from a point to a point: an edge, when it goes from a shape to a shape (it follows them), else a line of its own |
+| Line | A | from a point to a point, an arrow unless styled otherwise: an edge, when it goes from a shape to a shape (it follows them), else a straight line of its own (for lines drawn by hand, add `Hakushi.Kits.Ink`) |
 
 The pointer is back once a shape is drawn, with the shape selected. A
 double click on a shape writes its text in place (centred and wrapped;
@@ -96,8 +96,8 @@ alignment, a line's arrows), for one or many, in one change. Each shape
 has a handle on each side, so a flowchart of shapes is Hakushi's edges
 and rules as they are.
 
-Two kits with one letter (L: Shapes' line, Ink's lasso): the first kit of
-`kits` has it.
+Two kits' tools with one letter: the letter takes the first, and again
+the next, in turn.
 
 Its colours are the theme's (`--hakushi-shape-<name>`), and your own (see
 `Hakushi.Kits.Shapes`). `Hakushi.Kits.Shapes.shape/3` and `line/3` make

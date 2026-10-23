@@ -8,8 +8,8 @@ defmodule Hakushi.Kits.Shapes do
 
   The canvas gets a bar of the kit's tools (`c:Hakushi.Kit.tools/1`): a
   shape is drawn by dragging on the paper with its tool (Shift for a
-  square or a circle), text by a click, and a line from a point to a
-  point. A line from a shape to a shape is an edge between them, which
+  square or a circle; R, O, D), text by a click (T), and a line from a
+  point to a point (A, for an arrow). A line from a shape to a shape is an edge between them, which
   follows them; a line elsewhere is a node of its own.
 
   A shape is a node of type `"shape"`, which resizes by its corners and
@@ -134,7 +134,7 @@ defmodule Hakushi.Kits.Shapes do
         key: nil
       },
       %{tool: "text", mode: "box", label: messages["shapeText"], icon: "type", key: "t"},
-      %{tool: "line", mode: "line", label: messages["shapeLine"], icon: "arrow", key: "l"}
+      %{tool: "line", mode: "line", label: messages["shapeLine"], icon: "arrow", key: "a"}
     ]
   end
 

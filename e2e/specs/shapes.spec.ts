@@ -96,10 +96,34 @@ test("a line from a shape to a shape is an edge; one elsewhere is a line of its 
   await expect(page.locator('#whiteboard-edge-data > i[data-source="idea"][data-target="ship"]')).toHaveCount(1);
 
   const lines = await page.locator('#whiteboard .hakushi-node[data-type="shape-line"]').count();
-  await page.keyboard.press("l");
+  await page.keyboard.press("a");
   const canvas = (await page.locator("#whiteboard").boundingBox())!;
   await dragOn(page, [60, canvas.height - 90], [260, canvas.height - 40]);
   await expect(page.locator('#whiteboard .hakushi-node[data-type="shape-line"]')).toHaveCount(lines + 1);
+});
+
+test("the letters of the tools: A an arrow, L Ink's lasso; a letter two tools share takes them in turn", async ({ page }) => {
+  await openCanvas(page, "/whiteboard");
+  const current = () => page.evaluate(() => (window as any).canvasOf("whiteboard").getTool() as string | null);
+  await page.locator("#whiteboard").focus();
+  await page.keyboard.press("a");
+  expect(await current()).toBe("shapes:line");
+  await page.keyboard.press("l");
+  expect(await current()).toBe("ink:lasso");
+  await page.keyboard.press("v");
+  expect(await current()).toBe(null);
+
+  // Two kits' tools with one letter (an app's kits may): the letter again takes the next.
+  await page.evaluate(() => {
+    const canvas = (window as any).canvasOf("whiteboard");
+    canvas.config.tools.find((t: { tool: string }) => t.tool === "lasso").key = "a";
+  });
+  await page.keyboard.press("a");
+  expect(await current()).toBe("shapes:line");
+  await page.keyboard.press("a");
+  expect(await current()).toBe("ink:lasso");
+  await page.keyboard.press("a");
+  expect(await current()).toBe("shapes:line");
 });
 
 test("a shape turns by its knob, and resizes by its sides", async ({ page }) => {

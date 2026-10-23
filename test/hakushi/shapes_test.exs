@@ -108,7 +108,7 @@ defmodule Hakushi.ShapesTest do
                %{"tool" => "diamond"},
                %{"tool" => "triangle"},
                %{"tool" => "text", "key" => "t"},
-               %{"tool" => "line", "mode" => "line", "key" => "l"}
+               %{"tool" => "line", "mode" => "line", "key" => "a"}
              ] = Enum.filter(config["tools"], &(&1["kit"] == "shapes"))
 
       assert [%{"kit" => "shapes", "types" => ["shape", "shape-line"], "groups" => groups}] =

@@ -12,7 +12,7 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Shapes (`Hakushi.Kits.Shapes`): rectangles, ellipses, diamonds,
   triangles, text and lines, for diagrams, wireframes and whiteboards
   with no `:node` slot. They are drawn by dragging with their tools (R,
-  O, D, T, L; Shift for a square or a circle). A shape's text is written
+  O, D, T, and A for a line; Shift for a square or a circle). A shape's text is written
   in place on a double click, centred and wrapped, and the shape grows
   with it. A selected shape resizes by its corners and sides, and turns
   by a knob. A panel beside the selection styles one shape or many in
@@ -26,7 +26,8 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   changes a shape's text, style and rotation.
 - Kits have a style panel (`c:Hakushi.Kit.styles/1`) and tools that draw
   a box (`"box"`) or a line from a point to a point (`"line"`).
-  `"hakushi:edit"` takes several nodes in one change. A node's
+  `"hakushi:edit"` takes several nodes in one change. Two kits' tools with
+  one letter take turns: the letter again takes the next. A node's
   `data-hakushi-text` is written in place, and its `data-hakushi-rotate`
   turns by a knob. Every resizable node now resizes by its sides as well
   as its corners. `Hakushi.Test.draw_box/5`, and `edit/5` with a list of
