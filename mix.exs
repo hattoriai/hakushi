@@ -157,6 +157,7 @@ defmodule Hakushi.MixProject do
           Hakushi.Kits.Flow,
           Hakushi.Kits.Notes,
           Hakushi.Kits.Ink,
+          Hakushi.Kits.Shapes,
           Hakushi.Ink,
           Hakushi.Mermaid,
           Hakushi.Icons

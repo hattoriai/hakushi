@@ -6,7 +6,7 @@ package one kind of canvas, so that it is used in one line, by one app or
 by many: its nodes and how they look, how people make and edit them, its
 paper, the rules of its edges, and how it reads and writes as Markdown.
 
-Kits are optional. Hakushi has four, and you write your own with the same
+Kits are optional. Hakushi has five, and you write your own with the same
 callbacks (`Hakushi.Kit`).
 
 ## The kits of Hakushi
@@ -17,6 +17,7 @@ callbacks (`Hakushi.Kit`).
 | `Hakushi.Kits.Flow` | a trigger, steps, and conditions with two ways out (`"flow-trigger"`, `"flow-step"`, `"flow-condition"`) | the title and the detail | dots |
 | `Hakushi.Kits.Notes` | sticky notes (`"note"`) in five colours, which resize | the text, the colour | crosses, snapped |
 | `Hakushi.Kits.Ink` | strokes of a pen or a highlighter (`"ink-stroke"`), drawn over anything | drawing, erasing, lassoing, with a bar of tools on the canvas | the canvas's |
+| `Hakushi.Kits.Shapes` | rectangles, ellipses, diamonds, triangles and text (`"shape"`), and lines (`"shape-line"`) | drawing them with the bar of tools, their text in place, their style from a panel, turning and resizing them | the canvas's |
 
 ## Use a kit
 
@@ -69,6 +70,40 @@ test as a pen does.
 On a shared canvas, the others see a line as it is drawn, and an agent
 draws with `draw_on_canvas` (see the [Collaboration](collaboration.md)
 guide).
+
+### Shapes
+
+Shapes are drawn with the bar of tools too, for diagrams, wireframes and
+whiteboards with no `:node` slot of yours:
+
+```heex
+<.canvas id="board" graph={@graph} kits={[Hakushi.Kits.Shapes, Hakushi.Kits.Ink]} on_change={&save/2} />
+```
+
+| Tool | Key | What it does |
+| --- | --- | --- |
+| Rectangle, ellipse, diamond, triangle | R, O, D | a drag on the paper draws the shape (Shift: a square, a circle); a click, one of the kind's size |
+| Text | T | a click or a drag: text with no box, written at once |
+| Line | A | from a point to a point, an arrow unless styled otherwise: an edge, when it goes from a shape to a shape (it follows them), else a straight line of its own (for lines drawn by hand, add `Hakushi.Kits.Ink`) |
+
+The pointer is back once a shape is drawn, with the shape selected. A
+double click on a shape writes its text in place (centred and wrapped;
+the shape grows with a longer text; Escape takes it back). A selected
+shape resizes by its corners and sides, and turns by the knob above it
+(Shift: by 15°). A panel beside the selection has the style of the shapes
+selected (fill, stroke, its width and dash, corners, text size and
+alignment, a line's arrows), for one or many, in one change. Each shape
+has a handle on each side, so a flowchart of shapes is Hakushi's edges
+and rules as they are.
+
+Two kits' tools with one letter: the letter takes the first, and again
+the next, in turn.
+
+Its colours are the theme's (`--hakushi-shape-<name>`), and your own (see
+`Hakushi.Kits.Shapes`). `Hakushi.Kits.Shapes.shape/3` and `line/3` make
+the nodes for your app's own drawings; `Hakushi.Test.draw_box/5` draws as
+a drag does, and `edit/5` with a list of nodes styles them as the panel
+does. In Markdown, shapes are a Mermaid flowchart.
 
 ### The paper, the tidy up and the rules
 
@@ -167,8 +202,17 @@ end
   (optional) says which types resize by their corners.
 * `icon/0` and the elements' icons are names of `Hakushi.Icons`.
 * `tools/1` (optional) puts tools in a bar on the canvas, which draw a
-  line that `drawn/3` makes a node of, erase or lasso; `label/2`
-  (optional) names a node for screen readers. See `Hakushi.Kits.Ink`.
+  line (`"draw"`), a box (`"box"`) or a line from a point to a point
+  (`"line"`) that `drawn/3` makes a node of, erase or lasso; `label/2`
+  (optional) names a node for screen readers. See `Hakushi.Kits.Ink` and
+  `Hakushi.Kits.Shapes`.
+* `styles/1` (optional) is a panel of styles beside the selection, whose
+  choices go to `edit/3` (the action `"style"`) for each node, in one
+  change.
+* A node's element with `data-hakushi-text` is written in place on a
+  double click (`edit/3`, the action `"text"`); one with
+  `data-hakushi-rotate` turns by a knob (the action `"rotate"`, in
+  degrees), and the canvas sets `--hakushi-rotation` on it while it turns.
 
 Test a kit with `Hakushi.Test`: `drop/5` makes its node from its item
 (`"roadmap:milestone"`), `edit/5` sends an action as its controls do,

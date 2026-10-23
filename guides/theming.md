@@ -38,6 +38,11 @@ handles, the controls), and the default node.
 | `--hakushi-radius`, `--hakushi-transition` | the controls' radius, and the speed of the small transitions |
 | `--hakushi-embed-height` | the height of an embed frame (`canvas_embed/1`) whose parent has none, `24rem` |
 
+The kits have their own: Ink's `--hakushi-ink-<colour>` and
+`--hakushi-highlighter-opacity`; Shapes' `--hakushi-shape-<colour>` (ink,
+gray, blue, green, yellow, red, violet, and your own), whose fills are a
+tint of them on the surface (`--hakushi-shape-tint`, 16%).
+
 `--hakushi-person` is a person's colour, on their avatar, their cursor
 and the ring of the nodes they selected or drag.
 

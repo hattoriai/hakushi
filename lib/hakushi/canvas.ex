@@ -476,6 +476,32 @@ defmodule Hakushi.Canvas do
     end
   end
 
+  # An action on several nodes at once (a style of the panel over the
+  # selection): one change, of those a kit takes.
+  def handle_event(
+        "hakushi:edit",
+        %{"nodes" => [_ | _] = ids, "action" => action} = params,
+        socket
+      )
+      when is_binary(action) and length(ids) <= @max_items do
+    graph = socket.assigns.graph
+
+    updates =
+      for id <- Enum.uniq(ids),
+          is_binary(id),
+          %Node{} = node <- [Graph.node(graph, id)],
+          kit = Kit.for_type(socket.assigns.kits, node.type),
+          kit != nil,
+          {:ok, data} <- [kit.edit(action, params, Kit.stringify(node.data))],
+          data != node.data,
+          do: %{id: id, data: data}
+
+    case updates do
+      [] -> {:reply, %{"ok" => true}, socket}
+      updates -> socket |> commit(Change.update(nodes: updates), true) |> reply()
+    end
+  end
+
   def handle_event("hakushi:edit", %{"node" => id, "action" => action} = params, socket)
       when is_binary(id) and is_binary(action) do
     with %Node{} = node <- Graph.node(socket.assigns.graph, id),
@@ -1046,6 +1072,7 @@ defmodule Hakushi.Canvas do
       "live" => assigns.join != nil,
       "user" => own_id(%{assigns: assigns}),
       "tools" => Kit.tools(assigns.kits, assigns.messages),
+      "styles" => if(assigns.readonly, do: [], else: Kit.styles(assigns.kits, assigns.messages)),
       "papers" => papers(assigns),
       "paperGrids" => Paper.grids(),
       "messages" => assigns.messages,

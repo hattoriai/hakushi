@@ -101,7 +101,7 @@ defmodule Hakushi.InkTest do
                %{"tool" => "highlighter", "flat" => true},
                %{"tool" => "eraser", "mode" => "erase", "types" => ["ink-stroke"]},
                %{"tool" => "lasso", "mode" => "lasso"}
-             ] = tools["tools"]
+             ] = Enum.filter(tools["tools"], &(&1["kit"] == "ink"))
 
       assert "red" in colors
       refute html =~ ~s(data-hakushi-item="ink:)

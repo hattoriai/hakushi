@@ -40,6 +40,15 @@ defmodule Hakushi.Icons do
     "minimize" =>
       ~s(<path d="m14 10 7-7"/><path d="M20 10h-6V4"/><path d="m3 21 7-7"/><path d="M4 14h6v6"/>),
     "plus" => ~s(<path d="M5 12h14"/><path d="M12 5v14"/>),
+    "square" => ~s(<rect width="18" height="18" x="3" y="3" rx="2"/>),
+    "circle" => ~s(<circle cx="12" cy="12" r="10"/>),
+    "diamond" =>
+      ~s(<path d="M2.7 10.3a2.41 2.41 0 0 0 0 3.41l7.59 7.59a2.41 2.41 0 0 0 3.41 0l7.59-7.59a2.41 2.41 0 0 0 0-3.41l-7.59-7.59a2.41 2.41 0 0 0-3.41 0Z"/>),
+    "triangle" =>
+      ~s(<path d="M13.73 4a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>),
+    "type" =>
+      ~s(<path d="M12 4v16"/><path d="M4 7V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2"/><path d="M9 20h6"/>),
+    "arrow" => ~s(<path d="M13 5h6v6"/><path d="M19 5 5 19"/>),
     "pen" =>
       ~s(<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>),
     "highlighter" =>

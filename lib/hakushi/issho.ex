@@ -252,7 +252,8 @@ if Code.ensure_loaded?(Issho.Engine) do
         Hakushi.Issho.Tools.Connect,
         Hakushi.Issho.Tools.Update,
         Hakushi.Issho.Tools.Delete,
-        Hakushi.Issho.Tools.Draw
+        Hakushi.Issho.Tools.Draw,
+        Hakushi.Issho.Tools.Shape
       ]
 
     @doc "The graph of a shared canvas as its room has it, or `nil` when no canvas has it open."

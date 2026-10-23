@@ -57,6 +57,16 @@
   --hakushi-ink-blue: #2f5bd3;
   --hakushi-ink-violet: #8e4ec6;
   --hakushi-highlighter-opacity: 0.38;
+  /* Shapes (Hakushi.Kits.Shapes): the colours of their strokes, and of
+     their fills, a tint of them. */
+  --hakushi-shape-ink: var(--hakushi-text);
+  --hakushi-shape-gray: #8b8d98;
+  --hakushi-shape-blue: #3e63dd;
+  --hakushi-shape-green: #30a46c;
+  --hakushi-shape-yellow: #d5a21a;
+  --hakushi-shape-red: #e5484d;
+  --hakushi-shape-violet: #8e4ec6;
+  --hakushi-shape-tint: 16%;
 }
 
 /*
@@ -89,6 +99,12 @@
   --hakushi-ink-blue: #7b9cff;
   --hakushi-ink-violet: #b48cff;
   --hakushi-highlighter-opacity: 0.32;
+  --hakushi-shape-blue: #7b9cff;
+  --hakushi-shape-green: #3dd68c;
+  --hakushi-shape-yellow: #ffd60a;
+  --hakushi-shape-red: #ff6b6f;
+  --hakushi-shape-violet: #b48cff;
+  --hakushi-shape-tint: 24%;
 }
 
 /* The canvas fills the box the app gives it: give it a height. */
@@ -592,6 +608,46 @@
   right: -5px;
   bottom: -5px;
   cursor: nwse-resize;
+}
+
+/* The sides of a node that resizes. */
+.hakushi-resizer:is([data-corner="n"], [data-corner="s"]) {
+  left: calc(50% - 5px);
+  cursor: ns-resize;
+}
+
+.hakushi-resizer:is([data-corner="e"], [data-corner="w"]) {
+  top: calc(50% - 5px);
+  cursor: ew-resize;
+}
+
+.hakushi-resizer[data-corner="n"] { top: -5px; }
+.hakushi-resizer[data-corner="s"] { bottom: -5px; }
+.hakushi-resizer[data-corner="e"] { right: -5px; }
+.hakushi-resizer[data-corner="w"] { left: -5px; }
+
+/* The knob of a node that turns, above its middle. */
+.hakushi-rotator {
+  position: absolute;
+  z-index: 3;
+  top: -28px;
+  left: calc(50% - 6px);
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid var(--hakushi-selection);
+  border-radius: 50%;
+  background: var(--hakushi-surface);
+  cursor: grab;
+}
+
+.hakushi-rotator::after {
+  content: "";
+  position: absolute;
+  top: 10px;
+  left: 4.25px;
+  width: 1.5px;
+  height: 14px;
+  background: var(--hakushi-selection);
 }
 
 /* The labels of the edges. */
@@ -1398,6 +1454,224 @@
     flex-wrap: wrap;
     justify-content: center;
   }
+}
+
+/* Shapes (Hakushi.Kits.Shapes): an outline of SVG, filled with a tint
+   of its colour, and its text over it, centred and wrapped, turned as one. */
+.hakushi-shape {
+  position: relative;
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-width: 16px;
+  min-height: 16px;
+  rotate: var(--hakushi-rotation, 0deg);
+}
+
+.hakushi-shape-outline {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.hakushi-shape-outline > * {
+  fill: var(--hakushi-shape-fill);
+  stroke: var(--hakushi-shape-stroke);
+}
+
+.hakushi-shape-text {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  margin: 0;
+  padding: 8px 12px;
+  overflow: hidden;
+  color: var(--hakushi-text);
+  font-size: 1rem;
+  line-height: 1.3;
+  text-align: center;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  outline: none;
+}
+
+:is(.hakushi-shape-text, .hakushi-text-editor)[data-size="s"] { font-size: 0.8125rem; }
+:is(.hakushi-shape-text, .hakushi-text-editor)[data-size="l"] { font-size: 1.5rem; font-weight: 500; }
+:is(.hakushi-shape-text, .hakushi-text-editor)[data-align="left"] { text-align: left; }
+:is(.hakushi-shape-text, .hakushi-text-editor)[data-align="right"] { text-align: right; }
+
+/* The text of a diamond and a triangle keeps to their middle. */
+.hakushi-shape:is([data-kind="diamond"], [data-kind="triangle"]) .hakushi-shape-text {
+  padding: 18% 22%;
+}
+
+.hakushi-shape[data-kind="triangle"] .hakushi-shape-text {
+  padding-top: 34%;
+}
+
+.hakushi-shape[data-kind="text"] .hakushi-shape-text {
+  padding: 4px 2px;
+}
+
+/* A shape's handles show where edges start: under the pointer, on a
+   selected shape, and while an edge is drawn. */
+.hakushi-shape > .hakushi-handle {
+  opacity: 0;
+  transition: opacity var(--hakushi-transition);
+}
+
+.hakushi-node:hover .hakushi-shape > .hakushi-handle,
+.hakushi-node[data-ui-selected] .hakushi-shape > .hakushi-handle,
+.hakushi[data-ui-connecting] .hakushi-shape > .hakushi-handle,
+.hakushi[data-ui-keyboard] .hakushi-node:focus-visible .hakushi-shape > .hakushi-handle {
+  opacity: 1;
+}
+
+/* A shape's text written in place: over it, as it is drawn. */
+.hakushi-text-editor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 10001;
+  box-sizing: border-box;
+  border-radius: 4px;
+  background: color-mix(in oklab, var(--hakushi-surface) 70%, transparent);
+  box-shadow: 0 0 0 2px var(--hakushi-selection);
+  cursor: text;
+}
+
+/* A line of its own: only the line takes the pointer, as ink. */
+.hakushi-node[data-type="shape-line"] {
+  pointer-events: none;
+}
+
+.hakushi-shape-line {
+  display: block;
+  overflow: visible;
+}
+
+.hakushi-shape-line-stroke {
+  stroke: var(--hakushi-shape-stroke);
+  stroke-linecap: round;
+}
+
+.hakushi-shape-line marker path {
+  fill: var(--hakushi-shape-stroke);
+}
+
+.hakushi-shape-line-aim {
+  stroke: transparent;
+  stroke-width: 14px;
+  stroke-linecap: round;
+  pointer-events: stroke;
+  cursor: grab;
+}
+
+.hakushi-node[data-type="shape-line"][data-ui-selected] {
+  box-shadow: 0 0 0 1px var(--hakushi-selection);
+}
+
+/* A shape being drawn. */
+.hakushi-shape-preview {
+  fill: var(--hakushi-box);
+  stroke: var(--hakushi-accent);
+  stroke-width: 1.5px;
+  stroke-dasharray: 5 4;
+}
+
+.hakushi[data-ui-tool="box"],
+.hakushi[data-ui-tool="line"] {
+  cursor: crosshair;
+}
+
+/* The style panel of a kit, beside the selection. */
+.hakushi-style-panel {
+  position: absolute;
+  top: 60px;
+  left: 12px;
+  display: grid;
+  gap: 8px;
+  width: 196px;
+  padding: 10px;
+  border-radius: calc(var(--hakushi-radius) + 4px);
+  background: var(--hakushi-control);
+  box-shadow: var(--hakushi-control-shadow);
+  color: var(--hakushi-text);
+  font-size: 0.75rem;
+}
+
+.hakushi-style-label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--hakushi-muted);
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
+.hakushi-style-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.hakushi-style-option {
+  display: grid;
+  place-items: center;
+  min-width: 26px;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--hakushi-border);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.hakushi-style-option:hover {
+  background: color-mix(in oklab, var(--hakushi-text) 7%, transparent);
+}
+
+.hakushi-style-option[aria-pressed="true"] {
+  border-color: var(--hakushi-accent);
+  background: color-mix(in oklab, var(--hakushi-accent) 14%, transparent);
+  color: var(--hakushi-accent);
+}
+
+.hakushi-style-option:focus-visible {
+  outline: 2px solid var(--hakushi-accent);
+  outline-offset: 1px;
+}
+
+.hakushi-style-swatch {
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--hakushi-swatch);
+}
+
+.hakushi-style-group[data-kind="color"]:first-child .hakushi-style-swatch:not([data-color="none"]) {
+  background: color-mix(in oklab, var(--hakushi-swatch) 30%, var(--hakushi-surface));
+}
+
+.hakushi-style-swatch[data-color="none"] {
+  background: linear-gradient(135deg, transparent 45%, var(--hakushi-guide) 45%, var(--hakushi-guide) 55%, transparent 55%);
+}
+
+.hakushi-style-swatch[aria-pressed="true"] {
+  box-shadow: 0 0 0 2px var(--hakushi-control), 0 0 0 3.5px var(--hakushi-accent);
+}
+
+.hakushi-style-group[data-kind="width"] .hakushi-style-option span {
+  width: 14px;
+  height: var(--hakushi-style-width);
+  border-radius: 999px;
+  background: currentColor;
 }
 
 /* The items of kits, outside the canvas (kit_items/1). */

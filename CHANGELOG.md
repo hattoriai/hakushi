@@ -9,6 +9,32 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Shapes (`Hakushi.Kits.Shapes`): rectangles, ellipses, diamonds,
+  triangles, text and lines, for diagrams, wireframes and whiteboards
+  with no `:node` slot. They are drawn by dragging with their tools (R,
+  O, D, T, and A for a line; Shift for a square or a circle). A shape's text is written
+  in place on a double click, centred and wrapped, and the shape grows
+  with it. A selected shape resizes by its corners and sides, and turns
+  by a knob. A panel beside the selection styles one shape or many in
+  one change: fill, stroke, its width and dash, corners, text size and
+  alignment, and a line's arrows. Each shape has a handle on each side
+  for edges. A line from a shape to a shape is an edge that follows
+  them; a line elsewhere is a node of its own. The colours are the
+  theme's (`--hakushi-shape-*`) and the app's own. In Markdown, shapes
+  are a Mermaid flowchart, and back.
+- An agent draws shapes: `draw_shape` adds a shape or a line, and
+  changes a shape's text, style and rotation.
+- Kits have a style panel (`c:Hakushi.Kit.styles/1`) and tools that draw
+  a box (`"box"`) or a line from a point to a point (`"line"`).
+  `"hakushi:edit"` takes several nodes in one change. Two kits' tools with
+  one letter take turns: the letter again takes the next. A node's
+  `data-hakushi-text` is written in place, and its `data-hakushi-rotate`
+  turns by a knob. Every resizable node now resizes by its sides as well
+  as its corners. `Hakushi.Test.draw_box/5`, and `edit/5` with a list of
+  nodes.
+- Mermaid: `Hakushi.Mermaid.flowchart/1` reads `((...))` as `:circle`
+  (was `:round`) and `[/...\]` as `:trapezoid`.
+
 - People choose the paper: `papers` (off unless given) puts a picker in
   the controls, with the papers people choose from (`true` for dots,
   graph paper, crosses and none, or a list, with papers of the app's own)

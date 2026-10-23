@@ -10,10 +10,11 @@ defmodule Hakushi.Kit do
   Kits are optional: a canvas draws anything with `:node` slots, and a
   kit is a way to package a kind of canvas (its nodes, how people make and
   edit them, its paper and its rules) so that it is used in one line, by
-  one app or many. Hakushi has four: `Hakushi.Kits.Schema` (tables,
+  one app or many. Hakushi has five: `Hakushi.Kits.Schema` (tables,
   their columns and foreign keys), `Hakushi.Kits.Flow` (triggers, steps
-  and conditions), `Hakushi.Kits.Notes` (sticky notes) and
-  `Hakushi.Kits.Ink` (drawing with a pen); an app makes
+  and conditions), `Hakushi.Kits.Notes` (sticky notes),
+  `Hakushi.Kits.Ink` (drawing with a pen) and `Hakushi.Kits.Shapes`
+  (rectangles, ellipses, text, lines); an app makes
   its own with the same callbacks. See the [Kits](kits.md) guide.
 
   ## A kit of the app's own
@@ -175,6 +176,18 @@ defmodule Hakushi.Kit do
   @callback drawn(tool :: String.t(), params :: map(), messages :: map()) :: map() | nil
 
   @doc """
+  The style of the kit's nodes that people change, in a panel over the
+  selection, for one node or many, as one change: a list of groups, each
+  with a `key` of the nodes' data, a `label`, a `kind` (`"color"`,
+  `"width"` or `"choice"`) and its `options` (maps of `value` and `label`).
+  A node shows its style in its element's `data-hakushi-style` (JSON of
+  those keys it has); a choice sends `"hakushi:edit"` with the nodes, the
+  action `"style"` and `%{"style" => %{key => value}}`, which `c:edit/3`
+  gets for each node. Defaults to none. See `Hakushi.Kits.Shapes`.
+  """
+  @callback styles(messages :: map()) :: [map()]
+
+  @doc """
   A node's name for screen readers, where the canvas's `node_label` is
   its default: `"Drawing"`. Defaults to the default's.
   """
@@ -185,6 +198,7 @@ defmodule Hakushi.Kit do
                       to_markdown: 1,
                       from_markdown: 1,
                       tools: 1,
+                      styles: 1,
                       drawn: 3,
                       label: 2
 
@@ -278,6 +292,14 @@ defmodule Hakushi.Kit do
   def tools(kits, messages) do
     for kit <- kits, exports?(kit, :tools, 1), tool <- kit.tools(messages) do
       Map.put(tool, :kit, kit.name())
+    end
+  end
+
+  @doc false
+  # The style panels of a canvas's kits: each kit's, with its node types.
+  def styles(kits, messages) do
+    for kit <- kits, exports?(kit, :styles, 1) do
+      %{kit: kit.name(), types: kit.types(), groups: kit.styles(messages)}
     end
   end
 

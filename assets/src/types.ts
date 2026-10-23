@@ -35,6 +35,8 @@ export interface Config {
   user: string | null;
   /** The tools of the kits, for the bar of tools (Hakushi.Kit's `tools/1`). */
   tools?: Tool[];
+  /** The style panels of the kits (Hakushi.Kit's `styles/1`), each for the node types of its kit. */
+  styles?: { kit: string; types: string[]; groups: { key: string; label: string; kind: "color" | "width" | "choice"; options: { value: unknown; label: string }[] }[] }[];
   /** The papers people choose from (the canvas's `papers`), and the sizes of their squares. */
   papers?: { name: string; label: string }[];
   paperGrids?: number[];
@@ -46,7 +48,7 @@ export interface Config {
 export interface Tool {
   kit: string;
   tool: string;
-  mode: "draw" | "erase" | "lasso";
+  mode: "draw" | "erase" | "lasso" | "box" | "line";
   label: string;
   icon: string;
   key: string | null;
