@@ -7,7 +7,28 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed (breaking)
+
+- Requires `{:issho, "~> 0.4"}` for shared canvases. A canvas's code
+  stays as it was; see the Upgrading guide.
+
 ### Added
+
+- The events of a shared canvas: each change is an event of its room,
+  named for what it did (`"canvas.added"`, `"canvas.connected"`,
+  `"canvas.reconnected"`, `"canvas.moved"`, `"canvas.updated"`,
+  `"canvas.deleted"`), with the ids of its nodes and edges, and who made
+  it (Issho's document `:events`). Agents wait for what people do on a
+  canvas (`wait_for_events` with `"canvas.*"`; `read_canvas` says so),
+  components hear them (`Issho.Live.subscribe/3`'s `:events`), and apps
+  act on them (`Issho.Events.subscribe/2`). See "Events" in the
+  Collaboration guide.
+- Comments on a canvas: `Hakushi.Issho.Place.label/3` says a place of the
+  canvas in words, from its graph (`The node “customers”`, `The node
+  “customers” and 2 more`, `A point on the canvas`), for the `:place`
+  slot of Issho's comments (`Issho.Components.comments/1`), in the
+  canvas's languages (`placeNode`, `placeNodes`, `placePoint`). The
+  development app's schema has the comments beside it (`?comments=1`).
 
 - Images (`Hakushi.Kits.Images`): image files dropped on the paper,
   pasted, or picked with the kit's tool (I), each a node where it lands,
@@ -102,6 +123,15 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- An agent that a person paused or stopped (Issho's `Issho.Work`) changes
+  nothing on a canvas, and does not go there: its tools that change
+  something say why at once, as Issho's room tools do. Before, its
+  pointer went and dragged, and only the change was refused.
+- A shared canvas skips a change it has already, rather than read the
+  whole graph again: on Issho 0.4 a canvas hears its document's changes
+  before it reads the graph, so that none falls between them, and one
+  may come twice. A change of a document that started again (another
+  epoch) reads it again.
 - What a person selects on a shared canvas is their place in the room
   (Issho's `"place"`, `%{"node" => id}` or `%{"nodes" => ids}`): Issho's
   comments go on it, and Issho's pointers show it when their pointer is

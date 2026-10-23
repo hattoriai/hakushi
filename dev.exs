@@ -18,7 +18,9 @@
 # reloads on a change.
 #
 # Query params of every page: `as` - who you are: `ada` (the default),
-# `kenji`, `ines`, or `viewer` (read-only); `theme=sumi`, `dark=1`.
+# `kenji`, `ines`, or `viewer` (read-only); `theme=sumi`, `dark=1`. The
+# schema with `comments=1` has Issho's comments beside it: threads on its
+# tables, said by name.
 #
 # Environment:
 #
@@ -724,6 +726,8 @@ defmodule HakushiDev.Layouts do
           rel="icon"
           href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0a0b'/%3E%3Crect x='17' y='17' width='8' height='8' rx='1' fill='%23e84a1c'/%3E%3Crect x='7.5' y='7.5' width='7' height='7' rx='1' fill='none' stroke='white' stroke-width='1.6'/%3E%3C/svg%3E"
         />
+        <link rel="stylesheet" href="/vendor/issho/issho.css" />
+        <link :if={@sumi} rel="stylesheet" href="/vendor/issho/issho-sumi.css" />
         <link rel="stylesheet" href="/css/hakushi.css" />
         <link :if={@sumi} rel="stylesheet" href="/css/hakushi-sumi.css" />
         <style>
@@ -841,6 +845,9 @@ defmodule HakushiDev.Layouts do
           .note .hakushi-handle, .swatches .hakushi-handle, .specimen .hakushi-handle { opacity: 0; }
           .hakushi-node:hover .hakushi-handle, .hakushi[data-ui-connecting] .hakushi-handle { opacity: 1; }
 
+          /* Schema with comments=1: Issho's comments beside the canvas. */
+          .comments-panel { width: 21rem; flex: none; overflow: auto; padding: 0.75rem; border-left: 1px solid var(--atelier-line); background: var(--atelier-bg); }
+
           .people-strip { display: flex; align-items: center; }
           .people-strip span { display: grid; place-items: center; width: 1.75rem; height: 1.75rem; margin-left: -6px; border: 2px solid var(--atelier-bg); border-radius: 99px; color: #fff; font-size: 0.625rem; font-weight: 600; }
           .scale-node { padding: 0.5rem 0.75rem; border: 1px solid var(--atelier-line); border-radius: 8px; background: var(--atelier-card); font-size: 0.8125rem; width: 9rem; position: relative; }
@@ -852,6 +859,7 @@ defmodule HakushiDev.Layouts do
             "imports": {
               "phoenix": "/vendor/phoenix/phoenix.mjs",
               "phoenix_live_view": "/vendor/phoenix_live_view/phoenix_live_view.esm.js",
+              "issho": "/vendor/issho/issho.esm.js",
               "hakushi": "/assets/hakushi.esm.js"
             }
           }
@@ -859,11 +867,12 @@ defmodule HakushiDev.Layouts do
         <script type="module">
           import { Socket } from "phoenix"
           import { LiveSocket } from "phoenix_live_view"
+          import { Hooks as Issho } from "issho"
           import { Hakushi, canvasOf } from "hakushi"
 
           const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
           const liveSocket = new LiveSocket("/live", Socket, {
-            hooks: { Hakushi },
+            hooks: { ...Issho, Hakushi },
             params: { _csrf_token: csrfToken }
           })
           liveSocket.connect()
@@ -977,15 +986,22 @@ defmodule HakushiDev.Page do
      |> assign(:readonly, params["as"] == "viewer")
      |> assign(:follow, params["follow"] != "false")
      |> assign(:room, params["room"])
+     |> assign(:comments, params["comments"] == "1")
      |> assign(:query, Map.take(params, ["as", "theme", "dark", "room"]))}
   end
 end
 
 defmodule HakushiDev.SchemaLive do
-  @moduledoc "The database of Atelier: tables, and foreign keys between columns of one type."
+  @moduledoc """
+  The database of Atelier: tables, and foreign keys between columns of one
+  type. With `?comments=1`, Issho's comments beside it: a thread on what
+  you selected, its place said by name ("The node “clients”"), with the
+  graph as it is now, which the canvas's events keep.
+  """
   use Phoenix.LiveView
 
   import Hakushi.Components
+  import Issho.Components, only: [comments: 1]
   import HakushiDev.Icons
   import HakushiDev.Layouts, only: [app: 1]
   import HakushiDev.Page, only: [topic: 2]
@@ -994,8 +1010,29 @@ defmodule HakushiDev.SchemaLive do
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok, assign(socket, graph: HakushiDev.Store.get("schema", socket.assigns.room))}
+    graph = HakushiDev.Store.get("schema", socket.assigns.room)
+    doc = topic("schema", socket.assigns.room)
+
+    # The comments are the room's, in a LiveView that is in it: it joins
+    # (the canvas then has the same session), and hears the canvas's
+    # changes, as the room's events: the graph of the comments' places, as
+    # it is now.
+    if connected?(socket) and socket.assigns.comments do
+      can = if socket.assigns.readonly, do: :read, else: :write
+      {:ok, _session} = Issho.Live.join(HakushiDev.Issho, socket.assigns.me, doc, can: can)
+      Issho.Live.subscribe(doc, :self, events: ["canvas.*"])
+    end
+
+    {:ok, assign(socket, graph: graph, now: graph, doc: doc)}
   end
+
+  @impl true
+  def handle_info({Issho.Live, "event", _room, %Issho.Event{}}, socket) do
+    {:noreply, assign(socket, :now, Hakushi.Issho.graph(HakushiDev.Issho, socket.assigns.doc))}
+  end
+
+  # The room's other news (its people, their cursors): the canvas's own.
+  def handle_info({Issho.Live, _event, _room, _payload}, socket), do: {:noreply, socket}
 
   @impl true
   def handle_event("add_column", %{"table" => table}, socket) do
@@ -1066,6 +1103,12 @@ defmodule HakushiDev.SchemaLive do
     <.app page={:schema} me={@me} query={@query} title="Schema" crumb="atelier_prod · 6 tables">
       <:actions>
         <span class="hint">Drag from a column's dot to a column of another table.</span>
+        <.link
+          class="button"
+          href={"/" <> HakushiDev.Layouts.qs(@query, if(@comments, do: %{}, else: %{"comments" => "1"}))}
+        >
+          {if @comments, do: "Hide comments", else: "Comments"}
+        </.link>
         <.canvas_item :if={!@readonly} for="schema" item="table" class="button primary">
           <.icon name="plus" /> New table
         </.canvas_item>
@@ -1075,7 +1118,7 @@ defmodule HakushiDev.SchemaLive do
         graph={@graph}
         on_change={&on_change(&1, &2, @room)}
         new_node={&new_node/2}
-        issho={[instance: HakushiDev.Issho, document: topic("schema", @room), follow: @follow]}
+        issho={[instance: HakushiDev.Issho, document: @doc, follow: @follow]}
         user={@me}
         readonly={@readonly}
         background={:lines}
@@ -1105,6 +1148,11 @@ defmodule HakushiDev.SchemaLive do
           </div>
         </:node>
       </.canvas>
+      <.comments :if={@comments} id="comments" room={@doc} class="comments-panel">
+        <:place :let={%{place: place, default: default}}>
+          {Hakushi.Issho.Place.label(place, @now, document: @doc) || default}
+        </:place>
+      </.comments>
     </.app>
     """
   end
@@ -1616,6 +1664,8 @@ defmodule HakushiDev.Endpoint do
   plug(Plug.Static, at: "/css", from: Path.expand("assets/css", __DIR__))
   plug(Plug.Static, at: "/vendor/phoenix", from: {:phoenix, "priv/static"})
   plug(Plug.Static, at: "/vendor/phoenix_live_view", from: {:phoenix_live_view, "priv/static"})
+  # Issho's script and theme, from its Hex package: its hooks (comments).
+  plug(Plug.Static, at: "/vendor/issho", from: {:issho, "priv/static"})
   # The images people add (Storehouse.Local), and the photos of the tests, by their address.
   plug(Storehouse.Local.Plug)
   plug(Plug.Static, at: "/fixtures", from: Path.expand("test/fixtures/images", __DIR__))
@@ -1636,12 +1686,16 @@ Task.async(fn ->
       [
         {Phoenix.PubSub, name: HakushiDev.PubSub},
         HakushiDev.Store,
-        # The room of each shared canvas, its people and their cursors.
+        # The room of each shared canvas, its people and their cursors. The
+        # canvases last as their rooms do (`store: :none`); the comments are
+        # kept in the store, in memory while the server runs.
+        {Issho.Store.Memory, name: HakushiDev.CollabStore},
         {Issho,
          name: HakushiDev.Issho,
          pubsub: HakushiDev.PubSub,
          endpoint: HakushiDev.Endpoint,
-         policy: HakushiDev.Collaboration},
+         policy: HakushiDev.Collaboration,
+         store: {Issho.Store.Memory, HakushiDev.CollabStore}},
         HakushiDev.Endpoint
       ],
       strategy: :one_for_one

@@ -1,5 +1,24 @@
 # Upgrading
 
+## To Issho 0.4
+
+Shared canvases now run on [Issho](https://hex.pm/packages/issho) 0.4:
+`{:issho, "~> 0.4"}`. Nothing else changes in your code: the canvas, its
+document, `Hakushi.Issho.change/4` and the agents' tools are as they
+were. What is new is Issho's, and the canvas's part in it:
+
+* Each change of a shared canvas is an event of its room (`canvas.added`,
+  `canvas.moved`, ...): agents wait for them, and your app hears them.
+  See [Events](collaboration.md#events).
+* Issho's comments go on a canvas's nodes, said by name with
+  `Hakushi.Issho.Place.label/3`. See [Comments](collaboration.md#comments).
+* An agent that a person paused or stopped changes nothing on the
+  canvas, and is told why.
+
+If you read Issho's processes yourself: a participant is now a state
+machine, so `:sys.get_state/1` of one is `{state, data}` (see Issho's
+changelog).
+
 ## To Hakushi 0.3
 
 Hakushi 0.3 runs on [Issho](https://hex.pm/packages/issho) 0.3: the canvas

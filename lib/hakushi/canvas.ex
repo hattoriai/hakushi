@@ -73,6 +73,7 @@ defmodule Hakushi.Canvas do
        graph: nil,
        given: nil,
        version: 0,
+       epoch: nil,
        shared: nil,
        room: nil,
        join: nil,
@@ -200,7 +201,8 @@ defmodule Hakushi.Canvas do
              notify: {__MODULE__, socket.assigns.id}
            ) do
       socket
-      |> assign(shared: join.document, room: room, version: snapshot["revision"])
+      |> assign(shared: join.document, room: room)
+      |> assign(version: snapshot["revision"], epoch: snapshot["epoch"])
       |> assign(readonly: readonly)
       |> assign_people(people(room))
       |> reset(snapshot["state"])
@@ -293,10 +295,18 @@ defmodule Hakushi.Canvas do
   # -- Events of the room -------------------------------------------------
 
   # A transaction of the room's document: its changes, in revision order.
-  defp receive_event(socket, {"tx", _document, %{"revision" => revision, "ops" => changes}}) do
-    if revision == socket.assigns.version + 1,
-      do: socket |> apply_changes(changes) |> assign(:version, revision),
-      else: resync(socket)
+  # The canvas hears them before it reads the graph it starts from, so one
+  # it has already is skipped; after one it missed, or of a document that
+  # started again (another epoch), the room's graph.
+  defp receive_event(socket, {"tx", _document, %{"revision" => revision, "ops" => changes} = tx}) do
+    %{version: version, epoch: epoch} = socket.assigns
+
+    cond do
+      tx["epoch"] != epoch -> resync(socket)
+      revision <= version -> socket
+      revision == version + 1 -> socket |> apply_changes(changes) |> assign(:version, revision)
+      true -> resync(socket)
+    end
   end
 
   defp receive_event(socket, {"presence_diff", topic, _diff}),
@@ -375,8 +385,8 @@ defmodule Hakushi.Canvas do
   # the room's graph, whole.
   defp resync(%{assigns: %{shared: doc, room: room}} = socket) when is_binary(doc) do
     case Issho.Live.read(room, doc) do
-      {:ok, %{"state" => graph, "revision" => revision}} ->
-        socket |> assign(:version, revision) |> reset(graph)
+      {:ok, %{"state" => graph, "revision" => revision} = snapshot} ->
+        socket |> assign(version: revision, epoch: snapshot["epoch"]) |> reset(graph)
 
       {:error, _reason} ->
         socket
