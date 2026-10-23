@@ -140,7 +140,7 @@ LocalStack), or a store of your own. Add it to your deps (a canvas
 without images never needs it):
 
 ```elixir
-{:storehouse, "~> 0.1"}
+{:storehouse, "~> 0.2"}
 ```
 
 On the local disk:

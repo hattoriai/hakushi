@@ -41,7 +41,7 @@ if Code.ensure_loaded?(Storehouse) do
     [Storehouse](https://hexdocs.pm/storehouse): the local disk, S3, or a
     store of the app's (`config :storehouse, adapter: ...`). It is an
     optional dependency of Hakushi: the kit is there when the app has
-    `{:storehouse, "~> 0.1"}` in its deps. The canvas takes the files with
+    `{:storehouse, "~> 0.2"}` in its deps. The canvas takes the files with
     a LiveView upload of its own: the canvas must not be in a form of the
     app's. The limits are the kit's config:
 
