@@ -26,13 +26,17 @@ defmodule Hakushi.Canvas do
     * `"hakushi:drop"` with `item`, `x` and `y`: a new node, made by the
       canvas's `new_node` function, or by a kit for a kit's item
       (`"schema:table"`).
+    * `"hakushi:draw"` with `tool` (`"ink:pen"`), `points`, `color`,
+      `size` and `parent`: a line drawn with a kit's tool, which the kit
+      makes a node of (`c:Hakushi.Kit.drawn/3`).
     * `"hakushi:edit"` with `node`, `action` and the action's params: a
       change of a kit's node by its controls (`Hakushi.Kit`), whose data
       the kit gives.
     * `"hakushi:undo"` and `"hakushi:redo"`: the person's own changes,
       undone and done again as new changes, which the server checks again.
     * `"hakushi:peer"`, on a shared canvas: the person's cursor, the nodes
-      they selected and the nodes they drag, for the others.
+      they selected, the nodes they drag and the line they draw (`ink`),
+      for the others.
 
   On a shared canvas (`issho`), the component is a session of an Issho
   room (`Hakushi.Issho`): its changes go to the room's document, and the
@@ -53,6 +57,8 @@ defmodule Hakushi.Canvas do
   @undo_limit 100
   # The most nodes one paste, duplicate or selection may name.
   @max_items 5_000
+  # The most points of a line being drawn that go to the others.
+  @max_ink_points 1_500
   # The colours of the people of a shared canvas with none of their own.
   @palette ~w(#e84a1c #2563eb #059669 #9333ea #d97706 #db2777 #0891b2 #65a30d)
 
@@ -451,6 +457,17 @@ defmodule Hakushi.Canvas do
     end
   end
 
+  def handle_event("hakushi:draw", %{"tool" => tool} = params, socket) when is_binary(tool) do
+    with [name, kit_tool] <- String.split(tool, ":", parts: 2),
+         kit when kit != nil <- Kit.by_name(socket.assigns.kits, name),
+         %{} = node <- Kit.drawn(kit, kit_tool, params, socket.assigns.messages) do
+      node = node |> with_id() |> Node.new() |> in_group(socket.assigns.graph, params["parent"])
+      socket |> commit(Change.add([node]), true) |> reply(%{"drawn" => node.id})
+    else
+      _refused -> {:reply, %{"ok" => false}, socket}
+    end
+  end
+
   def handle_event("hakushi:edit", %{"node" => id, "action" => action} = params, socket)
       when is_binary(id) and is_binary(action) do
     with %Node{} = node <- Graph.node(socket.assigns.graph, id),
@@ -662,9 +679,27 @@ defmodule Hakushi.Canvas do
         |> Enum.take(@max_items)
         |> Enum.filter(
           &match?([id, x, y] when is_binary(id) and is_number(x) and is_number(y), &1)
-        )
+        ),
+      "ink" => ink(params["ink"])
     }
   end
+
+  # A line being drawn: a tool's and a colour's names, a width, and its
+  # points (numbers), no more of them than a stroke has.
+  @doc false
+  def ink(%{"tool" => tool, "color" => color, "size" => size, "points" => points})
+      when is_binary(tool) and byte_size(tool) <= 40 and is_binary(color) and is_number(size) and
+             size > 0 and is_list(points) do
+    points = points |> Enum.take(@max_ink_points) |> Enum.filter(&ink_point?/1)
+
+    if Regex.match?(~r/\A[a-z0-9-]{1,24}\z/, color) and points != [],
+      do: %{"tool" => tool, "color" => color, "size" => min(size, 64), "points" => points}
+  end
+
+  def ink(_other), do: nil
+
+  defp ink_point?([x, y, p]), do: is_number(x) and is_number(y) and is_number(p)
+  defp ink_point?(_other), do: false
 
   # What a person sees, checked: a node's box is four numbers, an edge's
   # `under` the ids of nodes; at most 200 of each.
@@ -765,7 +800,7 @@ defmodule Hakushi.Canvas do
             tabindex="-1"
             role="group"
             aria-roledescription={@messages["node"]}
-            aria-label={@node_label.(node)}
+            aria-label={node_label(@node_label, @kits, @messages, node)}
           >
             <.node_content
               slots={@node_slots}
@@ -932,6 +967,14 @@ defmodule Hakushi.Canvas do
     """
   end
 
+  # The app's name of a node, else its kit's (a stroke is "Drawing"), else
+  # the default's.
+  defp node_label(fun, kits, messages, node) do
+    if fun == (&__MODULE__.label/1),
+      do: Kit.label(kits, node, messages) || fun.(node),
+      else: fun.(node)
+  end
+
   @doc false
   def label(%Node{data: data, id: id}) when is_map(data) do
     Map.get(data, :label) || Map.get(data, "label") || Map.get(data, :name) ||
@@ -968,6 +1011,7 @@ defmodule Hakushi.Canvas do
       "exportable" => assigns.export,
       "live" => assigns.join != nil,
       "user" => own_id(%{assigns: assigns}),
+      "tools" => Kit.tools(assigns.kits, assigns.messages),
       "messages" => assigns.messages,
       "locale" => assigns.locale
     }

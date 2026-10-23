@@ -7,6 +7,35 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Ink (`Hakushi.Kits.Ink`): drawing on the paper with a pen, over anything
+  on the canvas. A bar of tools at the top of the canvas has the pointer,
+  a pen and a highlighter (in seven colours and three widths), an eraser
+  of whole strokes and a lasso that selects strokes and nodes alike, to
+  move, copy or delete them (V, P, H, E and L; Escape for the pointer).
+  The line is smoothed as it is drawn, from every point the browser
+  gathers (`getCoalescedEvents`), thinner and thicker with a stylus's
+  pressure, and sharp at any zoom; when the pen lifts its points are
+  simplified, and the stroke is a node (`"ink-stroke"`, its points
+  relative to its box) that goes through the rules and `on_change`, moves,
+  goes in the frame it is drawn over, copies, exports and undoes as any.
+  Once a pen is used, a finger pans and only the pen draws. A stroke is
+  "Drawing" to a screen reader, near the node it is nearest.
+- On a shared canvas, the others see a line as it is drawn: it goes in
+  the person's awareness (`ink`), as a drag does, and becomes a change
+  when the pen lifts.
+- An agent draws: `draw_on_canvas` (`Hakushi.Issho.tools/0`) draws
+  strokes, or a ring `around` a node. The people see its pen draw each
+  stroke, under its pointer, unless it says `live: false`, the app sets
+  `config :hakushi, Hakushi.Issho, ink: [live: false]` (or `travel:
+  false`), or no one sees the canvas; `ink: [speed: ..., max: ...]` set
+  how fast it draws, and for how long at most.
+- Kits have tools: `c:Hakushi.Kit.tools/1` (a bar of tools on the
+  canvas, which draw, erase or lasso), `c:Hakushi.Kit.drawn/3` (the node
+  of a line drawn with one) and `c:Hakushi.Kit.label/2` (a node's name
+  for screen readers). `Hakushi.Test.draw/5` draws as a pen does.
+
 ## [0.3.1] - 2026-10-22
 
 Agents read what a person sees of a shared canvas, and a selected node's

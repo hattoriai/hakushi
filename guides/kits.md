@@ -6,7 +6,7 @@ package one kind of canvas, so that it is used in one line, by one app or
 by many: its nodes and how they look, how people make and edit them, its
 paper, the rules of its edges, and how it reads and writes as Markdown.
 
-Kits are optional. Hakushi has three, and you write your own with the same
+Kits are optional. Hakushi has four, and you write your own with the same
 callbacks (`Hakushi.Kit`).
 
 ## The kits of Hakushi
@@ -16,6 +16,7 @@ callbacks (`Hakushi.Kit`).
 | `Hakushi.Kits.Schema` | tables (`"schema-table"`), their columns, and foreign keys from a column to a column of its type | the table's and columns' names, a column's type and key, adding and removing columns | graph paper |
 | `Hakushi.Kits.Flow` | a trigger, steps, and conditions with two ways out (`"flow-trigger"`, `"flow-step"`, `"flow-condition"`) | the title and the detail | dots |
 | `Hakushi.Kits.Notes` | sticky notes (`"note"`) in five colours, which resize | the text, the colour | crosses, snapped |
+| `Hakushi.Kits.Ink` | strokes of a pen or a highlighter (`"ink-stroke"`), drawn over anything | drawing, erasing, lassoing, with a bar of tools on the canvas | the canvas's |
 
 ## Use a kit
 
@@ -35,6 +36,39 @@ of the person's own, as a move is: it goes through your rules and
 
 A canvas may have several kits (`kits={[Schema, Notes]}`): their nodes
 on one paper, with the first kit's paper and every kit's rules.
+
+### Ink
+
+Ink is drawn, not dropped: a canvas with `Hakushi.Kits.Ink` has a bar of
+tools at its top, and its items (`kit_items/1`) are none.
+
+```heex
+<.canvas id="board" graph={@graph} kits={[Hakushi.Kits.Notes, Hakushi.Kits.Ink]} on_change={&save/2} />
+```
+
+| Tool | Key | What it does |
+| --- | --- | --- |
+| Pointer | V, Escape | selects and drags, as usual |
+| Pen | P | draws a line, in a colour and a width of the bar, thinner and thicker with a stylus's pressure |
+| Highlighter | H | draws a wide line of one width, that lets what is under it show |
+| Eraser | E | deletes the strokes it passes over (⌘Z brings them back) |
+| Lasso | L | selects what a line drawn around encloses, strokes and nodes alike: drag them, copy them, delete them |
+
+The line is smoothed as it is drawn, and simplified when the pen lifts:
+it is then a stroke, a node whose data is its points, relative to its box
+(see `Hakushi.Kits.Ink`). It goes through your rules and `on_change` as
+any node, in the frame or group it is drawn over, and ⌘Z takes it back.
+The box of a stroke takes no clicks, only its line: a ring drawn around a
+node leaves the node to click. Once a pen is used on the canvas, a finger
+pans, and only the pen draws.
+
+`Hakushi.Kits.Ink.stroke/2` makes a stroke's node from points of the
+canvas, for your app's own drawings; `Hakushi.Test.draw/5` draws in a
+test as a pen does.
+
+On a shared canvas, the others see a line as it is drawn, and an agent
+draws with `draw_on_canvas` (see the [Collaboration](collaboration.md)
+guide).
 
 ### The paper, the tidy up and the rules
 
@@ -132,6 +166,9 @@ end
 * `canvas/0` (optional) is its paper, tidy up and rules; `resizable?/1`
   (optional) says which types resize by their corners.
 * `icon/0` and the elements' icons are names of `Hakushi.Icons`.
+* `tools/1` (optional) puts tools in a bar on the canvas, which draw a
+  line that `drawn/3` makes a node of, erase or lasso; `label/2`
+  (optional) names a node for screen readers. See `Hakushi.Kits.Ink`.
 
 Test a kit with `Hakushi.Test`: `drop/5` makes its node from its item
 (`"roadmap:milestone"`), `edit/5` sends an action as its controls do,

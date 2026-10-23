@@ -5,9 +5,10 @@
 # (/, tables with a handle on each column, foreign keys between columns of
 # one type), an automation (/workflow, steps dragged from a palette, a
 # condition with two ways out, no cycles), a moodboard (/board, notes that
-# resize, swatches, labelled arrows, snapped to the grid) and two thousand
+# resize, swatches, labelled arrows, snapped to the grid, and ink: a pen,
+# a highlighter, an eraser and a lasso) and two thousand
 # nodes in a grid, joined to their neighbours (/scale, `?n=` for another
-# count). The schema and the workflow are
+# count). The schema, the workflow and the moodboard are
 # shared: open them in two windows as two people. The graphs are kept in
 # memory while the server runs. The browser tests in e2e/ run against it.
 #
@@ -211,6 +212,11 @@ defmodule HakushiDev.Seeds do
       %{id: id, type: "note", x: x, y: y, width: w, height: h, data: %{tone: tone, text: text}}
     end
 
+    ink = fn id, points, opts ->
+      {:ok, stroke} = Hakushi.Kits.Ink.stroke(points, opts)
+      Map.put(stroke, :id, id)
+    end
+
     Graph.new(
       nodes: [
         %{
@@ -282,7 +288,21 @@ defmodule HakushiDev.Seeds do
         |> Map.put(:parent, "signage"),
         "question"
         |> note.(820, 220, 220, 110, "yellow", "Can the logo work stamped in brass?")
-        |> Map.put(:parent, "signage")
+        |> Map.put(:parent, "signage"),
+        # Ink: a line drawn by hand under the title.
+        ink.(
+          "underline",
+          for(
+            i <- 0..40,
+            do: [
+              4 + i * 7.5,
+              -30 + :math.sin(i / 6) * 2.5 + i * 0.08,
+              0.35 + 0.4 * :math.sin(i / 40 * :math.pi())
+            ]
+          ),
+          color: "blue",
+          size: 3
+        )
       ],
       edges: [
         %{source: "tide", target: "palette", label: "sets", path: "bezier"},
@@ -1082,12 +1102,17 @@ defmodule HakushiDev.WorkflowLive do
 end
 
 defmodule HakushiDev.BoardLive do
-  @moduledoc "A moodboard: notes that resize, swatches, a specimen, labelled arrows."
+  @moduledoc """
+  A moodboard: notes that resize, swatches, a specimen, labelled arrows,
+  and ink (Hakushi.Kits.Ink): people draw on it with a pen, and an agent
+  circles a node.
+  """
   use Phoenix.LiveView
 
   import Hakushi.Components
   import HakushiDev.Icons
   import HakushiDev.Layouts, only: [app: 1]
+  import HakushiDev.Page, only: [topic: 2]
 
   @impl true
   def mount(_params, _session, socket) do
@@ -1117,7 +1142,7 @@ defmodule HakushiDev.BoardLive do
     ~H"""
     <.app page={:board} me={@me} query={@query} title="Moodboard" crumb="Harbour Museum rebrand">
       <:actions>
-        <span class="hint">Double-click the paper for a note. Drop notes in a frame; move a frame by its name.</span>
+        <span class="hint">Double-click the paper for a note. Draw with P, erase with E, lasso with L.</span>
         <.canvas_item :if={!@readonly} for="board" item="frame" class="button"><.icon name="frame" /> Frame</.canvas_item>
         <.canvas_item :if={!@readonly} for="board" item="note" class="button"><.icon name="note" /> Note</.canvas_item>
       </:actions>
@@ -1126,6 +1151,9 @@ defmodule HakushiDev.BoardLive do
         graph={@graph}
         on_change={&on_change(&1, &2, @room)}
         new_node={&new_node/2}
+        kits={[Hakushi.Kits.Ink]}
+        issho={[instance: HakushiDev.Issho, document: topic("board", @room), follow: @follow]}
+        user={@me}
         readonly={@readonly}
         background={:cross}
         grid={20}

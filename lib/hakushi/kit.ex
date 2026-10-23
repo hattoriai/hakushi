@@ -10,9 +10,10 @@ defmodule Hakushi.Kit do
   Kits are optional: a canvas draws anything with `:node` slots, and a
   kit is a way to package a kind of canvas (its nodes, how people make and
   edit them, its paper and its rules) so that it is used in one line, by
-  one app or many. Hakushi has three: `Hakushi.Kits.Schema` (tables,
+  one app or many. Hakushi has four: `Hakushi.Kits.Schema` (tables,
   their columns and foreign keys), `Hakushi.Kits.Flow` (triggers, steps
-  and conditions) and `Hakushi.Kits.Notes` (sticky notes); an app makes
+  and conditions), `Hakushi.Kits.Notes` (sticky notes) and
+  `Hakushi.Kits.Ink` (drawing with a pen); an app makes
   its own with the same callbacks. See the [Kits](kits.md) guide.
 
   ## A kit of the app's own
@@ -145,7 +146,47 @@ defmodule Hakushi.Kit do
   """
   @callback from_markdown(text :: String.t()) :: {:ok, Hakushi.Graph.t()} | :error
 
-  @optional_callbacks resizable?: 1, canvas: 0, to_markdown: 1, from_markdown: 1
+  @doc """
+  The tools of the kit, for a bar on the canvas: a way to make its nodes
+  by drawing them, as a pen draws ink (`Hakushi.Kits.Ink`). Defaults to
+  none.
+
+  A tool is a map with `tool` (its name in the kit), `label`, `icon` (a
+  name of `Hakushi.Icons`), `key` (a letter that takes it, or `nil`) and
+  `mode`, what the pointer does with it on the canvas:
+
+    * `"draw"`: draws a line, which becomes a node (`c:drawn/3`) when the
+      pen lifts. Its options are `colors` (the names of the colours the
+      bar has, `--hakushi-ink-<name>` in the CSS), `color`, `sizes`, `size`
+      and `flat` (one width, whatever the pressure).
+    * `"erase"`: deletes the nodes of the kit's types that it passes over.
+    * `"lasso"`: selects what a line drawn around encloses.
+
+  The bar has the pointer first, which selects and drags as usual.
+  """
+  @callback tools(messages :: map()) :: [map()]
+
+  @doc """
+  A new node for a line drawn with a tool of the kit (`c:tools/1`), or
+  `nil`. `params` are the line's `"points"` on the canvas (`[x, y,
+  pressure]`), and the `"color"` and `"size"` chosen in the bar. A node
+  with no `id` gets one; drawn over a group, it is in it.
+  """
+  @callback drawn(tool :: String.t(), params :: map(), messages :: map()) :: map() | nil
+
+  @doc """
+  A node's name for screen readers, where the canvas's `node_label` is
+  its default: `"Drawing"`. Defaults to the default's.
+  """
+  @callback label(node :: Hakushi.Node.t(), messages :: map()) :: String.t()
+
+  @optional_callbacks resizable?: 1,
+                      canvas: 0,
+                      to_markdown: 1,
+                      from_markdown: 1,
+                      tools: 1,
+                      drawn: 3,
+                      label: 2
 
   defmacro __using__(_opts) do
     quote do
@@ -231,6 +272,27 @@ defmodule Hakushi.Kit do
   @doc false
   def resizable?(kit, type),
     do: exports?(kit, :resizable?, 1) and kit.resizable?(type)
+
+  @doc false
+  # The tools of a canvas's kits, for its bar: each with its kit's name.
+  def tools(kits, messages) do
+    for kit <- kits, exports?(kit, :tools, 1), tool <- kit.tools(messages) do
+      Map.put(tool, :kit, kit.name())
+    end
+  end
+
+  @doc false
+  def drawn(kit, tool, params, messages),
+    do: if(exports?(kit, :drawn, 3), do: kit.drawn(tool, params, messages))
+
+  @doc false
+  # A kit's name for a node, or nil for none of its own.
+  def label(kits, node, messages) do
+    case for_type(kits, node.type) do
+      nil -> nil
+      kit -> if exports?(kit, :label, 2), do: kit.label(node, messages)
+    end
+  end
 
   @doc false
   # The canvas the kits like: the first kit's paper and layout, every

@@ -147,9 +147,14 @@ what changed, about twenty times a second, whatever the number of people.
 A node someone drags moves for everyone while they drag it, with their
 name; it lands where they drop it when the room has the move.
 
+A line someone draws with a kit's tool (ink, `Hakushi.Kits.Ink`) goes to
+the others the same way, as they draw it: each canvas draws it under
+their cursor, in its colour, and it becomes a change of the room's when
+the pen lifts.
+
 They are the canvas's own keys of the person's state, under the canvas's
 document (`"blocks"`, see `Issho.Awareness`): `cursor`, `selected`,
-`viewport` and `dragging`. Issho's own keys (`place`, `pointer`, `view`,
+`viewport`, `dragging` and `ink`. Issho's own keys (`place`, `pointer`, `view`,
 `motion`) stay Issho's, so the other blocks of the page never collide
 with the canvas's.
 
@@ -198,6 +203,7 @@ gives it the canvas's verbs, however it reaches your app:
 | `connect_nodes` | an edge, from a handle to a handle |
 | `update_node` | a node's data, type or lock |
 | `delete_items` | nodes, with their edges, and edges |
+| `draw_on_canvas` | strokes of ink, or a ring around a node: the people see the pen draw |
 
 Its pointer goes to where it works and drags as a hand does, in a straight
 line: only where it goes is sent, and each browser draws the way there
@@ -211,6 +217,31 @@ config :hakushi, Hakushi.Issho, travel: false
 
 It moves with Issho's motion (`Issho.Motion`): only when someone of the
 room sees the canvas, within a tool call's time budget.
+
+### An agent that draws
+
+On a canvas with ink (`Hakushi.Kits.Ink`), `draw_on_canvas` draws strokes
+through points of the canvas, or a ring `around` a node, to circle it.
+The people see its pen go to each stroke and draw it, the line growing
+under its pointer as a person's does, and each stroke lands as a node
+when the pen lifts: they move it, erase it and undo it as any.
+
+Whether the people watch it draw is the app's to say, and the agent's
+for one drawing:
+
+```elixir
+config :hakushi, Hakushi.Issho,
+  ink: [
+    live: true,    # false: strokes land at once, unseen as drawn
+    speed: 900,    # how fast the pen goes, in pixels of the canvas a second
+    max: 8_000     # the most one drawing takes, in milliseconds; then the rest at once
+  ]
+```
+
+The agent's `live: false` lands a drawing at once. It also lands at once
+with `travel: false` (Hakushi's or Issho's), and when no one in the room
+shows the canvas, or each of them prefers reduced motion: an agent draws
+for someone who watches.
 
 ### What a person sees
 

@@ -48,6 +48,15 @@
   --hakushi-minimap-mask: rgba(15, 15, 20, 0.05);
   --hakushi-radius: 6px;
   --hakushi-transition: 120ms ease-out;
+  /* Ink (Hakushi.Kits.Ink): the colours of the pen and the highlighter. */
+  --hakushi-ink-ink: var(--hakushi-text);
+  --hakushi-ink-red: #e5484d;
+  --hakushi-ink-orange: #f76b15;
+  --hakushi-ink-yellow: #f5c518;
+  --hakushi-ink-green: #30a46c;
+  --hakushi-ink-blue: #2f5bd3;
+  --hakushi-ink-violet: #8e4ec6;
+  --hakushi-highlighter-opacity: 0.38;
 }
 
 /*
@@ -73,6 +82,13 @@
   --hakushi-control-shadow: 0 1px 3px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.06);
   --hakushi-minimap-node: #4a4a55;
   --hakushi-minimap-mask: rgba(0, 0, 0, 0.35);
+  --hakushi-ink-red: #ff6b6f;
+  --hakushi-ink-orange: #ff8b3e;
+  --hakushi-ink-yellow: #ffd60a;
+  --hakushi-ink-green: #3dd68c;
+  --hakushi-ink-blue: #7b9cff;
+  --hakushi-ink-violet: #b48cff;
+  --hakushi-highlighter-opacity: 0.32;
 }
 
 /* The canvas fills the box the app gives it: give it a height. */
@@ -1123,6 +1139,170 @@
 
 .hakushi-node:hover .hakushi-kit-note-color,
 .hakushi-kit-note-color:focus-visible { opacity: 1; }
+
+/* Ink: strokes of a pen or a highlighter. A stroke's box takes no pointer:
+   only its line does, so a ring drawn around a node leaves the node to
+   click. */
+.hakushi-node[data-type="ink-stroke"] {
+  pointer-events: none;
+  border-radius: 2px;
+}
+
+.hakushi-ink {
+  display: block;
+  overflow: visible;
+}
+
+.hakushi-ink,
+.hakushi-ink-live path,
+.hakushi-swatch,
+.hakushi-width {
+  --hakushi-ink: var(--hakushi-ink-ink);
+}
+
+:is(.hakushi-ink, .hakushi-ink-live path, .hakushi-swatch, .hakushi-width)[data-color="red"] { --hakushi-ink: var(--hakushi-ink-red); }
+:is(.hakushi-ink, .hakushi-ink-live path, .hakushi-swatch, .hakushi-width)[data-color="orange"] { --hakushi-ink: var(--hakushi-ink-orange); }
+:is(.hakushi-ink, .hakushi-ink-live path, .hakushi-swatch, .hakushi-width)[data-color="yellow"] { --hakushi-ink: var(--hakushi-ink-yellow); }
+:is(.hakushi-ink, .hakushi-ink-live path, .hakushi-swatch, .hakushi-width)[data-color="green"] { --hakushi-ink: var(--hakushi-ink-green); }
+:is(.hakushi-ink, .hakushi-ink-live path, .hakushi-swatch, .hakushi-width)[data-color="blue"] { --hakushi-ink: var(--hakushi-ink-blue); }
+:is(.hakushi-ink, .hakushi-ink-live path, .hakushi-swatch, .hakushi-width)[data-color="violet"] { --hakushi-ink: var(--hakushi-ink-violet); }
+
+.hakushi-ink-line,
+.hakushi-ink-live path {
+  fill: var(--hakushi-ink);
+  stroke: none;
+}
+
+.hakushi-ink[data-tool="highlighter"] .hakushi-ink-line,
+.hakushi-ink-live path[data-tool="highlighter"] {
+  opacity: var(--hakushi-highlighter-opacity);
+}
+
+/* The line to aim at: wider than the stroke, and not drawn. */
+.hakushi-ink-aim {
+  fill: none;
+  stroke: transparent;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: stroke;
+  cursor: grab;
+}
+
+.hakushi-node[data-type="ink-stroke"][data-ui-selected] {
+  box-shadow: 0 0 0 1px var(--hakushi-selection);
+  background: color-mix(in oklab, var(--hakushi-selection) 6%, transparent);
+}
+
+.hakushi-node[data-type="ink-stroke"][data-ui-peer]:not([data-ui-selected]) {
+  box-shadow: 0 0 0 1px var(--hakushi-peer);
+}
+
+.hakushi[data-ui-readonly] .hakushi-ink-aim,
+.hakushi-node[data-locked] .hakushi-ink-aim {
+  cursor: default;
+}
+
+/* The lines being drawn: above the nodes, as the pen goes. */
+.hakushi-ink-live {
+  pointer-events: none;
+}
+
+/* A tool of a kit: the pointer draws, erases or lassoes over everything. */
+.hakushi[data-ui-tool] {
+  cursor: crosshair;
+}
+
+.hakushi[data-ui-tool] :is(.hakushi-node, .hakushi-ink-aim, .hakushi-edge-hit, .hakushi-kit-field) {
+  cursor: inherit;
+}
+
+.hakushi[data-ui-tool="erase"] {
+  cursor: cell;
+}
+
+.hakushi[data-ui-tool] .hakushi-handle {
+  visibility: hidden;
+}
+
+.hakushi-lasso {
+  fill: var(--hakushi-box);
+  stroke: var(--hakushi-accent);
+  stroke-width: 1.5px;
+  stroke-dasharray: 4 4;
+}
+
+/* The bar of the tools, at the top of the canvas. */
+.hakushi-tools {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  max-width: calc(100% - 24px);
+  padding: 3px;
+  border-radius: calc(var(--hakushi-radius) + 3px);
+  background: var(--hakushi-control);
+  box-shadow: var(--hakushi-control-shadow);
+  translate: -50% 0;
+}
+
+.hakushi-tool[aria-pressed="true"] {
+  background: color-mix(in oklab, var(--hakushi-accent) 14%, transparent);
+  color: var(--hakushi-accent);
+}
+
+.hakushi-tool-options {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  margin-left: 3px;
+  padding-left: 5px;
+  border-left: 1px solid var(--hakushi-border);
+}
+
+.hakushi-tool-options[hidden] {
+  display: none;
+}
+
+.hakushi-swatch::before {
+  content: "";
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--hakushi-ink);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--hakushi-text) 15%, transparent);
+}
+
+.hakushi-swatch[data-tool="highlighter"]::before {
+  opacity: 0.6;
+}
+
+.hakushi-swatch[aria-pressed="true"]::before {
+  box-shadow: 0 0 0 2px var(--hakushi-control), 0 0 0 3.5px var(--hakushi-ink);
+}
+
+.hakushi-width span {
+  width: 16px;
+  height: var(--hakushi-ink-width);
+  border-radius: 999px;
+  background: var(--hakushi-ink);
+}
+
+.hakushi-width[data-tool="highlighter"] span {
+  opacity: 0.6;
+}
+
+.hakushi-width[aria-pressed="true"] {
+  background: color-mix(in oklab, var(--hakushi-text) 9%, transparent);
+}
+
+@media (max-width: 40rem) {
+  .hakushi-tools {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+}
 
 /* The items of kits, outside the canvas (kit_items/1). */
 .hakushi-kit-items {
