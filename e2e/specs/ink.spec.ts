@@ -138,10 +138,29 @@ test("the others see a line as it is drawn, and the stroke it becomes", async ({
   await expect(strokes(ada)).toHaveCount(1);
   await expect(ada.locator("#board .hakushi-ink-live path")).toHaveCount(0);
 
-  // Both draw at once.
+  // Both draw at once: both pens down, their moves in turn (Firefox's input,
+  // driven for two pages at the same moment, waits on itself).
   await tool(ada, "ink:pen").click();
   await tool(kenji, "ink:pen").click();
-  await Promise.all([line(ada, wave(380, 520)), line(kenji, wave(380, 620))]);
+  const theirs = [
+    { page: ada, points: wave(380, 520) },
+    { page: kenji, points: wave(380, 620) },
+  ];
+  for (const { page, points } of theirs) {
+    const at = (await page.locator("#board").boundingBox())!;
+    await page.mouse.move(at.x + points[0][0], at.y + points[0][1]);
+    await page.mouse.down();
+  }
+  for (let i = 1; i < theirs[0].points.length; i++) {
+    for (const { page, points } of theirs) {
+      const at = (await page.locator("#board").boundingBox())!;
+      await page.mouse.move(at.x + points[i][0], at.y + points[i][1], { steps: 2 });
+    }
+  }
+  // Each sees the other's line before either lifts.
+  await expect(ada.locator("#board .hakushi-ink-live path")).toHaveCount(2);
+  await expect(kenji.locator("#board .hakushi-ink-live path")).toHaveCount(2);
+  for (const { page } of theirs) await page.mouse.up();
   await expect(strokes(ada)).toHaveCount(3);
   await expect(strokes(kenji)).toHaveCount(3);
 });

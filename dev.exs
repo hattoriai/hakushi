@@ -80,6 +80,7 @@ defmodule HakushiDev.Seeds do
   @moduledoc "The canvases of Atelier, as they start."
 
   alias Hakushi.Graph
+  alias Hakushi.Kits.Ink
 
   @tables [
     {"clients", 0, 40, "#b5643c", 48,
@@ -213,7 +214,7 @@ defmodule HakushiDev.Seeds do
     end
 
     ink = fn id, points, opts ->
-      {:ok, stroke} = Hakushi.Kits.Ink.stroke(points, opts)
+      {:ok, stroke} = Ink.stroke(points, opts)
       Map.put(stroke, :id, id)
     end
 
