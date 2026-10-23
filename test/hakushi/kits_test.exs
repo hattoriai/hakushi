@@ -9,6 +9,8 @@ defmodule Hakushi.KitsTest do
 
   @endpoint HakushiTest.Endpoint
 
+  doctest Hakushi.Kits.Schema
+
   defp open(query \\ "") do
     {:ok, view, html} = live(build_conn(), "/kits" <> query)
     {view, html}
@@ -177,6 +179,72 @@ defmodule Hakushi.KitsTest do
 
       assert {:ok, %{"columns" => [_, %{"name" => "column_2", "id" => "c" <> _}]}} =
                Schema.edit("add", %{}, data)
+    end
+
+    test "Schema joins columns of one family of types" do
+      for {type, family} <- [
+            {"integer", "integer"},
+            {"BIGINT", "integer"},
+            {"int8", "integer"},
+            {"int unsigned", "integer"},
+            {"bigserial", "integer"},
+            {"numeric(12,2)", "decimal"},
+            {"money", "decimal"},
+            {"double precision", "float"},
+            {"character varying(255)", "text"},
+            {"varchar", "text"},
+            {"citext", "text"},
+            {"uuid", "uuid"},
+            {"timestamp(6) with time zone", "timestamp"},
+            {"timestamptz", "timestamp"},
+            {"datetime", "timestamp"},
+            {"time without time zone", "time"},
+            {"date", "date"},
+            {"tinyint(1)", "boolean"},
+            {"tinyint", "integer"},
+            {"jsonb", "json"},
+            {"bytea", "binary"},
+            {"integer[]", "integer[]"},
+            {"user defined", "user_defined"},
+            {nil, nil}
+          ] do
+        assert Schema.family(type) == family, "#{inspect(type)}: #{inspect(Schema.family(type))}"
+      end
+
+      refute Schema.family("text") == Schema.family("uuid")
+    end
+
+    test "a Schema table's handles are of its columns' families" do
+      graph =
+        Hakushi.Graph.new(
+          nodes: [
+            %{
+              id: "t",
+              type: "schema-table",
+              x: 0,
+              y: 0,
+              data: %{
+                "name" => "t",
+                "columns" => [
+                  %{"name" => "id", "type" => "int8", "key" => "pk"},
+                  %{"name" => "slug", "type" => "character varying(64)", "key" => nil}
+                ]
+              }
+            }
+          ]
+        )
+
+      html =
+        render_component(&Hakushi.Components.canvas/1,
+          id: "families",
+          graph: graph,
+          kits: [Schema]
+        )
+
+      assert html =~
+               ~s(data-handle="id" data-kind="both" data-side="left" data-type="integer" data-accepts="integer")
+
+      assert html =~ ~s(data-type="text" data-accepts="text")
     end
 
     test "a canvas takes the paper, layout and rules its kits like, and its own over them" do
