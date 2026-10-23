@@ -19,7 +19,7 @@ defmodule HakushiTest.ImagesLive do
           width: 400,
           height: 300,
           data: %{
-            "url" => "/uploads/hakushi/2026/10/a-photo.png",
+            "url" => "/uploads/2026/10/a-photo.png",
             "key" => "2026/10/a-photo.png",
             "thumb" => nil,
             "name" => "photo.png",

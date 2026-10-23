@@ -20,9 +20,11 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   caption on a double click and alt text from the panel, show a smaller
   copy at small zooms (`thumbnail`) and load as they come near; the
   export draws them.
-- `Hakushi.Storage`, the store of the images: Kotoba's behaviour, so an
-  app's store for Kotoba is used as it is (and Kotoba's, with none of
-  Hakushi's); `Hakushi.Storage.Local` and its plug.
+- The images are checked, stored and served with
+  [Storehouse](https://hexdocs.pm/storehouse), as Kotoba's attachments
+  are: the local disk, S3, or a store of the app's
+  (`config :storehouse, adapter: ...`); `Storehouse.Local.Plug` serves
+  them.
 - An agent adds an image: `add_image`, from an address or a file of the
   app's, with its placeholder for the others while it comes.
 - Kits take files (`c:Hakushi.Kit.upload/0`, `uploaded/4`, `pasted/3`),

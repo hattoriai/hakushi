@@ -33,11 +33,11 @@ Application.put_env(:phoenix, :json_library, JSON)
 Application.put_env(:issho, Issho.MCP, instance: HakushiDev.Issho)
 
 # The moodboard's images (Hakushi.Kits.Images): kept in tmp/uploads, and
-# served by Hakushi.Storage.Local.Plug. Addresses pasted are fetched from
+# served by Storehouse.Local.Plug. Addresses pasted are fetched from
 # two hosts of photos, and from this server itself (over http) for the
 # browser tests, which a real app would not allow; an agent's `file` is a
 # photo of test/fixtures/images.
-Application.put_env(:hakushi, Hakushi.Storage.Local, root: Path.expand("tmp/uploads", __DIR__))
+Application.put_env(:storehouse, Storehouse.Local, root: Path.expand("tmp/uploads", __DIR__))
 
 Application.put_env(:hakushi, Hakushi.Kits.Images,
   fetch: ["images.unsplash.com", "upload.wikimedia.org", "127.0.0.1", "localhost"],
@@ -1616,8 +1616,8 @@ defmodule HakushiDev.Endpoint do
   plug(Plug.Static, at: "/css", from: Path.expand("assets/css", __DIR__))
   plug(Plug.Static, at: "/vendor/phoenix", from: {:phoenix, "priv/static"})
   plug(Plug.Static, at: "/vendor/phoenix_live_view", from: {:phoenix_live_view, "priv/static"})
-  # The images people add (Hakushi.Storage.Local), and the photos of the tests, by their address.
-  plug(Hakushi.Storage.Local.Plug)
+  # The images people add (Storehouse.Local), and the photos of the tests, by their address.
+  plug(Storehouse.Local.Plug)
   plug(Plug.Static, at: "/fixtures", from: Path.expand("test/fixtures/images", __DIR__))
 
   plug(Plug.Parsers, parsers: [:urlencoded, :json], pass: ["*/*"], json_decoder: JSON)

@@ -38,8 +38,7 @@ defmodule Hakushi.MixProject do
   def application do
     [
       mod: {Hakushi.Application, []},
-      # :inets and :ssl for the images an app lets the server fetch (Hakushi.Images.fetch/2).
-      extra_applications: [:logger, inets: :optional, ssl: :optional, public_key: :optional]
+      extra_applications: [:logger]
     ]
   end
 
@@ -70,7 +69,9 @@ defmodule Hakushi.MixProject do
       {:phoenix_html, "~> 4.1"},
       {:phoenix_live_reload, "~> 1.6", only: :dev},
       {:phoenix_live_view, if(@oldest, do: "~> 1.1.0", else: "~> 1.1")},
-      {:stream_data, "~> 1.1", only: :test}
+      {:stream_data, "~> 1.1", only: :test},
+      # The images of the Images kit: checked, stored and served.
+      {:storehouse, "~> 0.1"}
     ]
   end
 
@@ -178,10 +179,7 @@ defmodule Hakushi.MixProject do
         ],
         Collaboration: [Hakushi.Room],
         Storage: [
-          Hakushi.Graph.Type,
-          Hakushi.Storage,
-          Hakushi.Storage.Local,
-          Hakushi.Storage.Local.Plug
+          Hakushi.Graph.Type
         ],
         Testing: [Hakushi.Test]
       ]

@@ -1,7 +1,7 @@
 defmodule Hakushi.ImagesTest do
-  # Images (Hakushi.Kits.Images): the files checked and stored, the store
-  # and its plug, the kit's nodes, a canvas that takes uploads, and an
-  # agent that adds an image.
+  # Images (Hakushi.Kits.Images): the files checked and stored (with
+  # Storehouse), the kit's nodes, a canvas that takes uploads, and an agent
+  # that adds an image.
   use ExUnit.Case, async: false
 
   import Phoenix.ConnTest
@@ -9,13 +9,12 @@ defmodule Hakushi.ImagesTest do
   import Plug.Conn, only: [get_resp_header: 2]
   import Hakushi.Test
 
-  alias Hakushi.{Images, Storage}
+  alias Hakushi.Images
   alias Hakushi.Kits.Images, as: Kit
-  alias Hakushi.Storage.Local
-  alias Hakushi.Storage.Local.Plug, as: LocalPlug
   alias Issho.Tool.Context
+  alias Storehouse.Local
+  alias Storehouse.Local.Plug, as: LocalPlug
 
-  doctest Hakushi.Storage
   doctest Hakushi.Images
 
   @endpoint HakushiTest.Endpoint
@@ -25,15 +24,12 @@ defmodule Hakushi.ImagesTest do
 
   setup do
     root = Path.join(System.tmp_dir!(), "hakushi-images-#{System.unique_integer([:positive])}")
-    Application.put_env(:hakushi, Local, root: root)
+    Application.put_env(:storehouse, Local, root: root)
 
     on_exit(fn ->
       File.rm_rf!(root)
-
-      for key <- [Local, Kit, :storage],
-          do: Application.delete_env(:hakushi, key)
-
-      Application.delete_env(:kotoba, :storage)
+      Application.delete_env(:storehouse, Local)
+      Application.delete_env(:hakushi, Kit)
     end)
 
     %{root: root}
@@ -42,38 +38,42 @@ defmodule Hakushi.ImagesTest do
   describe "an image's file" do
     test "is a PNG, a JPEG, a GIF or a WebP, by its bytes, with its size" do
       assert {:ok, %{content_type: "image/png", width: 4, height: 3, bytes: 77}} =
-               Images.describe(fixture("small.png"))
+               Images.store(fixture("small.png"))
 
       assert {:ok, %{content_type: "image/gif", width: 5, height: 7}} =
-               Images.describe(fixture("small.gif"))
+               Images.store(fixture("small.gif"))
 
       assert {:ok, %{content_type: "image/webp", width: 6, height: 2}} =
-               Images.describe(fixture("small.webp"))
+               Images.store(fixture("small.webp"))
 
       assert {:ok, %{content_type: "image/jpeg", width: 1200, height: 800}} =
-               Images.describe(fixture("harbour.jpg"))
+               Images.store(fixture("harbour.jpg"))
     end
 
     test "is turned as its EXIF says, as the browser draws it" do
       # 8 × 6, with the orientation 6: a quarter turn.
-      assert {:ok, %{width: 6, height: 8}} = Images.describe(fixture("turned.jpg"))
+      assert {:ok, %{width: 6, height: 8}} = Images.store(fixture("turned.jpg"))
     end
 
-    test "is refused when it is not one: an SVG, a page called .png, too large" do
-      assert {:error, :not_an_image} = Images.describe(fixture("drawing.svg"))
-      assert {:error, :not_an_image} = Images.describe(fixture("not-an-image.png"))
-      assert {:error, :too_large} = Images.describe(fixture("harbour.jpg"), max_bytes: 1_000)
-      assert {:error, :too_large} = Images.describe(fixture("harbour.jpg"), max_pixels: 10_000)
+    test "is refused when it is not one: an SVG, a page called .png, too large",
+         %{root: root} do
+      assert {:error, :not_an_image} = Images.store(fixture("drawing.svg"))
+      assert {:error, :not_an_image} = Images.store(fixture("not-an-image.png"))
+      assert {:error, :too_large} = Images.store(fixture("harbour.jpg"), max_bytes: 1_000)
+      assert {:error, :too_large} = Images.store(fixture("harbour.jpg"), max_pixels: 10_000)
+      assert Path.wildcard(Path.join(root, "**/*.*")) == []
     end
 
     test "is stored under a new key with its checked type's extension", %{root: root} do
       assert {:ok, image} = Images.store(fixture("small.png"), name: "board <1>.html")
 
-      assert %{content_type: "image/png", width: 4, height: 3, name: "board <1>.html"} = image
+      assert %Storehouse.File{content_type: "image/png", width: 4, height: 3} = image
+      assert image.name == "board <1>.html"
       assert image.key =~ ~r"\A\d{4}/\d{2}/[0-9a-f-]{36}-board_1_\.png\z"
-      assert image.url == "/uploads/hakushi/" <> image.key
+      assert image.url == "/uploads/" <> image.key
+      assert image.checksum == Storehouse.checksum(fixture("small.png"))
       assert File.read!(Path.join(root, image.key)) == File.read!(fixture("small.png"))
-      assert image.thumb == nil
+      assert image.preview == nil
     end
 
     test "has a smaller copy when the app makes one, and none when it fails" do
@@ -82,21 +82,17 @@ defmodule Hakushi.ImagesTest do
         "/thumbs/" <> image.key
       end
 
-      assert {:ok, %{thumb: "/thumbs/" <> _}} =
+      assert {:ok, %{preview: "/thumbs/" <> _}} =
                Images.store(fixture("small.png"), thumbnail: thumbnail)
 
-      assert {:ok, %{thumb: nil}} =
+      assert {:ok, %{preview: nil}} =
                Images.store(fixture("small.png"), thumbnail: fn _, _ -> raise "no" end)
 
-      assert {:ok, %{thumb: nil}} =
+      assert {:ok, %{preview: nil}} =
                Images.store(fixture("small.png"), thumbnail: fn _, _ -> "javascript:1" end)
     end
 
-    test "is not stored when it is refused, or when the store gives an unsafe address",
-         %{root: root} do
-      assert {:error, :not_an_image} = Images.store(fixture("not-an-image.png"))
-      refute File.exists?(root)
-
+    test "is not stored when the store gives an unsafe address", %{root: root} do
       defmodule Unsafe do
         def put(key, path, meta),
           do: with({:ok, _} <- Local.put(key, path, meta), do: {:ok, "javascript:alert(1)"})
@@ -105,7 +101,7 @@ defmodule Hakushi.ImagesTest do
         def url(key), do: key
       end
 
-      assert {:error, {:unsafe_url, _}} = Images.store(fixture("small.png"), storage: Unsafe)
+      assert {:error, {:unsafe_url, _}} = Images.store(fixture("small.png"), adapter: Unsafe)
       assert Path.wildcard(Path.join(root, "**/*.png")) == []
     end
 
@@ -122,34 +118,15 @@ defmodule Hakushi.ImagesTest do
     end
 
     test "shows only from an address of the web or of the app" do
-      assert Images.safe_url?("/uploads/hakushi/a.png")
+      assert Images.safe_url?("/uploads/a.png")
       assert Images.safe_url?("https://cdn.example.com/a.png")
       refute Images.safe_url?("//evil.org/a.png")
       refute Images.safe_url?("javascript:alert(1)")
       refute Images.safe_url?("data:image/svg+xml,<svg/>")
       refute Images.safe_url?(~s{/a.png" onerror="alert(1)})
     end
-  end
 
-  describe "the store" do
-    test "is Hakushi's, else the one of the app's Kotoba, else the local one" do
-      assert Storage.adapter() == Local
-      Application.put_env(:kotoba, :storage, MyApp.KotobaStorage)
-      assert Storage.adapter() == MyApp.KotobaStorage
-      Application.put_env(:hakushi, :storage, MyApp.Storage)
-      assert Storage.adapter() == MyApp.Storage
-    end
-
-    test "keeps its files under its root" do
-      assert {:error, :invalid_key} = Local.path("../etc/passwd")
-
-      assert {:error, :invalid_key} =
-               Local.put("a/../../x.png", fixture("small.png"), %{})
-
-      assert :ok = Local.delete("2026/10/none.png")
-    end
-
-    test "serves them with their type, and nothing else", %{root: root} do
+    test "is served with its type, and nothing else", %{root: root} do
       {:ok, image} = Images.store(fixture("small.png"))
       File.write!(Path.join(root, "page.html"), "<script></script>")
       plug = LocalPlug.init([])
@@ -159,31 +136,20 @@ defmodule Hakushi.ImagesTest do
       assert get_resp_header(conn, "content-type") == ["image/png"]
       assert get_resp_header(conn, "x-content-type-options") == ["nosniff"]
 
-      conn = LocalPlug.call(build_conn(:get, "/uploads/hakushi/page.html"), plug)
+      conn = LocalPlug.call(build_conn(:get, "/uploads/page.html"), plug)
       assert get_resp_header(conn, "content-type") == ["application/octet-stream"]
-      assert get_resp_header(conn, "content-disposition") == ["attachment"]
-
-      assert LocalPlug.call(build_conn(:get, "/uploads/hakushi/../x"), plug).status ==
-               400
-
-      assert LocalPlug.call(build_conn(:get, "/uploads/hakushi/no.png"), plug).status ==
-               404
-
-      conn = LocalPlug.call(build_conn(:get, "/other"), plug)
-      refute conn.halted
     end
   end
 
   describe "the kit's node" do
-    @image %{
+    @image %Storehouse.File{
       key: "2026/10/k-a.png",
-      url: "/uploads/hakushi/2026/10/k-a.png",
+      url: "/uploads/2026/10/k-a.png",
       name: "a.png",
       content_type: "image/png",
       bytes: 1,
       width: 1600,
-      height: 1000,
-      thumb: nil
+      height: 1000
     }
 
     test "is as wide as its box, as high as its file says, and 480 at most unasked" do
@@ -297,9 +263,7 @@ defmodule Hakushi.ImagesTest do
       assert %{type: "image", x: 100, y: 50, width: 300, height: 200} = node
 
       [url] =
-        Regex.run(~r{src="/uploads/hakushi/([^"]+-harbour\.jpg)"}, render(view),
-          capture: :all_but_first
-        )
+        Regex.run(~r{src="/uploads/([^"]+-harbour\.jpg)"}, render(view), capture: :all_but_first)
 
       assert url =~ ~r/-harbour\.jpg\z/
       assert File.exists?(Path.join(root, url))

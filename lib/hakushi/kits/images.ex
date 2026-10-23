@@ -24,8 +24,8 @@ defmodule Hakushi.Kits.Images do
   shown:
 
       %{
-        "url" => "/uploads/hakushi/2026/10/…-board.png",
-        "key" => "2026/10/…-board.png",   # in the store (Hakushi.Storage)
+        "url" => "/uploads/2026/10/…-board.png",
+        "key" => "2026/10/…-board.png",   # in the store (Storehouse)
         "thumb" => nil,                     # a smaller copy's URL, for small zooms
         "name" => "board.png",
         "pixels" => [1600, 1000],           # the file's width and height
@@ -36,10 +36,11 @@ defmodule Hakushi.Kits.Images do
 
   ## The files
 
-  The files go through the app's store, `Hakushi.Storage` (Kotoba's, when
-  the app has one). The canvas takes them with a LiveView upload of its
-  own: the canvas must not be in a form of the app's. The limits are the
-  kit's config:
+  The files go to the app's store with
+  [Storehouse](https://hexdocs.pm/storehouse): the local disk, S3, or a
+  store of the app's (`config :storehouse, adapter: ...`). The canvas
+  takes them with a LiveView upload of its own: the canvas must not be in
+  a form of the app's. The limits are the kit's config:
 
       config :hakushi, Hakushi.Kits.Images,
         max_file_size: 10_000_000,     # bytes, the default
@@ -59,7 +60,8 @@ defmodule Hakushi.Kits.Images do
     * `:files` - a function of a name an agent gives (`add_image`'s
       `file`) that gives `{:ok, path}` of one of the app's files, or
       `:error`.
-    * `:storage` - the store, for this kit only.
+    * `:adapter` - the store, for this kit only. The default is
+      `Storehouse.adapter/0`.
   """
 
   use Hakushi.Kit
@@ -168,7 +170,7 @@ defmodule Hakushi.Kits.Images do
   @doc false
   def store_opts(config, opts) do
     config
-    |> Keyword.take([:storage, :thumbnail, :max_pixels, :http])
+    |> Keyword.take([:adapter, :thumbnail, :max_pixels, :http])
     |> Keyword.put(:max_bytes, config[:max_file_size])
     |> Keyword.merge(opts)
   end
@@ -209,7 +211,7 @@ defmodule Hakushi.Kits.Images do
       data: %{
         "url" => image.url,
         "key" => image.key,
-        "thumb" => image.thumb,
+        "thumb" => image.preview,
         "name" => image.name,
         "pixels" => [image.width, image.height],
         "crop" => [0, 0, 1, 1],

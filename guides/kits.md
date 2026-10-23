@@ -133,19 +133,22 @@ it was; ⌘Z takes it back). A double click writes its caption, under it.
 Its edges, groups, copy and paste and export (PNG and SVG, with the
 images in them) are those of any node.
 
-The files go to a store of your app's, `Hakushi.Storage`. It is
-Kotoba's: the same three callbacks, so an app with a store for Kotoba
-uses it as it is, and with none of Hakushi's, the canvas takes Kotoba's
-(`config :kotoba, storage: ...`). Else, the local disk:
+The files go to your app's store with
+[Storehouse](https://hexdocs.pm/storehouse), as Kotoba's attachments do:
+the local disk, S3 (and the stores that speak its API: R2, MinIO,
+LocalStack), or a store of your own. On the local disk:
 
 ```elixir
 # config/runtime.exs, in the :prod block
-config :hakushi, Hakushi.Storage.Local,
-  root: System.get_env("HAKUSHI_UPLOADS", "/var/lib/my_app/uploads")
+config :storehouse, Storehouse.Local,
+  root: System.get_env("UPLOADS", "/var/lib/my_app/uploads")
 
 # lib/my_app_web/endpoint.ex, before the router
-plug Hakushi.Storage.Local.Plug
+plug Storehouse.Local.Plug
 ```
+
+On S3, `config :storehouse, adapter: Storehouse.S3` and its bucket (see
+Storehouse's [Stores](https://hexdocs.pm/storehouse/stores.html) guide).
 
 The limits, and what else the kit does, are its config:
 
