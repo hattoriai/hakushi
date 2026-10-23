@@ -7,6 +7,12 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-23
+
+Diagrams of data: ways to tidy up, a canvas people only arrange, laid out
+as it opens and at a zoom people read, and a Schema kit that understands
+the types and schemas of a database.
+
 ### Added
 
 - Ways to tidy up: in layers (`:right`, `:down`), spread out by forces
@@ -433,7 +439,8 @@ The first release.
   Japanese.
 - `hakushi.css` and the Sumi theme, `hakushi-sumi.css`.
 
-[Unreleased]: https://github.com/hattoriai/hakushi/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/hattoriai/hakushi/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/hattoriai/hakushi/releases/tag/v0.5.0
 [0.4.0]: https://github.com/hattoriai/hakushi/releases/tag/v0.4.0
 [0.3.1]: https://github.com/hattoriai/hakushi/releases/tag/v0.3.1
 [0.3.0]: https://github.com/hattoriai/hakushi/releases/tag/v0.3.0

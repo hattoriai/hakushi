@@ -1,5 +1,21 @@
 # Upgrading
 
+## To Hakushi 0.5
+
+Update `{:hakushi, "~> 0.5"}`. A canvas's code stays as it was, with two
+things to know:
+
+* The Images kit takes Storehouse 0.2: update `{:storehouse, "~> 0.2"}`
+  if your app uses it.
+* Tidy up packs the parts of a graph that no edge joins in rows, where it
+  laid them out in one line: a canvas of many such parts tidies up more
+  compactly than before.
+
+What is new is opt-in: the `:force` and `:grid` layouts and the menu of
+ways to tidy up, `readonly={:arrange}`, `tidy`, `fit={:readable}`, and in
+the Schema kit, families of types and stubs of other schemas' tables. See
+[Layout and export](layout.md) and [Kits](kits.md).
+
 ## To Hakushi 0.4, on Issho 0.4
 
 Update `{:hakushi, "~> 0.4"}`. Shared canvases now run on [Issho](https://hex.pm/packages/issho) 0.4:

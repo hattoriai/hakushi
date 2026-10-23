@@ -29,7 +29,7 @@ mix igniter.install hakushi
 <details>
 <summary>Without Igniter</summary>
 
-Add `{:hakushi, "~> 0.4"}` to the deps in `mix.exs`, then run:
+Add `{:hakushi, "~> 0.5"}` to the deps in `mix.exs`, then run:
 
 ```sh
 mix deps.get
