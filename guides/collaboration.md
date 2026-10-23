@@ -34,7 +34,7 @@ for your policy. Any other key raises.
 1. Issho in your dependencies:
 
    ```elixir
-   {:issho, "~> 0.4"}
+   {:issho, "~> 0.4.2"}
    ```
 
 2. An Issho instance in your supervision tree, after the PubSub, with
