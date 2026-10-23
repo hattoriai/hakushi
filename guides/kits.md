@@ -18,6 +18,7 @@ callbacks (`Hakushi.Kit`).
 | `Hakushi.Kits.Notes` | sticky notes (`"note"`) in five colours, which resize | the text, the colour | crosses, snapped |
 | `Hakushi.Kits.Ink` | strokes of a pen or a highlighter (`"ink-stroke"`), drawn over anything | drawing, erasing, lassoing, with a bar of tools on the canvas | the canvas's |
 | `Hakushi.Kits.Shapes` | rectangles, ellipses, diamonds, triangles and text (`"shape"`), and lines (`"shape-line"`) | drawing them with the bar of tools, their text in place, their style from a panel, turning and resizing them | the canvas's |
+| `Hakushi.Kits.Images` | images (`"image"`), uploaded through the app | dropping, pasting or picking them, resizing with their aspect ratio, cropping, a caption and alt text | the canvas's |
 
 ## Use a kit
 
@@ -104,6 +105,64 @@ Its colours are the theme's (`--hakushi-shape-<name>`), and your own (see
 the nodes for your app's own drawings; `Hakushi.Test.draw_box/5` draws as
 a drag does, and `edit/5` with a list of nodes styles them as the panel
 does. In Markdown, shapes are a Mermaid flowchart.
+
+### Images
+
+Images are files people drop on the paper, paste, or pick with the kit's
+tool (I), for a moodboard, a screenshot to mark up, references beside a
+plan:
+
+```heex
+<.canvas id="board" graph={@graph} kits={[Hakushi.Kits.Ink, Hakushi.Kits.Images]} on_change={&save/2} />
+```
+
+Each file is an image where it lands, at its own aspect ratio, sized to
+fit the view (several at once: a row). While it uploads, the canvas
+shows a placeholder with the file and its progress, which the others
+see too on a shared canvas; the node is made once the server has the
+file and has checked it: a PNG, a JPEG, a GIF or a WebP, by its bytes,
+not its name (`Hakushi.Images`). An image's address pasted (or dropped
+from another tab) is fetched by the server, from the hosts you allow
+only, and stored as an upload is.
+
+A selected image resizes by its corners and sides with its aspect ratio
+kept (Shift frees it). The panel beside it has its alt text, and Crop:
+the whole file shows around it, faded, and a box of the part it keeps,
+whose corners and sides are dragged (Enter keeps it, Escape leaves it as
+it was; ⌘Z takes it back). A double click writes its caption, under it.
+Its edges, groups, copy and paste and export (PNG and SVG, with the
+images in them) are those of any node.
+
+The files go to a store of your app's, `Hakushi.Storage`. It is
+Kotoba's: the same three callbacks, so an app with a store for Kotoba
+uses it as it is, and with none of Hakushi's, the canvas takes Kotoba's
+(`config :kotoba, storage: ...`). Else, the local disk:
+
+```elixir
+# config/runtime.exs, in the :prod block
+config :hakushi, Hakushi.Storage.Local,
+  root: System.get_env("HAKUSHI_UPLOADS", "/var/lib/my_app/uploads")
+
+# lib/my_app_web/endpoint.ex, before the router
+plug Hakushi.Storage.Local.Plug
+```
+
+The limits, and what else the kit does, are its config:
+
+```elixir
+config :hakushi, Hakushi.Kits.Images,
+  max_file_size: 10_000_000,        # bytes (the default)
+  max_entries: 10,                  # files at once (the default)
+  fetch: ["images.example.com"],    # hosts whose addresses are fetched (none by default)
+  thumbnail: &MyApp.Images.thumbnail/2,  # a smaller copy, for small zooms
+  files: &MyApp.Images.path/1       # an agent's add_image `file`, by name
+```
+
+The canvas has a LiveView upload of its own: it must not be in a form of
+yours. `Hakushi.Kits.Images.image_node/3` makes the node of an image you
+stored with `Hakushi.Images.store/2` (seeds, imports). With many images,
+those off the screen load as they come near, and with `thumbnail` the
+canvas shows the smaller copy when it is zoomed out.
 
 ### The paper, the tidy up and the rules
 

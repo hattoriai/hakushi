@@ -36,7 +36,11 @@ defmodule Hakushi.MixProject do
   end
 
   def application do
-    [mod: {Hakushi.Application, []}, extra_applications: [:logger]]
+    [
+      mod: {Hakushi.Application, []},
+      # :inets and :ssl for the images an app lets the server fetch (Hakushi.Images.fetch/2).
+      extra_applications: [:logger, inets: :optional, ssl: :optional, public_key: :optional]
+    ]
   end
 
   def cli do
@@ -158,6 +162,8 @@ defmodule Hakushi.MixProject do
           Hakushi.Kits.Notes,
           Hakushi.Kits.Ink,
           Hakushi.Kits.Shapes,
+          Hakushi.Kits.Images,
+          Hakushi.Images,
           Hakushi.Ink,
           Hakushi.Mermaid,
           Hakushi.Icons
@@ -171,7 +177,12 @@ defmodule Hakushi.MixProject do
           Hakushi.Paper
         ],
         Collaboration: [Hakushi.Room],
-        Storage: [Hakushi.Graph.Type],
+        Storage: [
+          Hakushi.Graph.Type,
+          Hakushi.Storage,
+          Hakushi.Storage.Local,
+          Hakushi.Storage.Local.Plug
+        ],
         Testing: [Hakushi.Test]
       ]
     ]

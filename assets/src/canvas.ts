@@ -13,6 +13,7 @@ import { editable, el, interactive, isApple, numberAttr, prefersReducedMotion, s
 import { contains, edgePath, facing, fromCorners, grow, intersects, sidePoint, union } from "./geometry";
 import { exportImage, type ExportOptions } from "./export";
 import { icons } from "./icons";
+import { aspectResize, cropOf, dragCrop, fitImage, fullOf, imageAddress, rowAt, type Crop } from "./images";
 import { FLAT, inkBox, inside, outline, simplify, streamline, type InkPoint, type InkStroke } from "./ink";
 import { layered } from "./layout";
 import { Messages } from "./messages";
@@ -71,7 +72,8 @@ type Gesture =
       // An end of an edge dragged to another handle: the edge.
       reconnect?: string;
     }
-  | { kind: "resize"; pointer: number; id: string; corner: string; start: Point; rect: Rect }
+  // A node resized by a corner or a side; an image (`data-hakushi-aspect`) keeps its aspect ratio, unless Shift.
+  | { kind: "resize"; pointer: number; id: string; corner: string; start: Point; rect: Rect; aspect: number | null }
   // A line drawn with a tool of a kit (ink), the strokes an eraser passes over, a lasso.
   | { kind: "ink"; pointer: number; tool: Tool; stroke: InkStroke; pen: boolean }
   | { kind: "erase"; pointer: number; tool: Tool; last: Point; hit: Set<string> }
@@ -114,6 +116,9 @@ interface Peer {
   paged?: boolean;
   // The line they draw, as they draw it.
   ink: InkStroke | null;
+  // The files they upload: a box and a progress each, and their placeholders.
+  files: number[][];
+  fileEls: HTMLElement[];
 }
 
 // The canvas of a room this person uses last (it has their pointer, a
@@ -526,11 +531,18 @@ export class Canvas {
     };
     this.nodes.set(id, node);
     if (!old) this.order.push(id);
+    // A file's node, which its placeholder waits for.
+    const wait = old ? undefined : this.nodeWaits.get(id);
+    if (wait) {
+      this.nodeWaits.delete(id);
+      queueMicrotask(wait);
+    }
     // A node in another group: the nodes in it are deeper or shallower too.
     if (old && (old.parent !== node.parent || old.group !== node.group)) this.parentsChanged = true;
     this.measureHandles(node);
     if (later) later.push(node);
     else this.decorate(node);
+    this.thumbs(element);
     this.touchNode(id);
     return node;
   }
@@ -895,7 +907,10 @@ export class Canvas {
       bg.setProperty("--hakushi-grid-x", `${((this.view.x % period) + period) % period}px`);
       bg.setProperty("--hakushi-grid-y", `${((this.view.y % period) + period) % period}px`);
       const far = this.view.zoom < 0.5 ? "far" : "near";
-      if (this.root.dataset.uiZoom !== far) this.root.dataset.uiZoom = far;
+      if (this.root.dataset.uiZoom !== far) {
+        this.root.dataset.uiZoom = far;
+        this.thumbs(this.nodesEl);
+      }
     }
 
     // Culled again when the view moved half the margin, or the zoom by a
@@ -1538,10 +1553,13 @@ export class Canvas {
     const turning = node.el.querySelector<HTMLElement>("[data-hakushi-rotate]");
     const rotation = turning ? getComputedStyle(turning).getPropertyValue("--hakushi-rotation").trim() || "0deg" : "0deg";
     const at = this.placeOf(node);
-    const editor = el("div", { class: `${text.className} hakushi-text-editor`, contenteditable: "plaintext-only", role: "textbox", "aria-multiline": "true", "aria-label": this.messages.t("shapeTextLabel"), "data-size": text.dataset.size ?? "m", "data-align": text.dataset.align ?? "center" });
+    // A text with a place of its own in its node (an image's caption, under it): there.
+    const own = text.hasAttribute("data-hakushi-text-own");
+    const box = own ? { x: at.x + text.offsetLeft, y: at.y + text.offsetTop, width: text.offsetWidth, height: Math.max(text.offsetHeight, 24) } : { ...at, width: node.width, height: node.height };
+    const editor = el("div", { class: `${text.className} hakushi-text-editor`, contenteditable: "plaintext-only", role: "textbox", "aria-multiline": "true", "aria-label": text.dataset.hakushiTextLabel ?? this.messages.t("shapeTextLabel"), "data-size": text.dataset.size ?? "m", "data-align": text.dataset.align ?? "center" });
     editor.textContent = text.dataset.hakushiText ?? text.textContent ?? "";
     const style = getComputedStyle(text);
-    Object.assign(editor.style, { translate: `${at.x}px ${at.y}px`, width: `${node.width}px`, minHeight: `${node.height}px`, rotate: rotation, color: style.color, fontFamily: style.fontFamily, padding: style.padding });
+    Object.assign(editor.style, { translate: `${box.x}px ${box.y}px`, width: `${box.width}px`, minHeight: `${box.height}px`, rotate: rotation, color: style.color, fontFamily: style.fontFamily, padding: style.padding });
     this.labelsEl.append(editor);
     text.style.visibility = "hidden";
     editor.focus();
@@ -1562,7 +1580,7 @@ export class Canvas {
       if (!save || value === (text.dataset.hakushiText ?? "")) return;
       this.push("hakushi:edit", { node: node.id, action: "text", value }, (reply) => {
         const current = this.nodes.get(node.id);
-        if (reply.error || !current || needed <= current.height + 1) return;
+        if (own || reply.error || !current || needed <= current.height + 1) return;
         this.push("hakushi:change", { op: "move", nodes: [{ id: current.id, x: current.x, y: current.y, width: current.width, height: needed }] });
       });
     };
@@ -1583,11 +1601,14 @@ export class Canvas {
     const ids = [...this.selected];
     const nodes = ids.map((id) => this.nodes.get(id)).filter((n): n is NodeModel => !!n && !this.gone.has(n.id));
     const panel = nodes.length && !this.tool ? panels.find((p) => nodes.every((n) => p.types.includes(n.type))) : undefined;
-    if (!panel || this.config.readonly) {
+    if (!panel || this.config.readonly || this.cropping) {
       this.styleEl?.remove();
       this.styleEl = null;
       return;
     }
+    // A field of the panel being written in stays as it is, for the same nodes.
+    const typing = this.styleEl?.contains(document.activeElement) && document.activeElement instanceof HTMLInputElement;
+    if (typing && this.styleEl!.dataset.nodes === ids.join(" ")) return;
     const styles = nodes.map((n) => {
       try {
         return JSON.parse(n.el.querySelector<HTMLElement>("[data-hakushi-style]")?.dataset.hakushiStyle ?? "{}") as Record<string, unknown>;
@@ -1600,13 +1621,48 @@ export class Canvas {
       this.styleEl.addEventListener("pointerdown", (event) => event.stopPropagation());
       this.ui.append(this.styleEl);
     }
+    this.styleEl.dataset.nodes = ids.join(" ");
     const groups: HTMLElement[] = [];
     for (const group of panel.groups) {
       const values = styles.filter((st) => group.key in st).map((st) => JSON.stringify(st[group.key]));
       if (!values.length) continue;
       const shared = values.every((v) => v === values[0]) ? values[0] : null;
       const row = el("div", { class: "hakushi-style-group", role: "group", "aria-label": group.label, "data-kind": group.kind });
+      if (group.kind === "action") {
+        // A button of the canvas's own, for one node.
+        if (nodes.length !== 1) continue;
+        const b = el("button", { type: "button", class: "hakushi-style-option hakushi-style-action", "data-key": group.key, title: group.label });
+        b.innerHTML = (icons as Record<string, string>)[group.icon ?? ""] ?? "";
+        b.append(el("span", {}, [group.label]));
+        b.addEventListener("click", () => this.styleAction(group.key, nodes[0]));
+        row.append(b);
+        groups.push(row);
+        continue;
+      }
       row.append(el("span", { class: "hakushi-style-label", "aria-hidden": "true" }, [group.label]));
+      if (group.kind === "text") {
+        const input = el("input", { type: "text", class: "hakushi-style-text", "data-key": group.key, "aria-label": group.label, placeholder: group.placeholder ?? "" });
+        input.value = shared !== null ? String(JSON.parse(shared) ?? "") : "";
+        const save = () => {
+          const value = input.value;
+          if (shared !== null && JSON.stringify(value) === shared) return;
+          this.push("hakushi:edit", { nodes: ids, action: "style", style: { [group.key]: value } });
+        };
+        input.addEventListener("change", save);
+        input.addEventListener("keydown", (event) => {
+          event.stopPropagation();
+          if (event.key === "Enter") {
+            save();
+            this.root.focus({ preventScroll: true });
+          } else if (event.key === "Escape") {
+            input.value = shared !== null ? String(JSON.parse(shared) ?? "") : "";
+            this.root.focus({ preventScroll: true });
+          }
+        });
+        row.append(input);
+        groups.push(row);
+        continue;
+      }
       const options = el("div", { class: "hakushi-style-options" });
       for (const option of group.options) {
         const b = el("button", { type: "button", class: "hakushi-style-option", "aria-label": `${group.label}: ${option.label}`, title: option.label, "aria-pressed": String(JSON.stringify(option.value) === shared), "data-key": group.key, "data-value": JSON.stringify(option.value) });
@@ -1629,6 +1685,336 @@ export class Canvas {
       groups.push(row);
     }
     this.styleEl.replaceChildren(...groups);
+  }
+
+  // -- Files (a kit that takes them: Hakushi.Kits.Images) ----------------------
+  //
+  // Files dropped, pasted or picked go to the canvas's LiveView upload (its
+  // file input, with LiveView's `track-uploads`), each with a placeholder
+  // where it lands: the file, faded, with its progress, which the others
+  // see too. The server says how each goes (`hakushi:file`): its progress,
+  // then the node it became (selected), or why it did not. An image's
+  // address, pasted or dropped, goes the same way, as `hakushi:paste-url`.
+
+  private filePlaces = new Map<string, { box: Rect; progress: number; el: HTMLElement; blob: string | null; name: string }>();
+  private filePicker: HTMLInputElement | null = null;
+  private fileSeq = 0;
+  private pasteTimer = 0;
+  private copiedText: string | null = null;
+
+  /** Opens the browser's picker of files, for a canvas that takes them. */
+  openPicker() {
+    const files = this.config.files;
+    if (!files || this.config.readonly) return;
+    if (!this.filePicker) {
+      const input = el("input", { type: "file", multiple: "", accept: files.accept.join(","), hidden: "", tabindex: "-1", "aria-hidden": "true", class: "hakushi-file-picker" });
+      // Its events are not the app's form's.
+      input.addEventListener("input", (event) => event.stopPropagation());
+      input.addEventListener("change", (event) => {
+        event.stopPropagation();
+        const chosen = [...(input.files ?? [])];
+        input.value = "";
+        // In the middle of the view: the pointer was on the bar.
+        void this.addFiles(chosen, toCanvas(this.view, this.size.width / 2, this.size.height / 2));
+      });
+      this.ui.append(input);
+      this.filePicker = input;
+    }
+    this.filePicker.click();
+  }
+
+  private takesFile(file: File): boolean {
+    const accept = this.config.files?.accept ?? [];
+    const dot = file.name.lastIndexOf(".");
+    const extension = dot >= 0 ? file.name.slice(dot).toLowerCase() : "";
+    const byType: Record<string, string[]> = { "image/png": [".png"], "image/jpeg": [".jpg", ".jpeg"], "image/gif": [".gif"], "image/webp": [".webp"] };
+    return accept.includes(extension) || (byType[file.type] ?? []).some((e) => accept.includes(e));
+  }
+
+  // The pointer, when it is on the canvas, else the middle of the view.
+  private pointerOrCenter(): Point {
+    if (this.pointer && contains(visible(this.view, this.size.width, this.size.height), this.pointer)) return this.pointer;
+    return toCanvas(this.view, this.size.width / 2, this.size.height / 2);
+  }
+
+  /** Uploads image files to the canvas: in a row about `at` (the pointer, or the middle of the view). */
+  async addFiles(files: File[], at?: Point): Promise<void> {
+    const input = this.root.querySelector<HTMLInputElement>("input[data-hakushi-files]");
+    if (!this.config.files || this.config.readonly || !input) return;
+    const taken = files.filter((f) => this.takesFile(f));
+    if (!taken.length) {
+      if (files.length) this.announce(this.messages.t("refusedNotAnImage"));
+      return;
+    }
+    const center = at ?? this.pointerOrCenter();
+    const z = this.view.zoom;
+    const seen = { width: this.size.width / z, height: this.size.height / z };
+    const blobs = taken.map((f) => URL.createObjectURL(f));
+    const pixels = await Promise.all(blobs.map((b) => pixelsOf(b)));
+    const boxes = rowAt(pixels.map((p) => fitImage(p ?? { width: 4, height: 3 }, seen)), center);
+    const group = this.groupAt(center, new Set());
+    input.dispatchEvent(new CustomEvent("track-uploads", { bubbles: true, detail: { files: taken } }));
+    // LiveView gives each file its entry's ref as it sends the form's change.
+    const refOf = (file: File) => (file as File & { _phxRef?: string })._phxRef;
+    if (taken.some((f) => refOf(f) === undefined)) await new Promise((resolve) => window.setTimeout(resolve, 0));
+    taken.forEach((file, i) => {
+      const ref = refOf(file);
+      if (ref === undefined) return URL.revokeObjectURL(blobs[i]);
+      const box = boxes[i];
+      this.showFile(ref, box, file.name, blobs[i]);
+      this.push("hakushi:place", { ref, box: [box.x, box.y, box.width, box.height].map(round), parent: group?.id ?? null });
+    });
+    this.announce(this.messages.t("imageUploading", { name: taken.length === 1 ? taken[0].name : String(taken.length) }));
+    this.sendPeer();
+  }
+
+  // An image's address: the server fetches it, if the app lets it.
+  private pasteUrl(url: string, at?: Point) {
+    const ref = `${this.id}-u${++this.fileSeq}`;
+    const z = this.view.zoom;
+    const [box] = rowAt([fitImage({ width: 400, height: 300 }, { width: this.size.width / z, height: this.size.height / z })], at ?? this.pointerOrCenter());
+    const group = this.groupAt({ x: box.x + box.width / 2, y: box.y + box.height / 2 }, new Set());
+    this.showFile(ref, box, url, null);
+    this.push("hakushi:paste-url", { url, ref, box: [box.x, box.y, box.width, box.height].map(round), parent: group?.id ?? null }, (reply) => {
+      if (reply.ok !== true) this.dropFile(ref);
+    });
+    this.sendPeer();
+  }
+
+  private showFile(ref: string, box: Rect, name: string, blob: string | null) {
+    const placeholder = el("div", { class: "hakushi-file", "data-ref": ref, role: "img", "aria-label": this.messages.t("imageUploading", { name }) }, [el("div", { class: "hakushi-file-bar" }, [el("span", {})])]);
+    if (blob) placeholder.prepend(el("img", { src: blob, alt: "", draggable: "false" }));
+    placeFile(placeholder, box, 0);
+    this.labelsEl.append(placeholder);
+    this.filePlaces.set(ref, { box, progress: 0, el: placeholder, blob, name });
+  }
+
+  private dropFile(ref: string) {
+    const place = this.filePlaces.get(ref);
+    if (!place) return;
+    place.el.remove();
+    if (place.blob) URL.revokeObjectURL(place.blob);
+    this.filePlaces.delete(ref);
+    this.sendPeer();
+  }
+
+  /** What the server says of a file: its `progress`, the node it became (`id`), or an `error`. */
+  fileEvent(payload: Record<string, unknown>) {
+    const ref = String(payload.ref);
+    const place = this.filePlaces.get(ref);
+    if (typeof payload.progress === "number") {
+      if (place) {
+        place.progress = payload.progress;
+        placeFile(place.el, place.box, place.progress);
+        this.sendPeer();
+      }
+      return;
+    }
+    // The node comes with this event, or just after it: the placeholder
+    // stays until it is there.
+    if (typeof payload.id === "string") {
+      const id = payload.id;
+      const done = () => {
+        this.dropFile(ref);
+        this.pendingSelect = [...(this.pendingSelect ?? []).filter((n) => n !== id), id];
+        this.selectPending();
+        this.announce(this.messages.t("imageAdded"));
+      };
+      if (this.nodes.has(id)) done();
+      else this.whenNode(id, done);
+      return;
+    }
+    this.dropFile(ref);
+  }
+
+  private nodeWaits = new Map<string, () => void>();
+
+  // Once the node is on the canvas (the server's patch after its event).
+  private whenNode(id: string, fn: () => void) {
+    this.nodeWaits.set(id, fn);
+    window.setTimeout(() => {
+      const wait = this.nodeWaits.get(id);
+      if (wait === fn) {
+        this.nodeWaits.delete(id);
+        fn();
+      }
+    }, 2000);
+  }
+
+  private dragOver(event: DragEvent) {
+    const files = this.config.files;
+    if (!files || this.config.readonly || !event.dataTransfer) return;
+    const types = [...event.dataTransfer.types];
+    if (!types.includes("Files") && !(files.urls && types.includes("text/uri-list"))) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    this.root.setAttribute("data-ui-dropping", "");
+  }
+
+  private dropFiles(event: DragEvent) {
+    const files = this.config.files;
+    this.root.removeAttribute("data-ui-dropping");
+    if (!files || this.config.readonly || !event.dataTransfer) return;
+    const dropped = [...event.dataTransfer.files];
+    const at = this.canvasPoint(event);
+    if (dropped.length) {
+      event.preventDefault();
+      void this.addFiles(dropped, at);
+      return;
+    }
+    const url = files.urls ? imageAddress(event.dataTransfer.getData("text/uri-list").split(/\r?\n/).find((l) => l && !l.startsWith("#")) ?? "") : null;
+    if (url) {
+      event.preventDefault();
+      this.pasteUrl(url, at);
+    }
+  }
+
+  // Whether the canvas has the keys (its root, or a node), not a field.
+  private hasKeys(): boolean {
+    const active = document.activeElement;
+    return active instanceof HTMLElement && this.root.contains(active) && !editable(active) && !active.closest(".hakushi-style-panel, .hakushi-tools, .hakushi-controls");
+  }
+
+  // A paste on a canvas that takes files: the clipboard's images, or an
+  // image's address, else the nodes copied here.
+  private pasteFrom(event: ClipboardEvent) {
+    if (!this.config.files || this.config.readonly || !this.hasKeys()) return;
+    clearTimeout(this.pasteTimer);
+    event.preventDefault();
+    const data = event.clipboardData;
+    const files = data ? [...data.files].filter((f) => this.takesFile(f)) : [];
+    if (files.length) return void this.addFiles(files);
+    const text = data?.getData("text/plain") ?? "";
+    const url = this.config.files.urls && text !== this.copiedText ? imageAddress(text) : null;
+    if (url) return this.pasteUrl(url);
+    this.paste();
+  }
+
+  // Nodes copied here: the clipboard says so (their names), and has no image
+  // of before that a paste would take for them.
+  private copied(event: ClipboardEvent) {
+    if (!this.config.files || !this.selected.size || !this.hasKeys() || !event.clipboardData) return;
+    const text = [...this.selected].map((id) => this.nodes.get(id)?.label ?? id).join("\n");
+    event.clipboardData.setData("text/plain", text);
+    this.copiedText = text;
+    event.preventDefault();
+  }
+
+  // The others' files, as they upload.
+  private drawPeerFiles(peer: Peer, color: string) {
+    while (peer.fileEls.length > peer.files.length) peer.fileEls.pop()!.remove();
+    peer.files.forEach(([x, y, width, height, progress], i) => {
+      let placeholder = peer.fileEls[i];
+      if (!placeholder) {
+        placeholder = el("div", { class: "hakushi-file", "data-peer": "", "aria-hidden": "true" }, [el("div", { class: "hakushi-file-bar" }, [el("span", {})])]);
+        this.labelsEl.append(placeholder);
+        peer.fileEls.push(placeholder);
+      }
+      placeholder.style.setProperty("--hakushi-peer", color);
+      placeFile(placeholder, { x, y, width, height }, progress);
+    });
+  }
+
+  // An image's smaller copy (`data-thumb`) while the canvas is zoomed out, its file otherwise.
+  private thumbs(scope: Element) {
+    const far = this.root.dataset.uiZoom === "far";
+    for (const image of scope.querySelectorAll<HTMLImageElement>("img[data-thumb]")) {
+      const want = far ? image.dataset.thumb : image.dataset.src;
+      if (want && image.getAttribute("src") !== want) image.setAttribute("src", want);
+    }
+  }
+
+  // A button of a style panel (`kind: "action"`): the canvas's own actions.
+  private styleAction(key: string, node: NodeModel) {
+    if (key === "crop") this.startCrop(node);
+  }
+
+  // -- Cropping an image in place ----------------------------------------------
+  //
+  // The whole file, faded, around the node, and the part it shows in a box
+  // whose corners and sides are dragged, and which is dragged as a whole.
+  // Enter (or a press elsewhere) keeps it, as one change of the node's crop
+  // and box; Escape leaves it as it was.
+
+  private cropping: { node: NodeModel; full: Rect; box: Rect; start: Rect; el: HTMLElement; frame: HTMLElement; view: HTMLImageElement; drag: { pointer: number; handle: string; from: Point; rect: Rect } | null } | null = null;
+
+  /** Crops an image node in place (its `data-hakushi-crop`). */
+  startCrop(node: NodeModel) {
+    const figure = node.el.querySelector<HTMLElement>("[data-hakushi-crop]");
+    const src = figure?.querySelector<HTMLImageElement>("img")?.dataset.src;
+    if (!figure || !src || this.config.readonly || node.locked) return;
+    this.finishCrop(false);
+    let crop: Crop;
+    try {
+      crop = JSON.parse(figure.dataset.hakushiCrop ?? "[0,0,1,1]") as Crop;
+    } catch {
+      crop = [0, 0, 1, 1];
+    }
+    const at = this.placeOf(node);
+    const box = { x: at.x, y: at.y, width: node.width, height: node.height };
+    const full = fullOf(box, crop);
+    const view = el("img", { src, alt: "", draggable: "false" });
+    const frame = el("div", { class: "hakushi-crop-box", "data-handle": "move" }, [el("div", { class: "hakushi-crop-view" }, [view])]);
+    for (const handle of ["nw", "n", "ne", "e", "se", "s", "sw", "w"]) frame.append(el("span", { class: "hakushi-crop-handle", "data-handle": handle }));
+    const overlay = el("div", { class: "hakushi-crop", role: "dialog", "aria-label": this.messages.t("imageCrop") }, [el("img", { class: "hakushi-crop-ghost", src, alt: "", draggable: "false" }), frame]);
+    Object.assign(overlay.style, { translate: `${full.x}px ${full.y}px`, width: `${full.width}px`, height: `${full.height}px` });
+    this.labelsEl.append(overlay);
+    node.el.setAttribute("data-ui-cropping", "");
+    this.cropping = { node, full, box, start: box, el: overlay, frame, view, drag: null };
+    this.drawCrop();
+    overlay.addEventListener("pointerdown", (event) => this.cropDown(event));
+    overlay.addEventListener("pointermove", (event) => this.cropMove(event));
+    overlay.addEventListener("pointerup", (event) => this.cropUp(event));
+    overlay.addEventListener("pointercancel", (event) => this.cropUp(event));
+    this.drawStylePanel();
+    this.root.focus({ preventScroll: true });
+    this.announce(this.messages.t("imageCropHint"));
+  }
+
+  private drawCrop() {
+    const c = this.cropping;
+    if (!c) return;
+    const { full, box } = c;
+    Object.assign(c.frame.style, { left: `${box.x - full.x}px`, top: `${box.y - full.y}px`, width: `${box.width}px`, height: `${box.height}px` });
+    Object.assign(c.view.style, { left: `${full.x - box.x}px`, top: `${full.y - box.y}px`, width: `${full.width}px`, height: `${full.height}px` });
+  }
+
+  private cropDown(event: PointerEvent) {
+    const c = this.cropping;
+    event.stopPropagation();
+    if (!c || event.button !== 0) return;
+    const handle = (event.target as Element).closest<HTMLElement>("[data-handle]")?.dataset.handle;
+    if (!handle) return;
+    event.preventDefault();
+    c.el.setPointerCapture(event.pointerId);
+    c.drag = { pointer: event.pointerId, handle, from: { x: event.clientX, y: event.clientY }, rect: c.box };
+  }
+
+  private cropMove(event: PointerEvent) {
+    const c = this.cropping;
+    if (!c?.drag || c.drag.pointer !== event.pointerId) return;
+    const z = this.view.zoom;
+    c.box = dragCrop(c.full, c.drag.rect, c.drag.handle, (event.clientX - c.drag.from.x) / z, (event.clientY - c.drag.from.y) / z);
+    this.drawCrop();
+  }
+
+  private cropUp(event: PointerEvent) {
+    const c = this.cropping;
+    if (!c?.drag || c.drag.pointer !== event.pointerId) return;
+    c.drag = null;
+  }
+
+  private finishCrop(keep: boolean) {
+    const c = this.cropping;
+    if (!c) return;
+    this.cropping = null;
+    c.el.remove();
+    c.node.el.removeAttribute("data-ui-cropping");
+    this.drawStylePanel();
+    const { box, start, full, node } = c;
+    const same = Math.abs(box.x - start.x) < 0.5 && Math.abs(box.y - start.y) < 0.5 && Math.abs(box.width - start.width) < 0.5 && Math.abs(box.height - start.height) < 0.5;
+    if (!keep || same) return;
+    this.push("hakushi:edit", { node: node.id, action: "crop", crop: cropOf(full, box), box: [box.x, box.y, box.width, box.height].map(round) });
   }
 
   // -- The tools of the kits ---------------------------------------------------
@@ -1670,6 +2056,8 @@ export class Canvas {
   setTool(name: string | null) {
     const tool = name ? (this.config.tools ?? []).find((t) => `${t.kit}:${t.tool}` === name) : undefined;
     if (this.config.readonly || (name && !tool)) return;
+    // A picker of files: it opens, and the tool stays as it was.
+    if (tool?.mode === "pick") return this.openPicker();
     if (this.gesture) this.cancelGesture();
     this.tool = tool ?? null;
     this.showTool();
@@ -1962,10 +2350,20 @@ export class Canvas {
     on(document, "pointerdown", (e) => this.itemDown(e as PointerEvent), { capture: true });
     on(document, "keydown", (e) => this.itemKey(e as KeyboardEvent));
     on(window, "scroll", () => (this.bounds = null), { capture: true, passive: true });
+    on(this.root, "dragover", (e) => this.dragOver(e));
+    on(this.root, "dragleave", (e) => {
+      if (!this.root.contains(e.relatedTarget as Node | null)) this.root.removeAttribute("data-ui-dropping");
+    });
+    on(this.root, "drop", (e) => this.dropFiles(e));
+    on(document, "paste", (e) => this.pasteFrom(e as ClipboardEvent));
+    on(document, "copy", (e) => this.copied(e as ClipboardEvent));
+    on(document, "cut", (e) => this.copied(e as ClipboardEvent));
   }
 
   private pointerDown(event: PointerEvent) {
     const target = event.target as Element;
+    // A press away from a crop keeps it.
+    if (this.cropping && !target.closest(".hakushi-crop")) this.finishCrop(true);
     this.root.removeAttribute("data-ui-keyboard");
     if (target.closest(".hakushi-controls, .hakushi-tools, .hakushi-paper-menu, .hakushi-minimap, .hakushi-edge-input, [data-hakushi-people], .hakushi-following")) return;
     if (event.pointerType === "pen") this.penSeen = true;
@@ -2045,7 +2443,7 @@ export class Canvas {
     if (resizer && node) {
       event.preventDefault();
       this.capture(event);
-      this.gesture = { kind: "resize", pointer: event.pointerId, id: node.id, corner: resizer.dataset.corner!, start: at, rect: this.rect(node) };
+      this.gesture = { kind: "resize", pointer: event.pointerId, id: node.id, corner: resizer.dataset.corner!, start: at, rect: this.rect(node), aspect: aspectOf(node.el) };
       return;
     }
     const grips = node?.el.querySelectorAll("[data-hakushi-drag]");
@@ -2251,6 +2649,15 @@ export class Canvas {
         if (!node) return;
         const dx = at.x - g.start.x;
         const dy = at.y - g.start.y;
+        if (g.aspect && !event.shiftKey) {
+          const r = aspectResize(g.rect, g.corner, dx, dy, g.aspect);
+          Object.assign(node, { x: round(r.x), y: round(r.y), width: round(r.width), height: round(r.height), fixed: true });
+          this.decorate(node);
+          this.measureHandles(node);
+          this.touchNode(node.id);
+          this.schedule();
+          return;
+        }
         let { x, y, width, height } = g.rect;
         if (g.corner.includes("e")) width = Math.max(40, width + dx);
         if (g.corner.includes("s")) height = Math.max(24, height + dy);
@@ -2819,6 +3226,10 @@ export class Canvas {
 
   private keyDown(event: KeyboardEvent) {
     if (event.defaultPrevented) return;
+    if (this.cropping && (event.key === "Enter" || event.key === "Escape")) {
+      event.preventDefault();
+      return this.finishCrop(event.key === "Enter");
+    }
     if (event.key === "Tab" || event.key.startsWith("Arrow")) this.root.setAttribute("data-ui-keyboard", "");
     const target = event.target as HTMLElement;
     // The buttons of the controls are the canvas's: its keys work there, but
@@ -2892,6 +3303,14 @@ export class Canvas {
     if (mod && key.toLowerCase() === "c") return this.copy();
     if (mod && key.toLowerCase() === "x") return this.copy(true);
     if (mod && key.toLowerCase() === "v") {
+      // A canvas that takes files: what the clipboard has comes with the
+      // paste event (pasteFrom), and the nodes copied here unless it has a
+      // file or an image's address.
+      if (this.config.files) {
+        clearTimeout(this.pasteTimer);
+        this.pasteTimer = window.setTimeout(() => this.paste(), 50);
+        return;
+      }
       event.preventDefault();
       return this.paste();
     }
@@ -3164,7 +3583,7 @@ export class Canvas {
 
   receivePeer(payload: Record<string, unknown>) {
     const id = String(payload.person);
-    const peer: Peer = this.peers.get(id) ?? { cursor: null, view: null, selected: [], dragging: new Map(), seen: 0, el: null, from: null, dragFrom: new Map(), start: 0, duration: 0, ink: null };
+    const peer: Peer = this.peers.get(id) ?? { cursor: null, view: null, selected: [], dragging: new Map(), seen: 0, el: null, from: null, dragFrom: new Map(), start: 0, duration: 0, ink: null, files: [], fileEls: [] };
     // Their page's session (Issho's pointers), not their canvas's: only whether those draw them here.
     if (!("cursor" in payload)) {
       peer.paged = payload.paged === true;
@@ -3201,6 +3620,7 @@ export class Canvas {
     peer.selected = (payload.selected as string[]) ?? [];
     peer.dragging = dragging;
     peer.ink = readInk(payload.ink);
+    peer.files = ((payload.files as unknown[]) ?? []).filter((f): f is number[] => Array.isArray(f) && f.length === 5 && f.every((n) => typeof n === "number"));
     peer.seen = Date.now();
     this.peers.set(id, peer);
     if (id === this.followKey) {
@@ -3229,6 +3649,7 @@ export class Canvas {
     const peer = this.peers.get(id);
     if (!peer) return;
     peer.el?.remove();
+    for (const f of peer.fileEls) f.remove();
     this.peers.delete(id);
     for (const n of [...peer.selected, ...peer.dragging.keys()]) {
       const node = this.nodes.get(n);
@@ -3267,6 +3688,7 @@ export class Canvas {
         this.schedule();
       }
       const person = this.people.get(id);
+      this.drawPeerFiles(peer, person?.color ?? "");
       if (!peer.cursor || !person || (page && peer.paged)) {
         if (peer.el) peer.el.hidden = true;
         continue;
@@ -3309,6 +3731,7 @@ export class Canvas {
       dragging,
       viewport: this.size.width > 0 ? [round(-this.view.x / z), round(-this.view.y / z), round(this.size.width / z), round(this.size.height / z)] : null,
       ink: g?.kind === "ink" ? this.inkToSend(g.stroke) : null,
+      files: [...this.filePlaces.values()].map((f) => [round(f.box.x), round(f.box.y), round(f.box.width), round(f.box.height), f.progress]),
     });
   }
 
@@ -3447,7 +3870,32 @@ export class Canvas {
     cancelAnimationFrame(this.frame);
     clearTimeout(this.noticeTimer);
     clearTimeout(this.peerTimer);
+    clearTimeout(this.pasteTimer);
+    for (const f of this.filePlaces.values()) if (f.blob) URL.revokeObjectURL(f.blob);
   }
+}
+
+// A placeholder of a file, at its box, with its progress (0 to 100).
+function placeFile(element: HTMLElement, box: Rect, progress: number) {
+  Object.assign(element.style, { translate: `${box.x}px ${box.y}px`, width: `${box.width}px`, height: `${box.height}px` });
+  const bar = element.querySelector<HTMLElement>(".hakushi-file-bar > span");
+  if (bar) bar.style.width = `${Math.max(0, Math.min(100, progress))}%`;
+}
+
+// The aspect ratio an image keeps (`data-hakushi-aspect`), or null.
+function aspectOf(element: HTMLElement): number | null {
+  const value = Number(element.querySelector("[data-hakushi-aspect]")?.getAttribute("data-hakushi-aspect"));
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+// The width and height of an image file, from the browser's own decoding, or null.
+function pixelsOf(url: string): Promise<{ width: number; height: number } | null> {
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.onload = () => resolve(image.naturalWidth > 0 ? { width: image.naturalWidth, height: image.naturalHeight } : null);
+    image.onerror = () => resolve(null);
+    image.src = url;
+  });
 }
 
 // A line drawn by someone, as it comes: checked, as the server checked it.

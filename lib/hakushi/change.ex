@@ -24,7 +24,8 @@ defmodule Hakushi.Change do
       ends (`:source`, `:source_handle`, `:target`, `:target_handle`): an
       edge's end dragged to another handle.
     * `:update` - `nodes` is a list of maps with `:id` and the keys that
-      change (`:data`, `:type`, `:locked`), `edges` a list of maps with
+      change (`:data`, `:type`, `:locked`, and `:x`, `:y`, `:width` and
+      `:height` for an edit that moves its node too), `edges` a list of maps with
       `:id` and the keys that change (`:label`, `:path`, `:marker`,
       `:animated`, `:data`).
     * `:delete` - `nodes` and `edges` are lists of ids. Deleting a node

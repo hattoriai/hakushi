@@ -12,5 +12,6 @@ defmodule HakushiTest.Router do
     pipe_through(:browser)
     live("/", HakushiTest.CanvasLive)
     live("/kits", HakushiTest.KitsLive)
+    live("/images", HakushiTest.ImagesLive)
   end
 end

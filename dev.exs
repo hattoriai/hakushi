@@ -6,7 +6,8 @@
 # one type), an automation (/workflow, steps dragged from a palette, a
 # condition with two ways out, no cycles), a moodboard (/board, notes that
 # resize, swatches, labelled arrows, snapped to the grid, and ink: a pen,
-# a highlighter, an eraser and a lasso; a picker of papers, one of them the
+# a highlighter, an eraser and a lasso; images dropped, pasted or picked;
+# a picker of papers, one of them the
 # app's own) and two thousand
 # nodes in a grid, joined to their neighbours (/scale, `?n=` for another
 # count). The schema, the workflow and the moodboard are
@@ -30,6 +31,20 @@ watch? = System.get_env("HAKUSHI_DEV_WATCH") != "false"
 
 Application.put_env(:phoenix, :json_library, JSON)
 Application.put_env(:issho, Issho.MCP, instance: HakushiDev.Issho)
+
+# The moodboard's images (Hakushi.Kits.Images): kept in tmp/uploads, and
+# served by Hakushi.Storage.Local.Plug. Addresses pasted are fetched from
+# two hosts of photos, and from this server itself (over http) for the
+# browser tests, which a real app would not allow; an agent's `file` is a
+# photo of test/fixtures/images.
+Application.put_env(:hakushi, Hakushi.Storage.Local, root: Path.expand("tmp/uploads", __DIR__))
+
+Application.put_env(:hakushi, Hakushi.Kits.Images,
+  fetch: ["images.unsplash.com", "upload.wikimedia.org", "127.0.0.1", "localhost"],
+  http: true,
+  files: &HakushiDev.Seeds.photo_path/1
+)
+
 Logger.configure(level: :info)
 
 Application.put_env(:hakushi, HakushiDev.Endpoint,
@@ -81,7 +96,26 @@ defmodule HakushiDev.Seeds do
   @moduledoc "The canvases of Atelier, as they start."
 
   alias Hakushi.Graph
-  alias Hakushi.Kits.Ink
+  alias Hakushi.Kits.{Images, Ink}
+
+  @photos Path.expand("test/fixtures/images", __DIR__)
+
+  @doc "A photo of the moodboard's, by its name (an agent's `file`)."
+  def photo_path(name) do
+    path = Path.join(@photos, Path.basename(name))
+    if File.regular?(path), do: {:ok, path}, else: :error
+  end
+
+  # A photo, stored as an upload is (once, for every room of the tests).
+  defp photo(name, opts \\ []) do
+    key = {__MODULE__, :photo, name}
+
+    with nil <- :persistent_term.get(key, nil) do
+      {:ok, image} = Hakushi.Images.store(Path.join(@photos, name), opts)
+      :persistent_term.put(key, image)
+      image
+    end
+  end
 
   @tables [
     {"clients", 0, 40, "#b5643c", 48,
@@ -344,6 +378,26 @@ defmodule HakushiDev.Seeds do
         "question"
         |> note.(820, 220, 220, 110, "yellow", "Can the logo work stamped in brass?")
         |> Map.put(:parent, "signage"),
+        # Images: a photo of the quay (with a smaller copy, for small
+        # zooms), a texture, and a facade cropped to its top.
+        "harbour.jpg"
+        |> photo(thumbnail: fn _image, _path -> photo("harbour-small.jpg").url end)
+        |> Images.image_node([1120, -20, 360, 0],
+          alt: "The quay at dusk: piers against an orange sky",
+          caption: "The quay at dusk"
+        )
+        |> Map.put(:id, "quay"),
+        "rope.png"
+        |> photo()
+        |> Images.image_node([1120, 280, 170, 0], alt: "Waves of brass and green, like rope")
+        |> Map.put(:id, "texture"),
+        "facade.jpg"
+        |> photo()
+        |> Images.image_node([1310, 280, 170, 0], alt: "A facade of coloured windows")
+        |> Map.put(:id, "facade")
+        |> then(fn node ->
+          %{node | height: 142, data: Map.put(node.data, "crop", [0.05, 0.05, 0.9, 0.6])}
+        end),
         # Ink: a line drawn by hand under the title.
         ink.(
           "underline",
@@ -1174,8 +1228,9 @@ end
 defmodule HakushiDev.BoardLive do
   @moduledoc """
   A moodboard: notes that resize, swatches, a specimen, labelled arrows,
-  and ink (Hakushi.Kits.Ink): people draw on it with a pen, and an agent
-  circles a node.
+  ink (Hakushi.Kits.Ink): people draw on it with a pen, and an agent
+  circles a node; and images (Hakushi.Kits.Images), dropped, pasted or
+  picked.
   """
   use Phoenix.LiveView
 
@@ -1212,7 +1267,7 @@ defmodule HakushiDev.BoardLive do
     ~H"""
     <.app page={:board} me={@me} query={@query} title="Moodboard" crumb="Harbour Museum rebrand">
       <:actions>
-        <span class="hint">Double-click the paper for a note. Draw with P, erase with E, lasso with L.</span>
+        <span class="hint">Double-click the paper for a note. Draw with P, lasso with L; drop, paste or pick (I) images.</span>
         <.canvas_item :if={!@readonly} for="board" item="frame" class="button"><.icon name="frame" /> Frame</.canvas_item>
         <.canvas_item :if={!@readonly} for="board" item="note" class="button"><.icon name="note" /> Note</.canvas_item>
       </:actions>
@@ -1221,7 +1276,7 @@ defmodule HakushiDev.BoardLive do
         graph={@graph}
         on_change={&on_change(&1, &2, @room)}
         new_node={&new_node/2}
-        kits={[Hakushi.Kits.Ink]}
+        kits={[Hakushi.Kits.Ink, Hakushi.Kits.Images]}
         issho={[instance: HakushiDev.Issho, document: topic("board", @room), follow: @follow]}
         user={@me}
         readonly={@readonly}
@@ -1561,6 +1616,9 @@ defmodule HakushiDev.Endpoint do
   plug(Plug.Static, at: "/css", from: Path.expand("assets/css", __DIR__))
   plug(Plug.Static, at: "/vendor/phoenix", from: {:phoenix, "priv/static"})
   plug(Plug.Static, at: "/vendor/phoenix_live_view", from: {:phoenix_live_view, "priv/static"})
+  # The images people add (Hakushi.Storage.Local), and the photos of the tests, by their address.
+  plug(Hakushi.Storage.Local.Plug)
+  plug(Plug.Static, at: "/fixtures", from: Path.expand("test/fixtures/images", __DIR__))
 
   plug(Plug.Parsers, parsers: [:urlencoded, :json], pass: ["*/*"], json_decoder: JSON)
   plug(Plug.MethodOverride)
