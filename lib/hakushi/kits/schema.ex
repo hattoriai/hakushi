@@ -24,6 +24,18 @@ defmodule Hakushi.Kits.Schema do
   People rename the table and its columns in place, pick a column's type,
   set its key, and add and remove columns.
 
+  A table of another schema than the one shown (the table a foreign key
+  points to, in `billing`) is a stub: data with `"external" => true` and
+  its `"schema"`, and only the columns its foreign keys use. It is drawn
+  faint, with a dashed border and its qualified name (`billing.invoices`),
+  its edges dashed, and nobody edits it, even on a canvas they edit:
+
+      %{"name" => "invoices", "schema" => "billing", "external" => true,
+        "columns" => [%{"name" => "id", "type" => "uuid", "key" => "pk"}]}
+
+  A table may name its `"schema"` without being a stub; its name shows
+  qualified too.
+
   In Markdown, a schema is a Mermaid entity relationship diagram: each
   table with its columns (`uuid id PK`), and a foreign key as a
   relationship from its table to the table it refers to, named after its
@@ -151,18 +163,27 @@ defmodule Hakushi.Kits.Schema do
 
   defp handle_id(column), do: get(column, "id") || get(column, "name")
 
+  # A table of another schema than the canvas's: a stub, never edited.
+  defp external?(data), do: get(data, "external") in [true, "true"]
+
   @impl true
   def node(assigns) do
+    external = external?(assigns.node.data)
+
     assigns =
       assign(assigns,
         name: get(assigns.node.data, "name"),
+        schema: get(assigns.node.data, "schema"),
+        external: external,
+        readonly: assigns.readonly or external,
         columns: Enum.with_index(get(assigns.node.data, "columns") || [])
       )
 
     ~H"""
-    <div class="hakushi-kit-table">
+    <div class="hakushi-kit-table" data-hakushi-faint={@external}>
       <div class="hakushi-kit-table-head">
         <.icon name="database" size={13} />
+        <span :if={@schema} class="hakushi-kit-table-schema">{@schema}.</span>
         <input
           :if={!@readonly}
           class="hakushi-kit-field hakushi-kit-table-name"
@@ -275,6 +296,11 @@ defmodule Hakushi.Kits.Schema do
   defp types_with(type), do: if(type in @types or is_nil(type), do: @types, else: [type | @types])
 
   @impl true
+  def edit(action, params, data)
+
+  def edit(_action, _params, %{"external" => external}) when external in [true, "true"],
+    do: :error
+
   def edit("name", %{"value" => name}, data) do
     case identifier(name) do
       nil -> :error
@@ -351,7 +377,11 @@ defmodule Hakushi.Kits.Schema do
       end)
 
     extra =
-      Map.new(tables, &{&1.id, %{"name" => get(&1.data, "name"), "columns" => columns[&1.id]}})
+      Map.new(tables, fn table ->
+        own = %{"name" => get(table.data, "name"), "columns" => columns[table.id]}
+        stub = %{"schema" => get(table.data, "schema"), "external" => external?(table.data)}
+        {table.id, Map.merge(own, Map.reject(stub, fn {_k, v} -> v in [nil, false] end))}
+      end)
 
     Enum.join(
       ["erDiagram" | entities] ++
@@ -364,7 +394,8 @@ defmodule Hakushi.Kits.Schema do
   defp entity_names(tables) do
     {names, _seen} =
       Enum.map_reduce(tables, MapSet.new(), fn table, seen ->
-        base = word(get(table.data, "name") || table.id)
+        name = get(table.data, "name") || table.id
+        base = word(if schema = get(table.data, "schema"), do: "#{schema}.#{name}", else: name)
 
         name =
           Stream.iterate(1, &(&1 + 1))
@@ -411,7 +442,9 @@ defmodule Hakushi.Kits.Schema do
         %{
           m: name,
           type: "schema-table",
-          data: %{"name" => place["name"] || name, "columns" => place["columns"] || parsed}
+          data:
+            %{"name" => place["name"] || name, "columns" => place["columns"] || parsed}
+            |> Map.merge(Map.take(place, ["schema", "external"]))
         }
       end)
 

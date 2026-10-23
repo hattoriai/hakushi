@@ -138,6 +138,8 @@ export interface NodeModel {
   group: boolean;
   label: string;
   handles: Handle[];
+  /** Whether it is drawn faint, and its edges too: its content has `data-hakushi-faint` (a table of another schema). */
+  faint: boolean;
   /** Whether its handles were measured since its element last changed. */
   measured: boolean;
   el: HTMLElement;

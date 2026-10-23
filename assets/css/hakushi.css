@@ -374,6 +374,13 @@
   pointer-events: none;
 }
 
+/* An edge to a faint node (data-hakushi-faint, as a table of another
+   schema): dashed and fainter. */
+.hakushi-edge[data-ui-faint]:not([data-ui-selected], [data-ui-connected]) .hakushi-edge-line {
+  stroke-dasharray: 5 4;
+  opacity: 0.6;
+}
+
 .hakushi-edge[data-animated] .hakushi-edge-line {
   stroke-dasharray: 6 4;
   animation: hakushi-flow 0.6s linear infinite;
@@ -1093,6 +1100,25 @@
 .hakushi-kit-field::placeholder {
   color: var(--hakushi-muted);
   opacity: 0.7;
+}
+
+/* Schema: a table of another schema, a stub: faint, dashed, never edited. */
+.hakushi-kit-table[data-hakushi-faint] {
+  border-style: dashed;
+  background: color-mix(in oklab, var(--hakushi-node-background) 70%, transparent);
+  box-shadow: none;
+  opacity: 0.75;
+}
+
+/* The schema before the name, as one word with it: no gap of the head's. */
+.hakushi-kit-table-schema {
+  margin-right: -0.4375rem;
+  color: var(--hakushi-muted);
+  font-weight: 400;
+}
+
+.hakushi-kit-table-schema + .hakushi-kit-table-name {
+  flex: 1;
 }
 
 /* Schema: a table. */

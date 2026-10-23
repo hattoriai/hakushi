@@ -541,6 +541,7 @@ export class Canvas {
       group: element.dataset.group === "true",
       label: element.getAttribute("aria-label") || id,
       handles: old && old.el === element ? old.handles : [],
+      faint: element.querySelector("[data-hakushi-faint]") !== null,
       measured: false,
       el: element,
     };
@@ -1050,6 +1051,7 @@ export class Canvas {
       const g = this.gesture;
       toggle(view.g, "data-ui-gone", this.gone.has(id) || (g?.kind === "connect" && g.reconnect === id));
       toggle(view.g, "data-animated", edge.animated);
+      toggle(view.g, "data-ui-faint", !!(this.nodes.get(edge.source)?.faint || this.nodes.get(edge.target)?.faint));
       if (edge.label) {
         if (!view.label) {
           view.label = el("div", { class: "hakushi-edge-label", "data-edge": id });
