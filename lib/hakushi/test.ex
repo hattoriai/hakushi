@@ -222,17 +222,24 @@ defmodule Hakushi.Test do
 
   @doc """
   Edits a kit's node, as its controls do (`Hakushi.Kit`): the `action`,
-  with the event's `params` (`"value"`, a column's index, ...).
+  with the event's `params` (`"value"`, a column's index, ...). A list of
+  nodes is edited in one change, as the style panel of a kit does
+  (`c:Hakushi.Kit.styles/1`).
 
       edit(view, "model", "orders", "add")
+      edit(view, "board", ["a", "b"], "style", %{"style" => %{"fill" => "red"}})
       edit(view, "model", "orders", "column", %{"column" => 1, "value" => "customer_id"})
   """
-  @spec edit(struct(), String.t(), String.t(), String.t(), map()) :: :ok | {:error, String.t()}
+  @spec edit(struct(), String.t(), String.t() | [String.t()], String.t(), map()) ::
+          :ok | {:error, String.t()}
   def edit(view, id, node, action, params \\ %{}) do
+    target = if is_list(node), do: %{"nodes" => node}, else: %{"node" => node}
+
     payload =
       params
       |> Map.new(fn {k, v} -> {to_string(k), v} end)
-      |> Map.merge(%{"node" => node, "action" => action})
+      |> Map.merge(target)
+      |> Map.put("action", action)
 
     result(event(view, id, "hakushi:edit", payload))
   end
@@ -283,6 +290,24 @@ defmodule Hakushi.Test do
   def paper(view, id, background, grid) do
     payload = %{"op" => "paper", "paper" => %{"background" => background, "grid" => grid}}
     result(event(view, id, "hakushi:change", payload))
+  end
+
+  @doc """
+  Draws a box with a kit's tool of the mode `"box"` (`"shapes:rect"`), as
+  a drag on the paper does: `[x, y, width, height]` of the canvas (a box
+  of no size, as a click). Gives `{:ok, id}` of the node the kit made.
+  """
+  @spec draw_box(struct(), String.t(), String.t(), [number()], keyword()) ::
+          {:ok, String.t()} | {:error, String.t() | nil}
+  def draw_box(view, id, tool, box, opts \\ []) do
+    case event(view, id, "hakushi:draw", %{
+           "tool" => tool,
+           "box" => box,
+           "parent" => opts[:parent]
+         }) do
+      %{"ok" => true, "drawn" => node} -> {:ok, node}
+      reply -> result(reply)
+    end
   end
 
   @doc "Undoes the last change of this LiveView's person, as ⌘Z does."

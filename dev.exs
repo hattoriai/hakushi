@@ -209,6 +209,59 @@ defmodule HakushiDev.Seeds do
     )
   end
 
+  # A whiteboard of plain shapes (Hakushi.Kits.Shapes): a little flow of
+  # how a feature ships, with a note in text and a line of its own.
+  def whiteboard do
+    alias Hakushi.Kits.Shapes
+
+    shape = fn id, kind, box, style -> Map.put(Shapes.shape(kind, box, style), :id, id) end
+    {:ok, aside} = Shapes.line({700, 330}, {600, 260}, %{"stroke" => "gray", "dash" => true})
+
+    Graph.new(
+      nodes: [
+        shape.("title", "text", [0, -110, 420, 48], %{
+          "text" => "How a feature ships",
+          "size" => "l"
+        }),
+        shape.("idea", "ellipse", [0, 0, 150, 96], %{
+          "text" => "Idea",
+          "fill" => "yellow",
+          "stroke" => "yellow"
+        }),
+        shape.("sketch", "rect", [230, 0, 170, 96], %{"text" => "Sketch it on the board"}),
+        shape.("good", "diamond", [480, 0, 160, 120], %{
+          "text" => "Good enough?",
+          "fill" => "violet",
+          "stroke" => "violet"
+        }),
+        shape.("ship", "rect", [720, 12, 150, 72], %{
+          "text" => "Ship",
+          "fill" => "green",
+          "stroke" => "green",
+          "radius" => 0
+        }),
+        shape.("again", "triangle", [495, 200, 130, 104], %{
+          "text" => "Again",
+          "fill" => "red",
+          "stroke" => "red",
+          "dash" => true
+        }),
+        shape.("aside", "text", [700, 330, 200, 48], %{
+          "text" => "Ask the team first",
+          "size" => "s",
+          "align" => "left"
+        }),
+        Map.put(aside, :id, "aside-line")
+      ],
+      edges: [
+        %{source: "idea", target: "sketch", path: "smooth"},
+        %{source: "sketch", target: "good", path: "smooth"},
+        %{source: "good", target: "ship", path: "smooth", label: "Yes"},
+        %{source: "good", target: "again", path: "smooth", label: "No"}
+      ]
+    )
+  end
+
   def board do
     note = fn id, x, y, w, h, tone, text ->
       %{id: id, type: "note", x: x, y: y, width: w, height: h, data: %{tone: tone, text: text}}
@@ -512,7 +565,8 @@ defmodule HakushiDev.Store do
         %{
           "schema" => HakushiDev.Seeds.schema(),
           "workflow" => HakushiDev.Seeds.workflow(),
-          "board" => HakushiDev.Seeds.board()
+          "board" => HakushiDev.Seeds.board(),
+          "whiteboard" => HakushiDev.Seeds.whiteboard()
         }
       end,
       name: __MODULE__
@@ -549,6 +603,8 @@ defmodule HakushiDev.Icons do
       ~s(<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><path d="M10 6.5h4a3 3 0 0 1 3 3V14"/>),
     "board" =>
       ~s(<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/>),
+    "whiteboard" =>
+      ~s(<rect x="3" y="3" width="8" height="7" rx="1.5"/><circle cx="17" cy="7" r="3.5"/><path d="M3 20h8M13 14l4 6 4-6z"/>),
     "spec" =>
       ~s(<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/>),
     "scale" =>
@@ -825,6 +881,7 @@ defmodule HakushiDev.Layouts do
       {:schema, "/", "Schema", "schema"},
       {:workflow, "/workflow", "Workflow", "workflow"},
       {:board, "/board", "Moodboard", "board"},
+      {:whiteboard, "/whiteboard", "Whiteboard", "whiteboard"},
       {:spec, "/spec", "Design spec", "spec"},
       {:scale, "/scale", "Two thousand nodes", "scale"}
     ]
@@ -1210,6 +1267,55 @@ defmodule HakushiDev.BoardLive do
   end
 end
 
+defmodule HakushiDev.WhiteboardLive do
+  @moduledoc """
+  A whiteboard of plain shapes (Hakushi.Kits.Shapes) and ink
+  (Hakushi.Kits.Ink): drawn with the tools of the bar, styled from the
+  panel beside the selection, shared.
+  """
+  use Phoenix.LiveView
+
+  import Hakushi.Components
+  import HakushiDev.Layouts, only: [app: 1]
+  import HakushiDev.Page, only: [topic: 2]
+
+  @kits [Hakushi.Kits.Shapes, Hakushi.Kits.Ink]
+
+  @impl true
+  def mount(_params, _session, socket) do
+    {:ok, assign(socket, graph: HakushiDev.Store.get("whiteboard", socket.assigns.room))}
+  end
+
+  def on_change(_change, %{result: result}, room) do
+    HakushiDev.Store.put("whiteboard", room, result)
+    :ok
+  end
+
+  @impl true
+  def render(assigns) do
+    assigns = assign(assigns, :kits, @kits)
+
+    ~H"""
+    <.app page={:whiteboard} me={@me} query={@query} title="Whiteboard" crumb="Release process">
+      <:actions>
+        <span class="hint">R, O, D and T draw shapes, L a line or an arrow between two; double-click a shape to write in it.</span>
+      </:actions>
+      <.canvas
+        id="whiteboard"
+        graph={@graph}
+        on_change={&on_change(&1, &2, @room)}
+        kits={@kits}
+        issho={[instance: HakushiDev.Issho, document: topic("whiteboard", @room), follow: @follow]}
+        user={@me}
+        readonly={@readonly}
+        papers={true}
+        label="The whiteboard"
+      />
+    </.app>
+    """
+  end
+end
+
 defmodule HakushiDev.SpecLive do
   @moduledoc """
   A design spec: a page of text with canvases in it, each in an embed
@@ -1427,6 +1533,7 @@ defmodule HakushiDev.Router do
       live("/", HakushiDev.SchemaLive)
       live("/workflow", HakushiDev.WorkflowLive)
       live("/board", HakushiDev.BoardLive)
+      live("/whiteboard", HakushiDev.WhiteboardLive)
       live("/spec", HakushiDev.SpecLive)
       live("/scale", HakushiDev.ScaleLive)
     end

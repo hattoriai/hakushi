@@ -204,6 +204,7 @@ gives it the canvas's verbs, however it reaches your app:
 | `update_node` | a node's data, type or lock |
 | `delete_items` | nodes, with their edges, and edges |
 | `draw_on_canvas` | strokes of ink, or a ring around a node: the people see the pen draw |
+| `draw_shape` | a shape (rectangle, ellipse, diamond, triangle, text) or a line of its own, with its text and style; or a shape's text, style and rotation |
 
 Its pointer goes to where it works and drags as a hand does, in a straight
 line: only where it goes is sent, and each browser draws the way there

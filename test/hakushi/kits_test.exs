@@ -148,7 +148,8 @@ defmodule Hakushi.KitsTest do
                ["flow:trigger"],
                ["flow:step"],
                ["flow:condition"],
-               ["notes:note"]
+               ["notes:note"],
+               ["shapes:rect"]
              ]
 
       assert html =~ ~s(aria-label="Full screen")

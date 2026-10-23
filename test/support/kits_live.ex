@@ -5,9 +5,9 @@ defmodule HakushiTest.KitsLive do
   import Hakushi.Components
 
   alias Hakushi.Graph
-  alias Hakushi.Kits.{Flow, Ink, Notes, Schema}
+  alias Hakushi.Kits.{Flow, Ink, Notes, Schema, Shapes}
 
-  @kits [Schema, Flow, Notes, Ink]
+  @kits [Schema, Flow, Notes, Ink, Shapes]
 
   def graph do
     Graph.new(

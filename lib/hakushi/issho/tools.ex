@@ -712,4 +712,114 @@ if Code.ensure_loaded?(Issho.Tool) do
       end)
     end
   end
+
+  defmodule Hakushi.Issho.Tools.Shape do
+    @moduledoc false
+    use Issho.Tool,
+      name: "draw_shape",
+      description: """
+      Draws a shape on a shared canvas with shapes (nodes of type "shape"):
+      a rectangle, an ellipse, a diamond, a triangle or text, in a box of
+      the canvas, with its text and its style; or a line of its own from a
+      point to a point (to join two nodes, use connect_nodes). With `node`,
+      changes a shape that is there: its text, its style, its rotation.
+      Your pointer goes there, and draws it, as a person does.
+
+      A style has `fill` and `stroke` (ink, gray, blue, green, yellow, red,
+      violet, or none), `width` (1, 2 or 4), `dash` (true or false),
+      `radius` (0 or 8), `size` of the text (s, m or l), `align` (left,
+      center or right), `rotation` (degrees) and, for a line, `arrow` (end,
+      both or none).
+      """,
+      annotations: []
+
+    arg :canvas, :string, required: true
+    arg :kind, {:enum, ["rect", "ellipse", "diamond", "triangle", "text", "line"]}
+    arg :x, :number, description: "The box's left, or a line's start"
+    arg :y, :number, description: "The box's top, or a line's start"
+    arg :width, :number, description: "The box's width (the kind's own unless given)"
+    arg :height, :number, description: "The box's height"
+    arg :to_x, :number, description: "A line's end"
+    arg :to_y, :number, description: "A line's end"
+    arg :text, :string, description: "The text in the shape"
+    arg :style, :any, description: "The style (see above)"
+    arg :node, :string, description: "A shape there, to change"
+
+    alias Hakushi.Change
+    alias Hakushi.Issho.Tools.Canvas
+    alias Hakushi.Kits.Shapes
+
+    @impl true
+    def call(args, ctx) do
+      with {:ok, canvas} <- Canvas.open(ctx, args.canvas) do
+        if args[:node], do: change(canvas, args), else: add(canvas, args)
+      end
+    end
+
+    defp add(canvas, %{kind: "line", x: x, y: y, to_x: to_x, to_y: to_y} = args)
+         when is_number(x) and is_number(y) and is_number(to_x) and is_number(to_y) do
+      {:ok, node} = Shapes.line({x, y}, {to_x, to_y}, style(args))
+      draw(canvas, Map.put(node, :id, Hakushi.Canvas.new_id()), {x, y}, {to_x, to_y})
+    end
+
+    defp add(_canvas, %{kind: "line"}), do: {:error, "A line needs x, y, to_x and to_y."}
+
+    defp add(canvas, %{x: x, y: y} = args) when is_number(x) and is_number(y) do
+      kind = args[:kind] || "rect"
+      style = Map.put(style(args), "text", args[:text] || "")
+      node = kind |> Shapes.shape([x, y, args[:width] || 0, args[:height] || 0], style)
+      node = Map.put(node, :id, Hakushi.Canvas.new_id())
+      draw(canvas, node, {x, y}, {node.x + node.width, node.y + node.height})
+    end
+
+    defp add(_canvas, _args), do: {:error, "Say where: x and y (and to_x and to_y for a line)."}
+
+    # The pointer goes to a corner, and drags to the other, as a person
+    # draws a shape; then it is there.
+    defp draw(canvas, node, from, to) do
+      with :ok <- Canvas.glide(canvas, from),
+           :ok <- Canvas.glide(canvas, to, %{}, :drag),
+           :ok <- Canvas.change(canvas, Change.add([node])),
+           :ok <- Canvas.aware(canvas, %{"selected" => [node.id]}) do
+        {:ok, %{"id" => node.id}}
+      else
+        error -> Canvas.error(error)
+      end
+    end
+
+    defp change(canvas, %{node: id} = args) do
+      with {:ok, node} <- Canvas.node(canvas, id),
+           true <- node.type in Shapes.types() || {:error, "#{inspect(id)} is not a shape."},
+           :ok <- Canvas.glide(canvas, Canvas.on(node), %{"selected" => [id]}),
+           {:ok, data} <- edited(node, args),
+           :ok <- Canvas.change(canvas, Change.update(nodes: [%{id: id, data: data}])) do
+        {:ok, %{"updated" => id}}
+      else
+        error -> Canvas.error(error)
+      end
+    end
+
+    defp edited(node, args) do
+      data = Hakushi.Kit.stringify(node.data)
+
+      with {:ok, data} <- maybe(args[:text], data, &Shapes.edit("text", %{"value" => &1}, &2)),
+           {:ok, data} <-
+             maybe(non_empty(style(args)), data, &Shapes.edit("style", %{"style" => &1}, &2)),
+           {:ok, data} <-
+             maybe(style(args)["rotation"], data, &Shapes.edit("rotate", %{"value" => &1}, &2)) do
+        {:ok, data}
+      else
+        :error -> {:error, "That style is not one the shape has."}
+      end
+    end
+
+    defp maybe(nil, data, _fun), do: {:ok, data}
+    defp maybe(value, data, fun), do: fun.(value, data)
+
+    defp non_empty(map) when map_size(map) == 0, do: nil
+    defp non_empty(map), do: map
+
+    defp style(%{style: %{} = style}), do: Map.new(style, fn {k, v} -> {to_string(k), v} end)
+    defp style(_args), do: %{}
+  end
 end

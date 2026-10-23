@@ -76,6 +76,10 @@ type Gesture =
   | { kind: "ink"; pointer: number; tool: Tool; stroke: InkStroke; pen: boolean }
   | { kind: "erase"; pointer: number; tool: Tool; last: Point; hit: Set<string> }
   | { kind: "lasso"; pointer: number; points: Point[]; base: Set<string> }
+  // A shape drawn as a box (Shift: as wide as high), or a line from a point to a point.
+  | { kind: "shape"; pointer: number; tool: Tool; start: Point; end: Point; square: boolean }
+  // A node turned by its knob, about its middle.
+  | { kind: "rotate"; pointer: number; id: string; center: Point; from: number; base: number; deg: number; el: HTMLElement }
   | { kind: "pinch"; distance: number; mid: Point; view: View };
 
 interface EdgeView {
@@ -587,11 +591,17 @@ export class Canvas {
     }
     if (node.resizable && this.selected.has(node.id) && !this.config.readonly && !node.locked) this.addResizers(node);
     else element.querySelectorAll(":scope > .hakushi-resizer").forEach((r) => r.remove());
+    // The knob of a node that turns (`data-hakushi-rotate`), when it is the one selected.
+    const turns = this.selected.size === 1 && this.selected.has(node.id) && !this.config.readonly && !node.locked && element.querySelector("[data-hakushi-rotate]") !== null;
+    const knob = element.querySelector(":scope > .hakushi-rotator");
+    if (turns && !knob) element.append(el("span", { class: "hakushi-rotator", "aria-hidden": "true", title: this.messages.t("shapeRotate") }));
+    else if (!turns && knob) knob.remove();
   }
 
+  // The corners and the sides of a node that resizes, to drag.
   private addResizers(node: NodeModel) {
     if (node.el.querySelector(":scope > .hakushi-resizer")) return;
-    for (const corner of ["nw", "ne", "sw", "se"]) {
+    for (const corner of ["nw", "ne", "sw", "se", "n", "e", "s", "w"]) {
       node.el.append(el("span", { class: "hakushi-resizer", "data-corner": corner, "aria-hidden": "true" }));
     }
   }
@@ -773,7 +783,7 @@ export class Canvas {
         if (!name.startsWith("data-") || name.startsWith("data-ui-")) continue;
       }
       const target = record.target instanceof Element ? record.target : record.target.parentElement;
-      if (target?.closest(".hakushi-resizer")) continue;
+      if (target?.closest(".hakushi-resizer, .hakushi-rotator")) continue;
       const node = target?.closest<HTMLElement>(".hakushi-node");
       if (node && this.nodesEl.contains(node)) touched.add(node);
     }
@@ -812,6 +822,13 @@ export class Canvas {
     this.allDirty = true;
     this.layoutVersion++;
     if (this.pendingSelect) this.selectPending();
+    // A text drawn with its tool: written at once.
+    if (this.editOnArrive && this.nodes.has(this.editOnArrive)) {
+      const node = this.nodes.get(this.editOnArrive)!;
+      this.editOnArrive = null;
+      requestAnimationFrame(() => this.editText(node));
+    }
+    if (this.styleEl) this.drawStylePanel();
     // A stroke of this person's is a node now: drawn by it.
     if (this.inkPending.some((p) => p.id && this.nodes.has(p.id))) this.inkPending = this.inkPending.filter((p) => !(p.id && this.nodes.has(p.id)));
     this.schedule();
@@ -1191,6 +1208,24 @@ export class Canvas {
     }
 
     const g = this.gesture;
+    if (g?.kind === "shape") {
+      if (g.tool.mode === "line") {
+        this.overlay.append(svg("line", { class: "hakushi-shape-preview", x1: `${g.start.x}`, y1: `${g.start.y}`, x2: `${g.end.x}`, y2: `${g.end.y}`, "vector-effect": "non-scaling-stroke" }));
+      } else {
+        const b = this.shapeBox(g);
+        const shape =
+          g.tool.tool === "ellipse"
+            ? svg("ellipse", { cx: `${b.x + b.width / 2}`, cy: `${b.y + b.height / 2}`, rx: `${b.width / 2}`, ry: `${b.height / 2}` })
+            : g.tool.tool === "diamond"
+              ? svg("polygon", { points: `${b.x + b.width / 2},${b.y} ${b.x + b.width},${b.y + b.height / 2} ${b.x + b.width / 2},${b.y + b.height} ${b.x},${b.y + b.height / 2}` })
+              : g.tool.tool === "triangle"
+                ? svg("polygon", { points: `${b.x + b.width / 2},${b.y} ${b.x + b.width},${b.y + b.height} ${b.x},${b.y + b.height}` })
+                : svg("rect", { x: `${b.x}`, y: `${b.y}`, width: `${b.width}`, height: `${b.height}`, rx: g.tool.tool === "text" ? "0" : "6" });
+        shape.setAttribute("class", "hakushi-shape-preview");
+        shape.setAttribute("vector-effect", "non-scaling-stroke");
+        this.overlay.append(shape);
+      }
+    }
     if (g?.kind === "lasso" && g.points.length > 1) {
       const d = g.points.map((p, i) => `${i === 0 ? "M" : "L"}${round(p.x)} ${round(p.y)}`).join("") + "Z";
       this.overlay.append(svg("path", { class: "hakushi-lasso", d, "vector-effect": "non-scaling-stroke" }));
@@ -1410,6 +1445,192 @@ export class Canvas {
     });
   }
 
+  // -- Shapes ------------------------------------------------------------------
+  //
+  // A kit's tool of the mode "box" draws a node as a box dragged on the
+  // paper; one of the mode "line", a line from a point to a point, which
+  // is an edge when it goes from a node to another, and a node of the kit's
+  // else. A node with text (`data-hakushi-text`) is written in place on a
+  // double click; one that turns (`data-hakushi-rotate`) has a knob; a
+  // kit's styles (`styles/1`) are a panel beside the selection.
+
+  private editOnArrive: string | null = null;
+  private styleEl: HTMLElement | null = null;
+
+  // The box a shape gesture drew: from corner to corner, as wide as high with Shift.
+  private shapeBox(g: Extract<Gesture, { kind: "shape" }>): Rect {
+    let w = g.end.x - g.start.x;
+    let h = g.end.y - g.start.y;
+    if (g.square) {
+      const side = Math.max(Math.abs(w), Math.abs(h));
+      w = Math.sign(w || 1) * side;
+      h = Math.sign(h || 1) * side;
+    }
+    return fromCorners(g.start, { x: g.start.x + w, y: g.start.y + h });
+  }
+
+  // The node a line may end on: the one on top under the point, with handles.
+  private nodeAt(p: Point, except?: string): NodeModel | null {
+    for (let i = this.order.length - 1; i >= 0; i--) {
+      const node = this.nodes.get(this.order[i]);
+      if (!node || node.id === except || this.gone.has(node.id) || node.group || !node.handles.length) continue;
+      if (contains(this.rect(node), p)) return node;
+    }
+    return null;
+  }
+
+  private markLineEnd(end: Point, start: Point) {
+    const from = this.nodeAt(start);
+    const to = this.nodeAt(end, from?.id);
+    for (const e of this.root.querySelectorAll("[data-ui-target]")) if (e !== to?.el) e.removeAttribute("data-ui-target");
+    if (from && to) to.el.setAttribute("data-ui-target", "");
+  }
+
+  private commitShape(g: Extract<Gesture, { kind: "shape" }>) {
+    const tool = `${g.tool.kit}:${g.tool.tool}`;
+    const back = () => this.setTool(null);
+    if (g.tool.mode === "line") {
+      if (Math.hypot(g.end.x - g.start.x, g.end.y - g.start.y) * this.view.zoom < 6) return;
+      const from = this.nodeAt(g.start);
+      const to = this.nodeAt(g.end, from?.id);
+      if (from && to) {
+        // From a node to a node: an edge, which follows them.
+        this.push("hakushi:change", { op: "connect", edges: [{ source: from.id, sourceHandle: null, target: to.id, targetHandle: null }] }, (reply) => {
+          if (!reply.error) this.announce(this.messages.t("connected", { source: from.label, target: to.label }));
+        });
+      } else {
+        this.push("hakushi:draw", { tool, points: [[round(g.start.x), round(g.start.y)], [round(g.end.x), round(g.end.y)]] }, (reply) => {
+          if (typeof reply.drawn === "string") this.pendingSelect = [reply.drawn];
+          this.selectPending();
+        });
+      }
+      back();
+      return;
+    }
+    const b = this.shapeBox(g);
+    const clicked = b.width * this.view.zoom < 6 && b.height * this.view.zoom < 6;
+    const box = clicked ? [round(g.start.x), round(g.start.y), 0, 0] : [round(b.x), round(b.y), round(b.width), round(b.height)];
+    const group = this.groupAt({ x: b.x + b.width / 2, y: b.y + b.height / 2 }, new Set());
+    const text = g.tool.tool === "text";
+    this.push("hakushi:draw", { tool, box, parent: group?.id ?? null }, (reply) => {
+      if (typeof reply.drawn !== "string") return;
+      this.pendingSelect = [reply.drawn];
+      if (text) this.editOnArrive = reply.drawn;
+      this.selectPending();
+    });
+    back();
+  }
+
+  private startRotate(event: PointerEvent, node: NodeModel) {
+    const turning = node.el.querySelector<HTMLElement>("[data-hakushi-rotate]");
+    if (!turning) return;
+    const at = this.canvasPoint(event);
+    const center = this.center(node);
+    const base = parseFloat(getComputedStyle(turning).getPropertyValue("--hakushi-rotation")) || 0;
+    this.capture(event);
+    this.gesture = { kind: "rotate", pointer: event.pointerId, id: node.id, center, from: (Math.atan2(at.y - center.y, at.x - center.x) * 180) / Math.PI, base, deg: base, el: turning };
+  }
+
+  /** Writes the text of a node that has one, in place: Escape takes it back, a click elsewhere keeps it. */
+  editText(node: NodeModel) {
+    const text = node.el.querySelector<HTMLElement>("[data-hakushi-text]");
+    if (!text || this.config.readonly) return;
+    const turning = node.el.querySelector<HTMLElement>("[data-hakushi-rotate]");
+    const rotation = turning ? getComputedStyle(turning).getPropertyValue("--hakushi-rotation").trim() || "0deg" : "0deg";
+    const at = this.placeOf(node);
+    const editor = el("div", { class: `${text.className} hakushi-text-editor`, contenteditable: "plaintext-only", role: "textbox", "aria-multiline": "true", "aria-label": this.messages.t("shapeTextLabel"), "data-size": text.dataset.size ?? "m", "data-align": text.dataset.align ?? "center" });
+    editor.textContent = text.dataset.hakushiText ?? text.textContent ?? "";
+    const style = getComputedStyle(text);
+    Object.assign(editor.style, { translate: `${at.x}px ${at.y}px`, width: `${node.width}px`, minHeight: `${node.height}px`, rotate: rotation, color: style.color, fontFamily: style.fontFamily, padding: style.padding });
+    this.labelsEl.append(editor);
+    text.style.visibility = "hidden";
+    editor.focus();
+    const range = document.createRange();
+    range.selectNodeContents(editor);
+    getSelection()?.removeAllRanges();
+    getSelection()?.addRange(range);
+    let done = false;
+    const finish = (save: boolean) => {
+      if (done) return;
+      done = true;
+      const value = (editor.innerText ?? "").replace(/\n$/, "");
+      // A text longer than the shape: the shape grows with it.
+      const needed = Math.ceil(editor.scrollHeight);
+      editor.remove();
+      text.style.visibility = "";
+      this.root.focus({ preventScroll: true });
+      if (!save || value === (text.dataset.hakushiText ?? "")) return;
+      this.push("hakushi:edit", { node: node.id, action: "text", value }, (reply) => {
+        const current = this.nodes.get(node.id);
+        if (reply.error || !current || needed <= current.height + 1) return;
+        this.push("hakushi:change", { op: "move", nodes: [{ id: current.id, x: current.x, y: current.y, width: current.width, height: needed }] });
+      });
+    };
+    editor.addEventListener("keydown", (event) => {
+      event.stopPropagation();
+      if (event.key === "Escape") finish(false);
+      if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) finish(true);
+    });
+    editor.addEventListener("blur", () => finish(true));
+    editor.addEventListener("pointerdown", (event) => event.stopPropagation());
+  }
+
+  // The style panel of a kit (`styles/1`), beside the selection, when every
+  // selected node is of its types: the choices the nodes have, the one they
+  // share pressed.
+  private drawStylePanel() {
+    const panels = this.config.styles ?? [];
+    const ids = [...this.selected];
+    const nodes = ids.map((id) => this.nodes.get(id)).filter((n): n is NodeModel => !!n && !this.gone.has(n.id));
+    const panel = nodes.length && !this.tool ? panels.find((p) => nodes.every((n) => p.types.includes(n.type))) : undefined;
+    if (!panel || this.config.readonly) {
+      this.styleEl?.remove();
+      this.styleEl = null;
+      return;
+    }
+    const styles = nodes.map((n) => {
+      try {
+        return JSON.parse(n.el.querySelector<HTMLElement>("[data-hakushi-style]")?.dataset.hakushiStyle ?? "{}") as Record<string, unknown>;
+      } catch {
+        return {};
+      }
+    });
+    if (!this.styleEl) {
+      this.styleEl = el("div", { class: "hakushi-style-panel", role: "toolbar", "aria-label": this.messages.t("shapeStyle"), "aria-orientation": "vertical" });
+      this.styleEl.addEventListener("pointerdown", (event) => event.stopPropagation());
+      this.ui.append(this.styleEl);
+    }
+    const groups: HTMLElement[] = [];
+    for (const group of panel.groups) {
+      const values = styles.filter((st) => group.key in st).map((st) => JSON.stringify(st[group.key]));
+      if (!values.length) continue;
+      const shared = values.every((v) => v === values[0]) ? values[0] : null;
+      const row = el("div", { class: "hakushi-style-group", role: "group", "aria-label": group.label, "data-kind": group.kind });
+      row.append(el("span", { class: "hakushi-style-label", "aria-hidden": "true" }, [group.label]));
+      const options = el("div", { class: "hakushi-style-options" });
+      for (const option of group.options) {
+        const b = el("button", { type: "button", class: "hakushi-style-option", "aria-label": `${group.label}: ${option.label}`, title: option.label, "aria-pressed": String(JSON.stringify(option.value) === shared), "data-key": group.key, "data-value": JSON.stringify(option.value) });
+        if (group.kind === "color") {
+          b.classList.add("hakushi-style-swatch");
+          b.dataset.color = String(option.value);
+          b.style.setProperty("--hakushi-swatch", option.value === "none" ? "transparent" : `var(--hakushi-shape-${option.value})`);
+        } else if (group.kind === "width") {
+          b.append(el("span", {}));
+          b.style.setProperty("--hakushi-style-width", `${Number(option.value)}px`);
+        } else {
+          b.textContent = option.label;
+        }
+        b.addEventListener("click", () => {
+          this.push("hakushi:edit", { nodes: ids, action: "style", style: { [group.key]: option.value } });
+        });
+        options.append(b);
+      }
+      row.append(options);
+      groups.push(row);
+    }
+    this.styleEl.replaceChildren(...groups);
+  }
+
   // -- The tools of the kits ---------------------------------------------------
   //
   // A bar of the kits' tools (Hakushi.Kit's `tools/1`), over the canvas:
@@ -1461,6 +1682,7 @@ export class Canvas {
   }
 
   private showTool() {
+    this.drawStylePanel();
     const name = this.getTool() ?? "pointer";
     if (this.tool) this.root.dataset.uiTool = this.tool.mode;
     else delete this.root.dataset.uiTool;
@@ -1789,6 +2011,9 @@ export class Canvas {
       } else if (this.tool.mode === "erase") {
         this.gesture = { kind: "erase", pointer: event.pointerId, tool: this.tool, last: at, hit: new Set() };
         this.eraseAlong(at, at);
+      } else if (this.tool.mode === "box" || this.tool.mode === "line") {
+        const start = this.config.snap && this.tool.mode === "box" ? { x: snapToGrid(at.x, this.config.grid), y: snapToGrid(at.y, this.config.grid) } : at;
+        this.gesture = { kind: "shape", pointer: event.pointerId, tool: this.tool, start, end: start, square: event.shiftKey };
       } else {
         const base = event.shiftKey ? new Set(this.selected) : new Set<string>();
         if (!event.shiftKey) this.select([]);
@@ -1808,6 +2033,12 @@ export class Canvas {
     if (handleEl && node && !this.config.readonly && !node.locked) {
       event.preventDefault();
       this.startConnect(event, node, handleEl, at);
+      return;
+    }
+    const rotator = target.closest<HTMLElement>(".hakushi-rotator");
+    if (rotator && node && !this.config.readonly) {
+      event.preventDefault();
+      this.startRotate(event, node);
       return;
     }
     const resizer = target.closest<HTMLElement>(".hakushi-resizer");
@@ -2063,6 +2294,23 @@ export class Canvas {
         this.schedule();
         return;
       }
+      case "shape": {
+        if (event.pointerId !== g.pointer) return;
+        g.end = this.config.snap && g.tool.mode === "box" ? { x: snapToGrid(at.x, this.config.grid), y: snapToGrid(at.y, this.config.grid) } : at;
+        g.square = event.shiftKey;
+        if (g.tool.mode === "line") this.markLineEnd(g.end, g.start);
+        this.schedule();
+        return;
+      }
+      case "rotate": {
+        if (event.pointerId !== g.pointer) return;
+        const angle = (Math.atan2(at.y - g.center.y, at.x - g.center.x) * 180) / Math.PI;
+        let deg = g.base + angle - g.from;
+        if (event.shiftKey) deg = Math.round(deg / 15) * 15;
+        g.deg = ((Math.round(deg) % 360) + 360) % 360;
+        g.el.style.setProperty("--hakushi-rotation", `${g.deg}deg`);
+        return;
+      }
       case "lasso": {
         if (event.pointerId !== g.pointer) return;
         const last = g.points[g.points.length - 1];
@@ -2128,6 +2376,17 @@ export class Canvas {
       case "lasso":
         if (!cancelled) this.selectLassoed(g.points, g.base);
         break;
+      case "shape":
+        this.root.querySelectorAll("[data-ui-target]").forEach((e) => e.removeAttribute("data-ui-target"));
+        if (!cancelled) this.commitShape(g);
+        break;
+      case "rotate":
+        if (cancelled || g.deg === g.base) g.el.style.removeProperty("--hakushi-rotation");
+        else
+          this.push("hakushi:edit", { node: g.id, action: "rotate", value: g.deg }, (reply) => {
+            if (reply.error || reply.ok === false) g.el.style.removeProperty("--hakushi-rotation");
+          });
+        break;
     }
     this.sendPeer();
     this.schedule();
@@ -2144,6 +2403,8 @@ export class Canvas {
     }
     if (g.kind === "box") this.boxEl.hidden = true;
     if (g.kind === "erase") this.unerase(g.hit);
+    if (g.kind === "rotate") g.el.style.removeProperty("--hakushi-rotation");
+    if (g.kind === "shape") this.root.querySelectorAll("[data-ui-target]").forEach((e) => e.removeAttribute("data-ui-target"));
     if (g.kind === "ink" || g.kind === "erase" || g.kind === "lasso") this.sendPeer();
     if (g.kind === "resize") {
       const node = this.nodes.get(g.id);
@@ -2180,6 +2441,16 @@ export class Canvas {
     // A tool draws, and makes nothing of a double click.
     if (this.tool) return;
     const target = event.target as Element;
+    // The text of a node that has one (`data-hakushi-text`), written in place.
+    // The canvas has the pointer (a press captures it): what is under it.
+    const under = document.elementFromPoint(event.clientX, event.clientY) ?? target;
+    const textNode = under.closest<HTMLElement>(".hakushi-node");
+    const textNodeModel = textNode && this.nodesEl.contains(textNode) ? this.nodes.get(textNode.dataset.id || "") : undefined;
+    if (textNodeModel && !this.config.readonly && !textNodeModel.locked && textNode!.querySelector("[data-hakushi-text]") && !interactive(under, textNode!)) {
+      event.preventDefault();
+      this.editText(textNodeModel);
+      return;
+    }
     const edgeId = target.closest<SVGGElement>(".hakushi-edge")?.dataset.edge ?? target.closest<HTMLElement>(".hakushi-edge-label")?.dataset.edge;
     if (edgeId && !this.config.readonly) {
       this.editLabel(edgeId);
@@ -2486,6 +2757,7 @@ export class Canvas {
 
   private selectionChanged() {
     this.allDirty = true;
+    this.drawStylePanel();
     const n = this.selected.size + this.selectedEdges.size;
     if (n === 1 && this.selected.size === 1) {
       const node = this.nodes.get([...this.selected][0]);
@@ -2551,7 +2823,7 @@ export class Canvas {
     const target = event.target as HTMLElement;
     // The buttons of the controls are the canvas's: its keys work there, but
     // Enter and Space, which press them, and Tab.
-    if (target.closest(".hakushi-controls, .hakushi-tools")) {
+    if (target.closest(".hakushi-controls, .hakushi-tools, .hakushi-style-panel")) {
       if (event.key === "Enter" || event.key === " " || event.key === "Tab") return;
     } else if (editable(target) || (target !== this.root && !target.classList.contains("hakushi-node") && interactive(target, this.root))) {
       // Escape from a field of a node goes back to the node.
