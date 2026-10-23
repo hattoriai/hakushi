@@ -62,7 +62,7 @@ async function serialize(root: HTMLElement, world: HTMLElement, box: Rect, paddi
   for (const el of clone.querySelectorAll("[data-ui-culled], [data-ui-selected], [data-ui-peer], [data-ui-drop-target], [data-ui-valid], [data-ui-target]")) {
     for (const name of ["data-ui-culled", "data-ui-selected", "data-ui-peer", "data-ui-drop-target", "data-ui-valid", "data-ui-target"]) el.removeAttribute(name);
   }
-  clone.querySelectorAll(".hakushi-resizer, .hakushi-overlay, .hakushi-edge-input").forEach((el) => el.remove());
+  clone.querySelectorAll(".hakushi-resizer, .hakushi-overlay, .hakushi-ink-live, .hakushi-edge-input").forEach((el) => el.remove());
   clone.querySelectorAll<SVGGElement>(".hakushi-edge").forEach((g) => (g.style.display = ""));
   // The edges raised above the nodes (of a selection) go back under them, as they are drawn.
   const lines = clone.querySelector(".hakushi-edges:not(.hakushi-edges-raised) .hakushi-edge-lines");

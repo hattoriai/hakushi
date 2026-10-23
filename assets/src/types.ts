@@ -31,8 +31,29 @@ export interface Config {
   exportable: boolean;
   live: boolean;
   user: string | null;
+  /** The tools of the kits, for the bar of tools (Hakushi.Kit's `tools/1`). */
+  tools?: Tool[];
   messages: Record<string, string>;
   locale: string;
+}
+
+/** A tool of a kit: what the pointer does on the canvas while it is chosen. */
+export interface Tool {
+  kit: string;
+  tool: string;
+  mode: "draw" | "erase" | "lasso";
+  label: string;
+  icon: string;
+  key: string | null;
+  /** A drawing tool's colours and widths, and the ones it starts with. */
+  colors?: string[];
+  color?: string;
+  sizes?: number[];
+  size?: number;
+  /** One width, whatever the pressure (a highlighter). */
+  flat?: boolean;
+  /** The node types an eraser takes. */
+  types?: string[];
 }
 
 /** The view: the place of the canvas's origin on the screen, and its zoom. */

@@ -13,12 +13,13 @@ import { editable, el, interactive, isApple, numberAttr, prefersReducedMotion, s
 import { contains, edgePath, facing, fromCorners, grow, intersects, sidePoint, union } from "./geometry";
 import { exportImage, type ExportOptions } from "./export";
 import { icons } from "./icons";
+import { FLAT, inkBox, inside, outline, simplify, streamline, type InkPoint, type InkStroke } from "./ink";
 import { layered } from "./layout";
 import { Messages } from "./messages";
 import { Minimap } from "./minimap";
 import { check } from "./rules";
 import { align, snapToGrid, type Guide } from "./snap";
-import type { Config, EdgeModel, End, Handle, HandleKind, Live, NodeModel, Person, Point, Rect, Side, View } from "./types";
+import type { Config, EdgeModel, End, Handle, HandleKind, Live, NodeModel, Person, Point, Rect, Side, Tool, View } from "./types";
 import { centerOn, clamp, fit, reveal, toCanvas, visible, zoomAt } from "./view";
 
 // Nodes are culled (not laid out off the screen) above this many.
@@ -37,6 +38,12 @@ const PEER_INTERVAL = 50;
 const PEER_TIMEOUT = 30_000;
 // The most nodes, and edges, of what a person sees that go to the room.
 const SEEN_MAX = 200;
+// The most points of a line being drawn that go to the others (the server
+// takes no more).
+const INK_SENT_MAX = 1_400;
+// How far from the line a point of a stroke may be left out when the pen
+// lifts, in pixels of the screen.
+const INK_TOLERANCE = 0.6;
 
 type Gesture =
   | { kind: "pan"; pointer: number; start: Point; view: View }
@@ -65,6 +72,10 @@ type Gesture =
       reconnect?: string;
     }
   | { kind: "resize"; pointer: number; id: string; corner: string; start: Point; rect: Rect }
+  // A line drawn with a tool of a kit (ink), the strokes an eraser passes over, a lasso.
+  | { kind: "ink"; pointer: number; tool: Tool; stroke: InkStroke; pen: boolean }
+  | { kind: "erase"; pointer: number; tool: Tool; last: Point; hit: Set<string> }
+  | { kind: "lasso"; pointer: number; points: Point[]; base: Set<string> }
   | { kind: "pinch"; distance: number; mid: Point; view: View };
 
 interface EdgeView {
@@ -97,6 +108,8 @@ interface Peer {
   // Their pointer is on this canvas on a page of the room with Issho's
   // pointers, which draw it there.
   paged?: boolean;
+  // The line they draw, as they draw it.
+  ink: InkStroke | null;
 }
 
 // The canvas of a room this person uses last (it has their pointer, a
@@ -181,6 +194,19 @@ export class Canvas {
   private followedAt = "";
   private culledVersion = -1;
   private culledView: View | null = null;
+  // The tools of the kits: the one chosen (null: the pointer), the colour
+  // and width of each drawing tool, and whether a pen was used (then touch
+  // pans, and only the pen draws).
+  private tool: Tool | null = null;
+  private toolsEl: HTMLElement | null = null;
+  private inkPrefs = new Map<string, { color: string; size: number }>();
+  private penSeen = false;
+  // The lines being drawn: this person's, theirs drawn until they are
+  // nodes, and the others'.
+  private inkG: SVGGElement;
+  private inkPaths = new Map<string, { path: SVGPathElement; stroke: InkStroke; length: number }>();
+  private inkPending: { key: string; stroke: InkStroke; id: string | null }[] = [];
+  private inkSeq = 0;
 
   constructor(
     readonly root: HTMLElement,
@@ -203,12 +229,13 @@ export class Canvas {
     this.edgesG = svg("g", { class: "hakushi-edge-lines" });
     this.overlay = svg("g", { class: "hakushi-overlay" });
     this.raisedG = svg("g", { class: "hakushi-edge-lines" });
+    this.inkG = svg("g", { class: "hakushi-ink-live" });
     const raisedSvg = root.querySelector<SVGSVGElement>(`#${CSS.escape(this.id)}-svg-raised`);
     if (raisedSvg) {
       this.edgesSvg.append(this.edgesG);
-      raisedSvg.append(this.raisedG, this.overlay);
+      raisedSvg.append(this.raisedG, this.inkG, this.overlay);
     } else {
-      this.edgesSvg.append(this.edgesG, this.raisedG, this.overlay);
+      this.edgesSvg.append(this.edgesG, this.raisedG, this.inkG, this.overlay);
     }
 
     this.status = el("div", { class: "hakushi-status", role: "status", "aria-live": "polite" });
@@ -216,6 +243,7 @@ export class Canvas {
     this.cursorsEl = el("div", { class: "hakushi-cursors", "aria-hidden": "true" });
     this.ui.append(this.cursorsEl, this.boxEl, this.status);
     this.buildControls();
+    this.buildTools();
 
     this.readNodes();
     this.readEdges();
@@ -421,8 +449,10 @@ export class Canvas {
     this.layoutVersion++;
     const minimap = this.config.minimap;
     const controls = this.config.controls;
+    const tools = JSON.stringify(this.config.tools ?? []) + this.config.readonly;
     this.readConfig();
     if (minimap !== this.config.minimap || controls !== this.config.controls) this.buildControls();
+    if (tools !== JSON.stringify(this.config.tools ?? []) + this.config.readonly) this.buildTools();
     this.showNotice();
     this.schedule();
   }
@@ -774,6 +804,8 @@ export class Canvas {
     this.allDirty = true;
     this.layoutVersion++;
     if (this.pendingSelect) this.selectPending();
+    // A stroke of this person's is a node now: drawn by it.
+    if (this.inkPending.some((p) => p.id && this.nodes.has(p.id))) this.inkPending = this.inkPending.filter((p) => !(p.id && this.nodes.has(p.id)));
     this.schedule();
   }
 
@@ -858,6 +890,7 @@ export class Canvas {
     }
     this.drawEdges(recull && viewChanged);
     this.drawOverlay();
+    this.drawInk();
     this.drawPeers();
     this.reportSeen();
     const percent = `${Math.round(this.view.zoom * 100)}%`;
@@ -1150,6 +1183,10 @@ export class Canvas {
     }
 
     const g = this.gesture;
+    if (g?.kind === "lasso" && g.points.length > 1) {
+      const d = g.points.map((p, i) => `${i === 0 ? "M" : "L"}${round(p.x)} ${round(p.y)}`).join("") + "Z";
+      this.overlay.append(svg("path", { class: "hakushi-lasso", d, "vector-effect": "non-scaling-stroke" }));
+    }
     if (g?.kind === "connect") {
       const node = this.nodes.get(g.from.node);
       if (node) {
@@ -1270,6 +1307,249 @@ export class Canvas {
     }
   }
 
+  // -- The tools of the kits ---------------------------------------------------
+  //
+  // A bar of the kits' tools (Hakushi.Kit's `tools/1`), over the canvas:
+  // the pointer, which selects and drags as usual, then each tool, and the
+  // colours and widths of a drawing tool. A drawing tool's line (ink) is
+  // smoothed as it comes, goes to the others as it is drawn, and becomes a
+  // node of the kit's when the pen lifts.
+
+  private buildTools() {
+    this.toolsEl?.remove();
+    this.toolsEl = null;
+    const tools = this.config.readonly ? [] : (this.config.tools ?? []);
+    if (this.tool && !tools.some((t) => t.kit === this.tool!.kit && t.tool === this.tool!.tool)) this.tool = null;
+    this.root.toggleAttribute("data-ui-tool", false);
+    if (!tools.length) return;
+    const t = (key: string, values: Record<string, string | number> = {}) => this.messages.t(key, values);
+    const bar = el("div", { class: "hakushi-tools", role: "toolbar", "aria-label": t("inkTools") });
+    const button = (name: string, label: string, icon: string, key: string | null) => {
+      const b = el("button", { type: "button", class: "hakushi-control hakushi-tool", "data-tool": name, "aria-label": label, title: key ? `${label} (${key.toUpperCase()})` : label, "aria-pressed": "false" });
+      b.innerHTML = (icons as Record<string, string>)[icon] ?? icons.pointer;
+      b.addEventListener("click", (event) => {
+        event.stopPropagation();
+        this.setTool(name === "pointer" ? null : name);
+      });
+      return b;
+    };
+    bar.append(button("pointer", t("inkSelect"), "pointer", "v"));
+    for (const tool of tools) bar.append(button(`${tool.kit}:${tool.tool}`, tool.label, tool.icon, tool.key));
+    bar.append(el("div", { class: "hakushi-tool-options", role: "group" }));
+    bar.addEventListener("pointerdown", (event) => event.stopPropagation());
+    this.toolsEl = bar;
+    this.ui.append(bar);
+    this.showTool();
+  }
+
+  /** Chooses a tool of the kits by its name (`"ink:pen"`), or the pointer (`null`). */
+  setTool(name: string | null) {
+    const tool = name ? (this.config.tools ?? []).find((t) => `${t.kit}:${t.tool}` === name) : undefined;
+    if (this.config.readonly || (name && !tool)) return;
+    if (this.gesture) this.cancelGesture();
+    this.tool = tool ?? null;
+    this.showTool();
+    this.announce(tool ? tool.label : this.messages.t("inkSelect"));
+  }
+
+  /** The tool chosen (`"ink:pen"`), or `null` for the pointer. */
+  getTool(): string | null {
+    return this.tool ? `${this.tool.kit}:${this.tool.tool}` : null;
+  }
+
+  private showTool() {
+    const name = this.getTool() ?? "pointer";
+    if (this.tool) this.root.dataset.uiTool = this.tool.mode;
+    else delete this.root.dataset.uiTool;
+    const bar = this.toolsEl;
+    if (!bar) return;
+    for (const b of bar.querySelectorAll<HTMLElement>(".hakushi-tool")) b.setAttribute("aria-pressed", String(b.dataset.tool === name));
+    // The colours and widths of a drawing tool.
+    const options = bar.querySelector<HTMLElement>(".hakushi-tool-options")!;
+    options.replaceChildren();
+    const tool = this.tool;
+    if (tool?.mode !== "draw") {
+      options.hidden = true;
+      return;
+    }
+    options.hidden = false;
+    const prefs = this.inkPrefsOf(tool);
+    for (const color of tool.colors ?? []) {
+      const label = this.messages.t(`color${color[0].toUpperCase()}${color.slice(1)}`);
+      const b = el("button", { type: "button", class: "hakushi-control hakushi-swatch", "data-color": color, "data-tool": tool.tool, "aria-label": label, title: label, "aria-pressed": String(color === prefs.color) });
+      b.addEventListener("click", () => this.setInk(tool, { color }));
+      options.append(b);
+    }
+    for (const size of tool.sizes ?? []) {
+      const label = this.messages.t("inkSize", { n: size });
+      const b = el("button", { type: "button", class: "hakushi-control hakushi-width", "data-color": prefs.color, "data-tool": tool.tool, "aria-label": label, title: label, "aria-pressed": String(size === prefs.size) }, [el("span", {})]);
+      b.style.setProperty("--hakushi-ink-width", `${Math.min(18, Math.max(3, size * (tool.flat ? 0.6 : 1.2)))}px`);
+      b.addEventListener("click", () => this.setInk(tool, { size }));
+      options.append(b);
+    }
+  }
+
+  private inkPrefsOf(tool: Tool): { color: string; size: number } {
+    const key = `${tool.kit}:${tool.tool}`;
+    let prefs = this.inkPrefs.get(key);
+    if (!prefs) this.inkPrefs.set(key, (prefs = { color: tool.color ?? tool.colors?.[0] ?? "ink", size: tool.size ?? tool.sizes?.[0] ?? 4 }));
+    return prefs;
+  }
+
+  private setInk(tool: Tool, change: { color?: string; size?: number }) {
+    Object.assign(this.inkPrefsOf(tool), change);
+    this.showTool();
+  }
+
+  private flat(stroke: InkStroke): boolean {
+    const tool = (this.config.tools ?? []).find((t) => `${t.kit}:${t.tool}` === stroke.tool);
+    return tool ? tool.flat === true : stroke.tool.endsWith("highlighter");
+  }
+
+  // The points of a move (each of those the browser gathered since the
+  // last, for a smooth line), a little behind the pointer, with the pen's
+  // pressure (a mouse's and a finger's is flat).
+  private addInkPoints(event: PointerEvent) {
+    const g = this.gesture;
+    if (g?.kind !== "ink") return;
+    const events = typeof event.getCoalescedEvents === "function" ? event.getCoalescedEvents() : [];
+    const flat = g.tool.flat === true;
+    for (const e of events.length ? events : [event]) {
+      const p = this.canvasPoint(e);
+      const pressure = !flat && e.pointerType === "pen" && e.pressure > 0 ? e.pressure : FLAT;
+      const points = g.stroke.points;
+      const last = points[points.length - 1];
+      if (last && Math.hypot(p.x - last[0], p.y - last[1]) * this.view.zoom < 0.75) continue;
+      points.push(streamline(last, [p.x, p.y, pressure]));
+    }
+  }
+
+  // A line drawn: simplified, to the server, which makes a node of it;
+  // drawn here until the node comes.
+  private commitInk(stroke: InkStroke) {
+    if (!stroke.points.length) return;
+    const points = simplify(stroke.points, INK_TOLERANCE / this.view.zoom).map(([x, y, p]): InkPoint => [round(x), round(y), Math.round(p * 100) / 100]);
+    const done: InkStroke = { ...stroke, points };
+    const pending = { key: `pending-${this.inkSeq++}`, stroke: done, id: null as string | null };
+    this.inkPending.push(pending);
+    const box = inkBox(points, stroke.size, this.flat(stroke));
+    const group = this.groupAt({ x: box.x + box.width / 2, y: box.y + box.height / 2 }, new Set());
+    this.push("hakushi:draw", { tool: stroke.tool, points, color: stroke.color, size: stroke.size, parent: group?.id ?? null }, (reply) => {
+      if (typeof reply.drawn === "string" && !this.nodes.has(reply.drawn)) {
+        pending.id = reply.drawn;
+        this.announce(this.messages.t("drawn"));
+      } else {
+        this.inkPending = this.inkPending.filter((p) => p !== pending);
+      }
+      this.schedule();
+    });
+  }
+
+  // A line as it goes to the others: its points, fewer when there are many.
+  private inkToSend(stroke: InkStroke): InkStroke {
+    let points = stroke.points;
+    for (let tolerance = 0.5; points.length > INK_SENT_MAX; tolerance *= 2) points = simplify(stroke.points, tolerance / this.view.zoom);
+    return { ...stroke, points: points.map(([x, y, p]): InkPoint => [round(x), round(y), Math.round(p * 100) / 100]) };
+  }
+
+  // The nodes an eraser takes that it passed over, from one point to the
+  // next: hidden now, deleted when it lifts.
+  private eraseAlong(from: Point, to: Point) {
+    const g = this.gesture;
+    if (g?.kind !== "erase") return;
+    const types = new Set(g.tool.types ?? []);
+    const reach = 6 / this.view.zoom;
+    const steps = Math.max(1, Math.ceil((Math.hypot(to.x - from.x, to.y - from.y) * this.view.zoom) / 4));
+    const candidates = [...this.nodes.values()].filter((n) => types.has(n.type) && !this.gone.has(n.id) && !n.locked && intersects(grow(fromCorners(from, to), reach), this.rect(n)));
+    for (const node of candidates) {
+      const at = this.placeOf(node);
+      const aim = node.el.querySelector<SVGGeometryElement>(".hakushi-ink-aim");
+      for (let i = 0; i <= steps; i++) {
+        const p = { x: from.x + ((to.x - from.x) * i) / steps, y: from.y + ((to.y - from.y) * i) / steps };
+        const hit = aim ? hitsStroke(aim, p.x - at.x, p.y - at.y, reach) : contains(grow(this.rect(node), reach), p);
+        if (hit) {
+          g.hit.add(node.id);
+          this.gone.add(node.id);
+          this.decorate(node);
+          this.touchNode(node.id);
+          break;
+        }
+      }
+    }
+  }
+
+  private unerase(ids: Set<string>) {
+    for (const id of ids) this.gone.delete(id);
+    this.refresh(ids);
+  }
+
+  private commitErase(ids: Set<string>) {
+    const nodes = [...ids].filter((id) => this.nodes.has(id));
+    if (!nodes.length) return;
+    this.push("hakushi:change", { op: "delete", nodes, edges: [] }, (reply) => {
+      if (reply.error) this.unerase(ids);
+      else this.announce(this.messages.count("deleted", nodes.length));
+    });
+  }
+
+  // What a lasso encloses: a node by its middle, a stroke by most of its line.
+  private selectLassoed(points: Point[], base: Set<string>) {
+    const ids = new Set(base);
+    if (points.length >= 3) {
+      for (const node of this.nodes.values()) {
+        if (this.gone.has(node.id)) continue;
+        const aim = node.el.querySelector<SVGGeometryElement>(".hakushi-ink-aim");
+        if (aim && !node.el.hasAttribute("data-ui-culled")) {
+          const at = this.placeOf(node);
+          const length = aim.getTotalLength();
+          const samples = 12;
+          let within = 0;
+          for (let i = 0; i <= samples; i++) {
+            const p = aim.getPointAtLength((length * i) / samples);
+            if (inside(points, { x: p.x + at.x, y: p.y + at.y })) within++;
+          }
+          if (within / (samples + 1) >= 0.6) ids.add(node.id);
+        } else if (inside(points, this.center(node))) {
+          ids.add(node.id);
+        }
+      }
+    }
+    this.selectedEdges.clear();
+    this.setSelection(ids);
+    this.selectionChanged();
+  }
+
+  // The lines being drawn: this person's, theirs until they are nodes, and
+  // the others' (in the colour of their ink, under their cursor).
+  private drawInk() {
+    const want = new Map<string, InkStroke>();
+    const g = this.gesture;
+    if (g?.kind === "ink" && g.stroke.points.length) want.set("self", g.stroke);
+    for (const p of this.inkPending) want.set(p.key, p.stroke);
+    for (const [id, peer] of this.peers) if (peer.ink && this.people.has(id)) want.set(`peer:${id}`, peer.ink);
+    for (const [key, drawn] of this.inkPaths) {
+      if (!want.has(key)) {
+        drawn.path.remove();
+        this.inkPaths.delete(key);
+      }
+    }
+    for (const [key, stroke] of want) {
+      let drawn = this.inkPaths.get(key);
+      if (!drawn) {
+        drawn = { path: svg("path", {}), stroke, length: -1 };
+        this.inkPaths.set(key, drawn);
+        this.inkG.append(drawn.path);
+      }
+      if (drawn.stroke === stroke && drawn.length === stroke.points.length) continue;
+      drawn.stroke = stroke;
+      drawn.length = stroke.points.length;
+      const [, tool] = stroke.tool.split(":");
+      drawn.path.setAttribute("data-tool", tool ?? stroke.tool);
+      drawn.path.setAttribute("data-color", stroke.color);
+      drawn.path.setAttribute("d", outline(stroke.points, stroke.size, this.flat(stroke)));
+    }
+  }
+
   // -- The view ----------------------------------------------------------------
 
   private measureRoot() {
@@ -1362,7 +1642,8 @@ export class Canvas {
   private pointerDown(event: PointerEvent) {
     const target = event.target as Element;
     this.root.removeAttribute("data-ui-keyboard");
-    if (target.closest(".hakushi-controls, .hakushi-minimap, .hakushi-edge-input, [data-hakushi-people], .hakushi-following")) return;
+    if (target.closest(".hakushi-controls, .hakushi-tools, .hakushi-minimap, .hakushi-edge-input, [data-hakushi-people], .hakushi-following")) return;
+    if (event.pointerType === "pen") this.penSeen = true;
     this.bounds = this.root.getBoundingClientRect();
     this.pointers.set(event.pointerId, this.local(event));
 
@@ -1389,6 +1670,30 @@ export class Canvas {
       return;
     }
     if (event.button !== 0) return;
+
+    // A tool of a kit: it draws, erases or lassoes over anything on the
+    // canvas. Once a pen is used, a finger pans and only the pen draws.
+    if (this.tool && !this.config.readonly && !(this.tool.mode === "lasso" && node && this.selected.has(node.id))) {
+      event.preventDefault();
+      this.root.focus({ preventScroll: true });
+      if (event.pointerType === "touch" && this.penSeen) return this.startPan(event);
+      this.capture(event);
+      if (this.tool.mode === "draw") {
+        const prefs = this.inkPrefsOf(this.tool);
+        const stroke: InkStroke = { tool: `${this.tool.kit}:${this.tool.tool}`, color: prefs.color, size: prefs.size, points: [] };
+        this.gesture = { kind: "ink", pointer: event.pointerId, tool: this.tool, stroke, pen: event.pointerType === "pen" };
+        this.addInkPoints(event);
+      } else if (this.tool.mode === "erase") {
+        this.gesture = { kind: "erase", pointer: event.pointerId, tool: this.tool, last: at, hit: new Set() };
+        this.eraseAlong(at, at);
+      } else {
+        const base = event.shiftKey ? new Set(this.selected) : new Set<string>();
+        if (!event.shiftKey) this.select([]);
+        this.gesture = { kind: "lasso", pointer: event.pointerId, points: [at], base };
+      }
+      this.schedule();
+      return;
+    }
 
     // The ends of the selected edge come first, over the handles they sit on.
     const knob = this.knobAt(event);
@@ -1640,6 +1945,29 @@ export class Canvas {
         this.schedule();
         return;
       }
+      case "ink": {
+        if (event.pointerId !== g.pointer) return;
+        this.addInkPoints(event);
+        this.sendPeer();
+        this.schedule();
+        return;
+      }
+      case "erase": {
+        if (event.pointerId !== g.pointer) return;
+        this.eraseAlong(g.last, at);
+        g.last = at;
+        this.sendPeer();
+        this.schedule();
+        return;
+      }
+      case "lasso": {
+        if (event.pointerId !== g.pointer) return;
+        const last = g.points[g.points.length - 1];
+        if (Math.hypot(at.x - last.x, at.y - last.y) * this.view.zoom >= 2) g.points.push(at);
+        this.sendPeer();
+        this.schedule();
+        return;
+      }
     }
   }
 
@@ -1687,6 +2015,16 @@ export class Canvas {
         if (g.reconnect) this.dirty.add(g.reconnect);
         if (!cancelled && g.target) this.commitConnect(g);
         break;
+      case "ink":
+        if (!cancelled) this.commitInk(g.stroke);
+        break;
+      case "erase":
+        if (cancelled) this.unerase(g.hit);
+        else this.commitErase(g.hit);
+        break;
+      case "lasso":
+        if (!cancelled) this.selectLassoed(g.points, g.base);
+        break;
     }
     this.sendPeer();
     this.schedule();
@@ -1702,6 +2040,8 @@ export class Canvas {
       if (g.reconnect) this.dirty.add(g.reconnect);
     }
     if (g.kind === "box") this.boxEl.hidden = true;
+    if (g.kind === "erase") this.unerase(g.hit);
+    if (g.kind === "ink" || g.kind === "erase" || g.kind === "lasso") this.sendPeer();
     if (g.kind === "resize") {
       const node = this.nodes.get(g.id);
       if (node) this.readNode(node.el);
@@ -1734,6 +2074,8 @@ export class Canvas {
   }
 
   private doubleClick(event: MouseEvent) {
+    // A tool draws, and makes nothing of a double click.
+    if (this.tool) return;
     const target = event.target as Element;
     const edgeId = target.closest<SVGGElement>(".hakushi-edge")?.dataset.edge ?? target.closest<HTMLElement>(".hakushi-edge-label")?.dataset.edge;
     if (edgeId && !this.config.readonly) {
@@ -1743,7 +2085,7 @@ export class Canvas {
     const nodeEl = target.closest<HTMLElement>(".hakushi-node");
     const group = nodeEl && this.nodes.get(nodeEl.dataset.id || "")?.group;
     // On the paper, or on a group's inside.
-    if ((nodeEl && (!group || interactive(target, nodeEl) || target.closest("[data-hakushi-drag]"))) || target.closest(".hakushi-controls, .hakushi-minimap, [data-hakushi-people], .hakushi-following")) return;
+    if ((nodeEl && (!group || interactive(target, nodeEl) || target.closest("[data-hakushi-drag]"))) || target.closest(".hakushi-controls, .hakushi-tools, .hakushi-minimap, [data-hakushi-people], .hakushi-following")) return;
     if (this.config.readonly || !this.config.newNode) return;
     const at = this.canvasPoint(event);
     this.drop(null, this.config.snap ? { x: snapToGrid(at.x, this.config.grid), y: snapToGrid(at.y, this.config.grid) } : at);
@@ -2065,9 +2407,27 @@ export class Canvas {
     if (!nodeEl || event.target !== nodeEl) return;
     const node = this.nodes.get(nodeEl.dataset.id || "");
     if (!node) return;
-    node.el.setAttribute("aria-description", this.describe(node));
+    node.el.setAttribute("aria-description", [this.near(node), this.describe(node)].filter(Boolean).join(". "));
     if (!this.selected.has(node.id)) this.select([node.id]);
     this.revealNodes([node.id]);
+  }
+
+  // Where a node is that says so (a drawing: "Near Release"), by the
+  // nearest node of another kind, for screen readers.
+  private near(node: NodeModel): string {
+    if (!node.el.querySelector("[data-hakushi-near]")) return "";
+    const box = this.rect(node);
+    const c = this.center(node);
+    let best: { node: NodeModel; gap: number; d: number } | null = null;
+    for (const other of this.nodes.values()) {
+      if (other.id === node.id || this.gone.has(other.id) || other.el.querySelector("[data-hakushi-near]")) continue;
+      const r = this.rect(other);
+      const gap = Math.hypot(Math.max(0, r.x - (box.x + box.width), box.x - (r.x + r.width)), Math.max(0, r.y - (box.y + box.height), box.y - (r.y + r.height)));
+      const o = this.center(other);
+      const d = Math.hypot(o.x - c.x, o.y - c.y);
+      if (!best || gap < best.gap || (gap === best.gap && d < best.d)) best = { node: other, gap, d };
+    }
+    return best ? this.messages.t("near", { name: best.node.label }) : "";
   }
 
   // The connections of a node, in words, for screen readers.
@@ -2088,7 +2448,7 @@ export class Canvas {
     const target = event.target as HTMLElement;
     // The buttons of the controls are the canvas's: its keys work there, but
     // Enter and Space, which press them, and Tab.
-    if (target.closest(".hakushi-controls")) {
+    if (target.closest(".hakushi-controls, .hakushi-tools")) {
       if (event.key === "Enter" || event.key === " " || event.key === "Tab") return;
     } else if (editable(target) || (target !== this.root && !target.classList.contains("hakushi-node") && interactive(target, this.root))) {
       // Escape from a field of a node goes back to the node.
@@ -2118,8 +2478,18 @@ export class Canvas {
     }
     if (key === "Escape") {
       if (this.gesture) this.cancelGesture();
+      else if (this.tool) this.setTool(null);
       else this.select([]);
       return;
+    }
+    // The tools of the kits, by their letters, and V for the pointer.
+    if (!mod && !event.altKey && !event.shiftKey && this.toolsEl && key.length === 1) {
+      const letter = key.toLowerCase();
+      const tool = (this.config.tools ?? []).find((t) => t.key === letter);
+      if (tool || letter === "v") {
+        event.preventDefault();
+        return this.setTool(tool ? `${tool.kit}:${tool.tool}` : null);
+      }
     }
     if (key === "Tab") {
       this.tab(event);
@@ -2416,7 +2786,7 @@ export class Canvas {
 
   receivePeer(payload: Record<string, unknown>) {
     const id = String(payload.person);
-    const peer: Peer = this.peers.get(id) ?? { cursor: null, view: null, selected: [], dragging: new Map(), seen: 0, el: null, from: null, dragFrom: new Map(), start: 0, duration: 0 };
+    const peer: Peer = this.peers.get(id) ?? { cursor: null, view: null, selected: [], dragging: new Map(), seen: 0, el: null, from: null, dragFrom: new Map(), start: 0, duration: 0, ink: null };
     // Their page's session (Issho's pointers), not their canvas's: only whether those draw them here.
     if (!("cursor" in payload)) {
       peer.paged = payload.paged === true;
@@ -2452,6 +2822,7 @@ export class Canvas {
     const draggedBefore = new Set(peer.dragging.keys());
     peer.selected = (payload.selected as string[]) ?? [];
     peer.dragging = dragging;
+    peer.ink = readInk(payload.ink);
     peer.seen = Date.now();
     this.peers.set(id, peer);
     if (id === this.followKey) {
@@ -2559,6 +2930,7 @@ export class Canvas {
       selected: [...this.selected],
       dragging,
       viewport: this.size.width > 0 ? [round(-this.view.x / z), round(-this.view.y / z), round(this.size.width / z), round(this.size.height / z)] : null,
+      ink: g?.kind === "ink" ? this.inkToSend(g.stroke) : null,
     });
   }
 
@@ -2697,6 +3069,34 @@ export class Canvas {
     clearTimeout(this.noticeTimer);
     clearTimeout(this.peerTimer);
   }
+}
+
+// A line drawn by someone, as it comes: checked, as the server checked it.
+function readInk(value: unknown): InkStroke | null {
+  const ink = value as Partial<InkStroke> | null | undefined;
+  if (!ink || typeof ink.tool !== "string" || typeof ink.color !== "string" || typeof ink.size !== "number" || !Array.isArray(ink.points)) return null;
+  const points = ink.points.filter((p): p is InkPoint => Array.isArray(p) && p.length === 3 && p.every((n) => typeof n === "number"));
+  return points.length ? { tool: ink.tool, color: ink.color, size: ink.size, points } : null;
+}
+
+// Whether a point (of the stroke's box) is on a stroke's line, or near it.
+function hitsStroke(aim: SVGGeometryElement, x: number, y: number, reach: number): boolean {
+  const svgEl = aim.ownerSVGElement;
+  try {
+    const point = svgEl ? svgEl.createSVGPoint() : new DOMPoint(x, y);
+    point.x = x;
+    point.y = y;
+    return aim.isPointInStroke(point);
+  } catch {
+    // An engine that cannot tell (a hidden element): the line's points.
+  }
+  const length = aim.getTotalLength();
+  const steps = Math.min(400, Math.max(1, Math.ceil(length / 3)));
+  for (let i = 0; i <= steps; i++) {
+    const p = aim.getPointAtLength((length * i) / steps);
+    if (Math.hypot(p.x - x, p.y - y) <= reach) return true;
+  }
+  return false;
 }
 
 function toggle(element: Element, name: string, on: boolean) {

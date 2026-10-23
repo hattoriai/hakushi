@@ -224,6 +224,23 @@ if Code.ensure_loaded?(Issho.Engine) do
     Its pointer travels to where it works, and drags, as a hand does: only
     where it goes is sent, and each browser draws the way. For changes that
     land at once: `config :hakushi, Hakushi.Issho, travel: false`.
+
+    On a canvas with ink (`Hakushi.Kits.Ink`), `draw_on_canvas` draws
+    strokes, or a ring around a node: the people see its pen draw each
+    stroke as they see a person's, and each stroke lands as a node when
+    the pen lifts. How it draws is the app's to set, and the agent's for
+    a drawing (its `live` argument):
+
+        config :hakushi, Hakushi.Issho,
+          ink: [
+            live: true,    # false: the strokes land at once, unseen as drawn
+            speed: 900,    # how fast the pen goes, in pixels of the canvas a second
+            max: 8_000     # the most a drawing takes, in milliseconds
+          ]
+
+    It draws only for someone who sees it: when no one in the room shows
+    the canvas, or each of them prefers reduced motion, or with `travel:
+    false` (Hakushi's or Issho's), the strokes land at once.
     """
     @spec tools() :: [module()]
     def tools,
@@ -234,7 +251,8 @@ if Code.ensure_loaded?(Issho.Engine) do
         Hakushi.Issho.Tools.Move,
         Hakushi.Issho.Tools.Connect,
         Hakushi.Issho.Tools.Update,
-        Hakushi.Issho.Tools.Delete
+        Hakushi.Issho.Tools.Delete,
+        Hakushi.Issho.Tools.Draw
       ]
 
     @doc "The graph of a shared canvas as its room has it, or `nil` when no canvas has it open."

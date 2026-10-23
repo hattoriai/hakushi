@@ -237,6 +237,31 @@ defmodule Hakushi.Test do
     result(event(view, id, "hakushi:edit", payload))
   end
 
+  @doc """
+  Draws a line with a kit's tool (`"ink:pen"`), as a pen does on the
+  canvas when it lifts: its `points` on the canvas (`[x, y]` or `[x, y,
+  pressure]`). Gives `{:ok, id}` of the node the kit made of it.
+  Options: `:color`, `:size`, and `:parent`, the group it is drawn over.
+
+      {:ok, id} = draw(view, "board", "ink:pen", [[0, 0], [40, 12], [80, 0]], color: "red")
+  """
+  @spec draw(struct(), String.t(), String.t(), [[number()]], keyword()) ::
+          {:ok, String.t()} | {:error, String.t() | nil}
+  def draw(view, id, tool, points, opts \\ []) do
+    payload = %{
+      "tool" => tool,
+      "points" => points,
+      "color" => opts[:color],
+      "size" => opts[:size],
+      "parent" => opts[:parent]
+    }
+
+    case event(view, id, "hakushi:draw", payload) do
+      %{"ok" => true, "drawn" => node} -> {:ok, node}
+      reply -> result(reply)
+    end
+  end
+
   @doc "Undoes the last change of this LiveView's person, as ⌘Z does."
   @spec undo(struct(), String.t()) :: :ok | {:error, String.t()}
   def undo(view, id), do: result(event(view, id, "hakushi:undo", %{}))

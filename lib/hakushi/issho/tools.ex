@@ -61,6 +61,33 @@ if Code.ensure_loaded?(Issho.Tool) do
       )
     end
 
+    # How the agent draws with ink (`config :hakushi, Hakushi.Issho, ink:
+    # [...]`): `live`, `speed` (pixels of the canvas a second), `max` (the
+    # most a drawing takes, in milliseconds).
+    def ink(key, default),
+      do:
+        Application.get_env(:hakushi, Hakushi.Issho, [])
+        |> Keyword.get(:ink, [])
+        |> Keyword.get(key, default)
+
+    # A node's box as the people see it ([x, y, width, height]): its size
+    # is its content's, which only a browser knows (what a person sees of
+    # the canvas, `seen`); else its own, or a guess.
+    def box(%__MODULE__{} = canvas, %Hakushi.Node{} = node) do
+      seen =
+        canvas.participant
+        |> Issho.Participant.people()
+        |> Enum.flat_map(fn {_key, entry} -> Map.get(entry, "states", []) end)
+        |> Enum.find_value(
+          &get_in(Issho.Awareness.block(&1, canvas.canvas), ["seen", "nodes", node.id])
+        )
+
+      case seen do
+        [_x, _y, w, h] -> {node.x, node.y, w, h}
+        _none -> {node.x, node.y, node.width || 160, node.height || 60}
+      end
+    end
+
     # A point on a node, to point at it.
     def on(%Hakushi.Node{x: x, y: y, width: w, height: h}),
       do: {x + (w || 80) / 2, y + min(h || 40, 40) / 2}
@@ -465,6 +492,224 @@ if Code.ensure_loaded?(Issho.Tool) do
       else
         error -> Canvas.error(error)
       end
+    end
+  end
+
+  defmodule Hakushi.Issho.Tools.Draw do
+    @moduledoc false
+    use Issho.Tool,
+      name: "draw_on_canvas",
+      description: """
+      Draws on a shared canvas with a pen (a canvas with ink, whose
+      strokes are nodes of type "ink-stroke"): strokes through points of
+      the canvas, or a ring `around` a node, to circle it. The people see
+      your pen draw each stroke, as they see a person's, and each one
+      lands as a node when the pen lifts, which they move, erase and undo
+      as any. Give each stroke enough points for its shape (a curve, every
+      few pixels; the pen goes from point to point in straight lines).
+      With `live` false, the strokes land at once.
+      """,
+      annotations: []
+
+    @stroke [
+      {:points, {:array, {:array, :number}},
+       required: true, description: "[x, y] points of the canvas, in order"},
+      {:color, :string, []},
+      {:size, :number, min: 1, max: 64},
+      {:tool, {:enum, ["pen", "highlighter"]}, []}
+    ]
+
+    arg :canvas, :string, required: true
+    arg :strokes, {:array, {:object, @stroke}}, description: "The strokes, drawn in turn"
+    arg :around, :string, description: "A node's id: a ring drawn around it"
+    arg :color, :string, description: "ink, red, orange, yellow, green, blue or violet"
+    arg :size, :number, min: 1, max: 64, description: "The width of the line"
+    arg :tool, {:enum, ["pen", "highlighter"]}, description: "pen, unless given"
+
+    arg :live, :boolean,
+      description: "Whether the people see each stroke as it is drawn (true, unless the app says)"
+
+    alias Hakushi.Change
+    alias Hakushi.Issho.Tools.Canvas
+    alias Hakushi.Kits.Ink
+
+    # A stroke's points: one every few pixels, so that the pen goes as a
+    # hand does; no more than a stroke has.
+    @spacing 3
+    @max_points 1_500
+    # A frame of a stroke being drawn.
+    @frame 40
+
+    @impl true
+    def call(args, ctx) do
+      with {:ok, canvas} <- Canvas.open(ctx, args.canvas),
+           {:ok, lines} <- lines(canvas, args),
+           {:ok, nodes} <- nodes(lines, args) do
+        live = live?(canvas, args, hd(lines))
+        budget = if live, do: Canvas.ink(:max, 8_000), else: 0
+        draw(canvas, nodes, live, System.monotonic_time(:millisecond) + budget, [])
+      else
+        error -> Canvas.error(error)
+      end
+    end
+
+    defp lines(canvas, %{around: id} = args) when is_binary(id) do
+      with {:ok, node} <- Canvas.node(canvas, id),
+           do: {:ok, [%{points: ring(Canvas.box(canvas, node))} | args[:strokes] || []]}
+    end
+
+    defp lines(_canvas, %{strokes: [_ | _] = strokes}), do: {:ok, strokes}
+    defp lines(_canvas, _args), do: {:error, "Say what to draw: strokes, or a node to circle."}
+
+    # Each line as a stroke's node, in the canvas's terms.
+    defp nodes(lines, args) do
+      Enum.reduce_while(lines, {:ok, []}, fn line, {:ok, acc} ->
+        points = line.points |> Enum.filter(&match?([_, _ | _], &1)) |> resample() |> taper()
+
+        case Ink.stroke(points, stroke_opts(line, args)) do
+          {:ok, node} ->
+            {:cont, {:ok, [{points, Map.put(node, :id, Hakushi.Canvas.new_id())} | acc]}}
+
+          :error ->
+            {:halt, {:error, "A stroke needs points: [[x, y], ...]."}}
+        end
+      end)
+      |> case do
+        {:ok, nodes} -> {:ok, Enum.reverse(nodes)}
+        error -> error
+      end
+    end
+
+    # A stroke's tool, colour and width: its own, else the drawing's (a ring
+    # is red).
+    defp stroke_opts(line, args) do
+      [
+        tool: line[:tool] || args[:tool],
+        color: line[:color] || args[:color] || if(args[:around], do: "red"),
+        size: line[:size] || args[:size]
+      ]
+    end
+
+    # The people see the pen draw: unless the agent or the app says not,
+    # agents do not travel, or no one sees the canvas.
+    defp live?(canvas, args, %{points: [[x, y | _] | _]}) do
+      args[:live] != false and Canvas.ink(:live, true) != false and Canvas.travel?() and
+        Issho.Motion.travel?() and
+        Issho.Motion.watched?(canvas.participant, %{
+          "doc" => canvas.canvas,
+          "at" => %{"point" => [x, y]}
+        })
+    end
+
+    defp live?(_canvas, _args, _line), do: false
+
+    defp draw(canvas, [], _live, _deadline, ids) do
+      with :ok <- Canvas.aware(canvas, %{"ink" => nil}),
+           do: {:ok, %{"strokes" => Enum.reverse(ids)}}
+    end
+
+    defp draw(canvas, [{points, node} | rest], live, deadline, ids) do
+      [x, y | _] = hd(points)
+
+      with :ok <- if(live, do: Canvas.glide(canvas, {x, y}), else: :ok),
+           :ok <- if(live, do: stroke(canvas, points, node, deadline), else: :ok),
+           :ok <- Canvas.change(canvas, Change.add([node])),
+           :ok <- Canvas.aware(canvas, %{"ink" => nil}) do
+        draw(canvas, rest, live, deadline, [node.id | ids])
+      end
+    end
+
+    # The stroke as the pen draws it: more of it each frame, in the agent's
+    # awareness (the canvas's own keys, as a person's line), with its
+    # pointer at the pen's tip; as fast as the app says, and faster when
+    # the drawing's time runs out.
+    defp stroke(canvas, points, node, deadline) do
+      length = length_of(points)
+      left = max(0, deadline - System.monotonic_time(:millisecond))
+      ms = min(round(length / max(Canvas.ink(:speed, 900), 1) * 1000), left)
+      frames = max(1, div(ms, @frame))
+      count = length(points)
+
+      base = %{
+        "tool" => "ink:" <> node.data["tool"],
+        "color" => node.data["color"],
+        "size" => node.data["size"]
+      }
+
+      Enum.reduce_while(1..frames, :ok, fn frame, :ok ->
+        shown = Enum.take(points, max(1, div(count * frame, frames)))
+        show(canvas, Map.put(base, "points", Enum.map(shown, &sent/1)), frame < frames)
+      end)
+    end
+
+    # A frame of the stroke: as much of the line as is drawn, the pointer
+    # at its tip.
+    defp show(canvas, ink, more) do
+      [tx, ty, _p] = List.last(ink["points"])
+
+      case Canvas.aware(canvas, %{"cursor" => [tx, ty], "ink" => ink}) do
+        :ok ->
+          if more, do: Process.sleep(@frame)
+          {:cont, :ok}
+
+        error ->
+          {:halt, error}
+      end
+    end
+
+    defp sent([x, y, p]), do: [Float.round(x * 1.0, 1), Float.round(y * 1.0, 1), p]
+
+    # A ring around a node, as a hand draws one: a little wider than the
+    # node, not quite round, and past where it began.
+    defp ring({x, y, w, h}) do
+      {cx, cy} = {x + w / 2, y + h / 2}
+      {rx, ry} = {w / 2 + 22, h / 2 + 18}
+      steps = 72
+
+      for i <- 0..steps do
+        t = i / steps
+        angle = -2.1 + t * :math.pi() * 2.12
+        wobble = 1 + 0.035 * :math.sin(t * 9 + 0.6) + 0.05 * t
+        [cx + :math.cos(angle) * rx * wobble, cy + :math.sin(angle) * ry * wobble]
+      end
+    end
+
+    # A point every few pixels along the line, and no more than a stroke has.
+    defp resample([]), do: []
+    defp resample([only]), do: [only]
+
+    defp resample(points) do
+      spacing = max(@spacing, length_of(points) / (@max_points - 1))
+
+      points
+      |> Enum.chunk_every(2, 1, :discard)
+      |> Enum.flat_map(fn [[ax, ay | _], [bx, by | _]] ->
+        n = max(1, ceil(:math.sqrt((bx - ax) ** 2 + (by - ay) ** 2) / spacing))
+        for i <- 0..(n - 1), do: [ax + (bx - ax) * i / n, ay + (by - ay) * i / n]
+      end)
+      |> Kernel.++([List.last(points)])
+      |> Enum.take(@max_points)
+    end
+
+    # A pen's pressure, lighter where it lands and where it lifts.
+    defp taper(points) do
+      count = length(points)
+      ends = max(1, min(12, div(count, 6)))
+
+      points
+      |> Enum.with_index()
+      |> Enum.map(fn {[x, y | _], i} ->
+        edge = min(i, count - 1 - i)
+        [x, y, Float.round(0.3 + 0.25 * min(1, edge / ends), 2)]
+      end)
+    end
+
+    defp length_of(points) do
+      points
+      |> Enum.chunk_every(2, 1, :discard)
+      |> Enum.reduce(0, fn [[ax, ay | _], [bx, by | _]], sum ->
+        sum + :math.sqrt((bx - ax) ** 2 + (by - ay) ** 2)
+      end)
     end
   end
 end
