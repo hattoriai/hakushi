@@ -173,6 +173,125 @@ defmodule Hakushi.CanvasTest do
     assert {:error, "This canvas is read-only."} = move(view, "schema", "note", {1, 1})
   end
 
+  describe "an arrange-only canvas" do
+    test "moves nodes, and undoes and redoes the moves" do
+      {view, html} = open("?readonly=arrange")
+      assert html =~ ~s(&quot;arrange&quot;:true)
+      assert html =~ ~s(&quot;readonly&quot;:true)
+
+      assert :ok = move(view, "schema", "note", {11, 12})
+      assert %{x: 11, y: 12} = Enum.find(nodes(view, "schema"), &(&1.id == "note"))
+
+      assert :ok = undo(view, "schema")
+      refute match?(%{x: 11}, Enum.find(nodes(view, "schema"), &(&1.id == "note")))
+      assert :ok = redo(view, "schema")
+      assert %{x: 11, y: 12} = Enum.find(nodes(view, "schema"), &(&1.id == "note"))
+    end
+
+    test "changes nothing else" do
+      {view, _html} = open("?readonly=arrange")
+      readonly = {:error, "This canvas is read-only."}
+
+      assert ^readonly = move(view, "schema", [{"note", 1, 1, 50, 50}])
+      assert ^readonly = move(view, "schema", [%{id: "note", x: 1, y: 1, parent: nil}])
+      assert ^readonly = connect(view, "schema", "users", "note")
+      assert ^readonly = remove(view, "schema", nodes: ["note"])
+      assert ^readonly = drop(view, "schema", nil, {5, 5})
+      assert ^readonly = label(view, "schema", "fk", "owns")
+    end
+
+    test "a read-only canvas does not arrange" do
+      {view, html} = open("?readonly=true")
+      assert html =~ ~s(&quot;arrange&quot;:false)
+      assert {:error, "This canvas is read-only."} = undo(view, "schema")
+    end
+  end
+
+  describe "layout" do
+    test "the canvas's way to lay out goes to the browser, as an algorithm and a direction" do
+      {_view, html} = open()
+      assert html =~ "&quot;layout&quot;:&quot;right&quot;"
+      assert html =~ "&quot;algorithm&quot;:&quot;layered&quot;"
+
+      {_view, html} = open("?layout=force")
+      assert html =~ "&quot;algorithm&quot;:&quot;force&quot;"
+
+      {_view, html} = open("?layout=down")
+      assert html =~ "&quot;layout&quot;:&quot;down&quot;"
+      assert html =~ "&quot;algorithm&quot;:&quot;layered&quot;"
+    end
+
+    test "a canvas that should be read says so" do
+      html =
+        render_component(&Hakushi.Components.canvas/1,
+          id: "big",
+          graph: Hakushi.Graph.new(),
+          fit: :readable
+        )
+
+      assert html =~ "&quot;fit&quot;:&quot;readable&quot;"
+    end
+
+    test "layout!/1 takes the forms of the attribute, and refuses others" do
+      assert Hakushi.Canvas.layout!(:right) == {:layered, :right}
+      assert Hakushi.Canvas.layout!(:down) == {:layered, :down}
+      assert Hakushi.Canvas.layout!(:grid) == {:grid, :right}
+      assert Hakushi.Canvas.layout!({:layered, :down}) == {:layered, :down}
+      assert_raise ArgumentError, fn -> Hakushi.Canvas.layout!(:spiral) end
+      assert_raise ArgumentError, fn -> Hakushi.Canvas.layout!({:force, :up}) end
+    end
+
+    test "the app tidies up with an algorithm" do
+      {view, _html} = open()
+      render_click(view, "app_layout", %{"algorithm" => "force"})
+      assert_push_event(view, "hakushi:layout", %{"canvas" => "schema", "algorithm" => "force"})
+
+      render_click(view, "app_layout", %{"direction" => "down"})
+      assert_push_event(view, "hakushi:layout", %{"direction" => "down"} = payload)
+      refute Map.has_key?(payload, "algorithm")
+    end
+  end
+
+  describe "tidy as it opens" do
+    test "the canvas says so, and hides its nodes until the browser has laid them out" do
+      {_view, html} = open("?tidy=true")
+      assert html =~ ~s(data-tidy="true")
+      assert html =~ "&quot;tidy&quot;:true"
+
+      {_view, html} = open()
+      refute html =~ "data-tidy"
+      assert html =~ "&quot;tidy&quot;:false"
+    end
+
+    test "the places it opens with are kept, and no undo takes them back" do
+      {view, _html} = open("?tidy=true&readonly=arrange")
+
+      view
+      |> element("#schema-hook")
+      |> render_hook("hakushi:change", %{
+        "op" => "move",
+        "opened" => true,
+        "nodes" => [%{"id" => "note", "x" => 40, "y" => 50}]
+      })
+
+      assert_reply(view, %{"ok" => true})
+      assert %{x: 40, y: 50} = Enum.find(nodes(view, "schema"), &(&1.id == "note"))
+      assert {:error, "Nothing to undo."} = undo(view, "schema")
+    end
+
+    test "only a move goes without an undo" do
+      {view, _html} = open()
+
+      view
+      |> element("#schema-hook")
+      |> render_hook("hakushi:change", %{"op" => "delete", "opened" => true, "nodes" => ["note"]})
+
+      assert_reply(view, %{"ok" => true})
+      refute Enum.find(nodes(view, "schema"), &(&1.id == "note"))
+      assert :ok = undo(view, "schema")
+    end
+  end
+
   test "refuses what a browser should not send" do
     {view, _html} = open()
     assert {:error, _} = Hakushi.Test.move(view, "schema", [{"note", "x", 1}])

@@ -13,7 +13,7 @@ callbacks (`Hakushi.Kit`).
 
 | Kit | Nodes | People edit | Paper |
 | --- | --- | --- | --- |
-| `Hakushi.Kits.Schema` | tables (`"schema-table"`), their columns, and foreign keys from a column to a column of its type | the table's and columns' names, a column's type and key, adding and removing columns | graph paper |
+| `Hakushi.Kits.Schema` | tables (`"schema-table"`), their columns, and foreign keys from a column to a column of its family of types (`integer` to `bigint`); stubs of tables of another schema | the table's and columns' names, a column's type and key, adding and removing columns | graph paper |
 | `Hakushi.Kits.Flow` | a trigger, steps, and conditions with two ways out (`"flow-trigger"`, `"flow-step"`, `"flow-condition"`) | the title and the detail | dots |
 | `Hakushi.Kits.Notes` | sticky notes (`"note"`) in five colours, which resize | the text, the colour | crosses, snapped |
 | `Hakushi.Kits.Ink` | strokes of a pen or a highlighter (`"ink-stroke"`), drawn over anything | drawing, erasing, lassoing, with a bar of tools on the canvas | the canvas's |
@@ -183,6 +183,37 @@ itself. The canvas's own attributes win:
 ```heex
 <.canvas id="model" graph={@graph} kits={[Hakushi.Kits.Schema]} background={:dots} rules={[cycles: false]} />
 ```
+
+### A schema read from a database
+
+A column's handles are of its family of types (`Hakushi.Kits.Schema.family/1`),
+so a foreign key joins `integer` to `bigint` and `varchar(64)` to `text`,
+and the types a database gives (`int4`, `character varying(255)`,
+`timestamp with time zone`) are understood. Add or change families with
+`config :hakushi, Hakushi.Kits.Schema, families: %{"ltree" => "text"}`.
+
+A foreign key into a schema you do not show points to a stub: a table
+with `"external" => true` and its `"schema"`, and only the columns the
+foreign keys use. It is drawn as a ghost, with its qualified name
+(`billing.invoices`) and dashed edges, and nobody edits it:
+
+```elixir
+%Hakushi.Node{
+  id: "billing.invoices",
+  type: "schema-table",
+  x: 0,
+  y: 0,
+  data: %{
+    "name" => "invoices",
+    "schema" => "billing",
+    "external" => true,
+    "columns" => [%{"name" => "id", "type" => "uuid", "key" => "pk"}]
+  }
+}
+```
+
+To show a database people read and arrange, not edit, see
+[A graph with no places of its own](layout.md#a-graph-with-no-places-of-its-own).
 
 ### The data of a kit's node
 

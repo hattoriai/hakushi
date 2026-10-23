@@ -119,7 +119,8 @@ defmodule Hakushi.Kit do
 
   @doc """
   The canvas the kit likes: its paper (`background`, `grid`, `snap`), the
-  way the tidy up goes (`layout`) and the rules of its edges (`rules`, a
+  way the tidy up goes (`layout`, as the canvas's attribute: `:right`,
+  `:down`, `:force`, `:grid`, or `{:layered, :down}`) and the rules of its edges (`rules`, a
   keyword list of `Hakushi.Rules`). Defaults to `[]`.
 
   The canvas's own attributes win; among kits, the first kit's paper and

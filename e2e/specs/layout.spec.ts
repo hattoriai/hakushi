@@ -58,3 +58,52 @@ test("exports an SVG with the nodes' own HTML", async ({ page }) => {
   expect(svg).toContain("hakushi-edge-line");
   expect(svg).not.toContain(`data-ui-selected=""`);
 });
+
+test("the menu by tidy up lays out another way, and the next tidy up goes that way too", async ({ page }) => {
+  await openCanvas(page, "/workflow");
+  const menuButton = page.locator('#workflow [data-action="layouts"]');
+  await expect(menuButton).toHaveAttribute("aria-haspopup", "menu");
+  await menuButton.click();
+  const menu = page.locator("#workflow .hakushi-layout-menu");
+  await expect(menu.getByRole("menuitemradio")).toHaveText(["Layers, left to right", "Layers, top to bottom", "Spread out", "Grid"]);
+  await expect(menu.getByRole("menuitemradio", { name: "Layers, left to right" })).toHaveAttribute("aria-checked", "true");
+
+  await menu.getByRole("menuitemradio", { name: "Grid" }).click();
+  await expect(menu).toHaveCount(0);
+  await expect(page.locator("#workflow .hakushi-status")).toHaveText(/Tidied up 7 nodes/);
+  // A grid: the steps share rows and columns.
+  const ids = ["receipt", "paid", "big", "lead", "thanks", "close", "wait"];
+  await expect
+    .poll(async () => {
+      const places = await Promise.all(ids.map((id) => place(page, id)));
+      return new Set(places.map((p) => p.y)).size < ids.length && new Set(places.map((p) => p.x)).size < ids.length;
+    })
+    .toBe(true);
+  const grid = await Promise.all(ids.map((id) => place(page, id)));
+
+  // Shift+L lays out as a grid again: nothing moves.
+  await page.locator("#workflow").focus();
+  await page.keyboard.press("Shift+L");
+  await page.waitForTimeout(400);
+  expect(await Promise.all(ids.map((id) => place(page, id)))).toEqual(grid);
+
+  await menuButton.click();
+  await expect(menu.getByRole("menuitemradio", { name: "Grid" })).toHaveAttribute("aria-checked", "true");
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await expect(menuButton).toBeFocused();
+});
+
+test("spread out places the steps by forces, none on another", async ({ page }) => {
+  await openCanvas(page, "/workflow");
+  await page.locator('#workflow [data-action="layouts"]').click();
+  await page.locator("#workflow .hakushi-layout-menu").getByRole("menuitemradio", { name: "Spread out" }).click();
+  await expect(page.locator("#workflow .hakushi-status")).toHaveText(/Tidied up 7 nodes/);
+  const boxes = await page.locator("#workflow .hakushi-node").evaluateAll((els) => els.map((el) => el.getBoundingClientRect().toJSON()));
+  for (let i = 0; i < boxes.length; i++)
+    for (let j = i + 1; j < boxes.length; j++) {
+      const a = boxes[i];
+      const b = boxes[j];
+      expect(a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom).toBe(false);
+    }
+});

@@ -425,6 +425,119 @@ defmodule HakushiDev.Seeds do
     )
   end
 
+  @doc """
+  A database read from a server, as Lotus shows one: `n` tables of a
+  schema with no places of their own (the canvas tidies them as it opens),
+  a few that many refer to, the types as Postgres names them, and foreign
+  keys into a second schema, `billing`, whose tables are stubs.
+  """
+  def database(n) do
+    :rand.seed(:exsss, {7, 11, 13})
+    hubs = ["users", "accounts", "projects", "teams"] |> Enum.take(max(1, div(n, 30)))
+    names = hubs ++ for(i <- length(hubs)..(n - 1)//1, do: "table_#{i}")
+
+    types = [
+      "character varying(255)",
+      "text",
+      "int4",
+      "bigint",
+      "numeric(12,2)",
+      "boolean",
+      "timestamptz",
+      "jsonb"
+    ]
+
+    {tables, keys} =
+      names
+      |> Enum.with_index()
+      |> Enum.map_reduce([], fn {name, i}, keys ->
+        {node, edges} = database_table(name, i, refs(names, hubs, i), types)
+        {node, edges ++ keys}
+      end)
+
+    invoices = %{
+      id: "billing.invoices",
+      type: "schema-table",
+      x: 0,
+      y: 0,
+      data: %{
+        "name" => "invoices",
+        "schema" => "billing",
+        "external" => true,
+        "columns" => [%{"name" => "id", "type" => "uuid", "key" => "pk"}]
+      }
+    }
+
+    tables =
+      if Enum.any?(keys, &match?({_, _, "billing.invoices", _}, &1)),
+        do: tables ++ [invoices],
+        else: tables
+
+    Graph.new(
+      nodes: tables,
+      edges:
+        for {from, column, to, to_column} <- Enum.reverse(keys) do
+          %{
+            source: from,
+            source_handle: column,
+            target: to,
+            target_handle: to_column,
+            path: "smooth"
+          }
+        end
+    )
+  end
+
+  # A table: its id, the foreign keys of its refs, one to billing.invoices
+  # now and then, and fields of the types.
+  defp database_table(name, i, refs, types) do
+    fks =
+      for to <- refs, do: %{"name" => singular(to) <> "_id", "type" => "bigint", "key" => "fk"}
+
+    stub =
+      if rem(i, 9) == 4,
+        do: [%{"name" => "invoice_id", "type" => "uuid", "key" => "fk"}],
+        else: []
+
+    plain =
+      for k <- 1..Enum.random(2..9) do
+        %{"name" => "field_#{k}", "type" => Enum.random(types), "key" => nil}
+      end
+
+    columns = [%{"name" => "id", "type" => "bigint", "key" => "pk"}] ++ fks ++ stub ++ plain
+
+    node = %{
+      id: name,
+      type: "schema-table",
+      x: 0,
+      y: 0,
+      data: %{"name" => name, "columns" => columns}
+    }
+
+    edges =
+      for(to <- refs, do: {name, singular(to) <> "_id", to, "id"}) ++
+        for(_ <- stub, do: {name, "invoice_id", "billing.invoices", "id"})
+
+    {node, edges}
+  end
+
+  # The tables a table refers to: none for a hub, nor for one in eight.
+  defp refs(names, hubs, i) do
+    cond do
+      i < length(hubs) -> []
+      :rand.uniform() < 0.12 -> []
+      true -> Enum.uniq(for _ <- 1..Enum.random([1, 1, 2, 3]), do: pick_ref(names, hubs, i))
+    end
+  end
+
+  defp pick_ref(names, hubs, i) do
+    if :rand.uniform() < 0.45,
+      do: Enum.random(hubs),
+      else: Enum.at(names, max(0, i - Enum.random(1..12)))
+  end
+
+  defp singular(name), do: String.trim_trailing(name, "s")
+
   def scale(n) do
     columns = 50
 
@@ -946,7 +1059,8 @@ defmodule HakushiDev.Layouts do
       {:board, "/board", "Moodboard", "board"},
       {:whiteboard, "/whiteboard", "Whiteboard", "whiteboard"},
       {:spec, "/spec", "Design spec", "spec"},
-      {:scale, "/scale", "Two thousand nodes", "scale"}
+      {:scale, "/scale", "Two thousand nodes", "scale"},
+      {:database, "/database", "A database", "schema"}
     ]
   end
 
@@ -1531,6 +1645,54 @@ defmodule HakushiDev.SpecLive do
   end
 end
 
+defmodule HakushiDev.DatabaseLive do
+  @moduledoc """
+  A database read from a server, as Lotus shows one (`?n=` tables, 120
+  unless given): the tables are facts, so people only arrange them
+  (`readonly={:arrange}`), and the canvas lays them out as it opens
+  (`tidy`), by forces unless `?layout=` says another way. Nothing is kept:
+  a reload lays them out again.
+  """
+  use Phoenix.LiveView
+
+  import Hakushi.Components
+  import HakushiDev.Layouts, only: [app: 1]
+
+  @impl true
+  def mount(params, _session, socket) do
+    n = params |> Map.get("n", "120") |> String.to_integer() |> min(5_000) |> max(2)
+
+    layout =
+      if params["layout"] in ~w(right down force grid),
+        do: String.to_existing_atom(params["layout"]),
+        else: :force
+
+    graph = HakushiDev.Seeds.database(n)
+    {:ok, assign(socket, n: n, way: layout, keys: map_size(graph.edges), graph: graph)}
+  end
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <.app page={:database} me={@me} query={@query} title="A database" crumb={"public · #{@n} tables · #{@keys} foreign keys"}>
+      <:actions>
+        <span class="hint">Read from the server: drag tables, or tidy up another way. Nothing is kept.</span>
+      </:actions>
+      <.canvas
+        id="database"
+        graph={@graph}
+        kits={[Hakushi.Kits.Schema]}
+        readonly={:arrange}
+        tidy
+        fit={:readable}
+        layout={@way}
+        label="The tables of the database"
+      />
+    </.app>
+    """
+  end
+end
+
 defmodule HakushiDev.ScaleLive do
   @moduledoc "Two thousand nodes (or `?n=`), and an edge to each from its parent."
   use Phoenix.LiveView
@@ -1639,6 +1801,7 @@ defmodule HakushiDev.Router do
       live("/whiteboard", HakushiDev.WhiteboardLive)
       live("/spec", HakushiDev.SpecLive)
       live("/scale", HakushiDev.ScaleLive)
+      live("/database", HakushiDev.DatabaseLive)
     end
   end
 end

@@ -247,6 +247,20 @@ defmodule Hakushi.SharedCanvasTest do
     assert_push_event(grace, "hakushi:peer", %{"person" => "ada", "cursor" => [3, 4]})
   end
 
+  test "an arrange-only canvas writes to the room, and only moves" do
+    topic = topic()
+    ada = open(topic, "ada", nil, "&readonly=arrange")
+    grace = open(topic, "grace")
+
+    assert %{"ada" => %{metas: [%{"can" => "write"}]}} =
+             Issho.Presence.list(Issho.Presence.topic("canvas:" <> topic))
+
+    assert :ok = move(ada, "schema", "note", {21, 22})
+    settle(grace)
+    assert %{x: 21, y: 22} = Enum.find(nodes(grace, "schema"), &(&1.id == "note"))
+    assert {:error, _} = remove(ada, "schema", nodes: ["note"])
+  end
+
   test "the app's user is the room's actor: its key, and Issho's colours" do
     topic = topic()
     ada = open(topic, "ada", nil, "&member=true")

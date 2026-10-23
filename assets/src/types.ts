@@ -20,16 +20,24 @@ export interface Config {
   snap: boolean;
   minimap: boolean;
   controls: boolean;
-  fit: boolean;
+  /** How it opens: on all its nodes, on none (false), or on all of them unless too small to read, then on its most joined node ("readable"). */
+  fit: boolean | "readable";
   minZoom: number;
   maxZoom: number;
   readonly: boolean;
+  /** With `readonly`: people still move the nodes and tidy them up, and undo that (the canvas's `readonly={:arrange}`). */
+  arrange?: boolean;
   /** Whether a shared canvas takes part in following, the room's (false: it follows no one, and shows no one followed). */
   follow?: boolean;
   newNode: boolean;
   wheel: "pan" | "zoom" | "scroll";
   refit: boolean;
+  /** The way of the layers of a tidy up. */
   layout: "right" | "down";
+  /** Whether the canvas lays its nodes out as it opens, before they show (the canvas's `tidy`). */
+  tidy?: boolean;
+  /** How a tidy up places the nodes: in layers, by forces, or in a grid. */
+  algorithm?: "layered" | "force" | "grid";
   exportable: boolean;
   live: boolean;
   user: string | null;
@@ -130,6 +138,8 @@ export interface NodeModel {
   group: boolean;
   label: string;
   handles: Handle[];
+  /** Whether it is drawn faint, and its edges too: its content has `data-hakushi-faint` (a table of another schema). */
+  faint: boolean;
   /** Whether its handles were measured since its element last changed. */
   measured: boolean;
   el: HTMLElement;

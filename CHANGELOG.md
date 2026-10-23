@@ -7,7 +7,32 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Ways to tidy up: in layers (`:right`, `:down`), spread out by forces
+  (`:force`), or in a grid (`:grid`). `layout` takes them, as a kit's
+  preference does, and `Hakushi.Live.layout/2` takes `algorithm:`. A menu
+  by the tidy up button lets people choose, for the page.
+- `readonly={:arrange}`: people move the nodes, tidy them up and undo
+  that, and change nothing else; for a diagram made from data.
+- `tidy`: the canvas lays its nodes out as it opens, before people see
+  them, for a graph with no places of its own.
+- `fit={:readable}`: a large canvas opens at a zoom people read, on its
+  most joined node, rather than on all of it.
+- Schema: a column's handles are of its family of types
+  (`Hakushi.Kits.Schema.family/1`), so `integer` joins `bigint` and
+  `varchar(64)` joins `text`; the app adds families in its config.
+- Schema: stubs of tables of another schema (`"external" => true`, and
+  `"schema"`), drawn as ghosts with their qualified name, their edges
+  dashed, and never edited. A node whose content has `data-hakushi-faint`
+  has its edges drawn so, in any kit.
+
 ### Changed
+
+- Tidy up packs the parts of a graph that no edge joins in rows, in a box
+  of about the screen's shape, and puts the nodes that no edge joins
+  together in a grid, where it laid them all out in one line; a layer far
+  too long for the screen wraps in columns.
 
 - The Images kit takes Storehouse 0.2 (`{:storehouse, "~> 0.2"}`): its
   files are checked and stored as before, with Storehouse's 0.2 security

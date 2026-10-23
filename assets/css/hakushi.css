@@ -374,6 +374,13 @@
   pointer-events: none;
 }
 
+/* An edge to a faint node (data-hakushi-faint, as a table of another
+   schema): dashed and fainter. */
+.hakushi-edge[data-ui-faint]:not([data-ui-selected], [data-ui-connected]) .hakushi-edge-line {
+  stroke-dasharray: 4 4;
+  opacity: 0.45;
+}
+
 .hakushi-edge[data-animated] .hakushi-edge-line {
   stroke-dasharray: 6 4;
   animation: hakushi-flow 0.6s linear infinite;
@@ -448,6 +455,42 @@
 .hakushi[data-ui-readonly] .hakushi-node,
 .hakushi-node[data-locked] {
   cursor: default;
+}
+
+/* A canvas that tidies as it opens: its nodes hidden, and a spinner, until
+   they are in their places. */
+.hakushi[data-tidy]:not([data-ui-tidied]) :is(.hakushi-world, .hakushi-minimap) {
+  visibility: hidden;
+}
+
+.hakushi[data-tidy]:not([data-ui-tidied])::after {
+  content: "";
+  position: absolute;
+  top: calc(50% - 14px);
+  left: calc(50% - 14px);
+  width: 28px;
+  height: 28px;
+  border: 3px solid color-mix(in oklab, var(--hakushi-text) 15%, transparent);
+  border-top-color: var(--hakushi-accent);
+  border-radius: 50%;
+  animation: hakushi-spin 0.8s linear infinite;
+}
+
+@keyframes hakushi-spin {
+  to {
+    rotate: 1turn;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hakushi[data-tidy]:not([data-ui-tidied])::after {
+    animation-duration: 2.4s;
+  }
+}
+
+/* Arranged only: the nodes move, and nothing else changes. */
+.hakushi[data-ui-arrange][data-ui-readonly] .hakushi-node:not([data-locked]) {
+  cursor: grab;
 }
 
 .hakushi-node[data-ui-selected] {
@@ -738,6 +781,18 @@
 
 .hakushi-control:hover {
   background: color-mix(in oklab, var(--hakushi-text) 7%, transparent);
+}
+
+/* The arrow by the tidy up that opens the ways to lay out: narrow, next to it. */
+.hakushi-control-more {
+  min-width: 16px;
+  margin-left: -4px;
+  padding: 0;
+}
+
+.hakushi-control-more svg {
+  width: 12px;
+  height: 12px;
 }
 
 .hakushi-control:focus-visible {
@@ -1045,6 +1100,34 @@
 .hakushi-kit-field::placeholder {
   color: var(--hakushi-muted);
   opacity: 0.7;
+}
+
+/* Schema: a table of another schema, a stub: faint, dashed, never edited. */
+.hakushi-kit-table[data-hakushi-faint] {
+  border: 1.5px dashed color-mix(in oklab, var(--hakushi-muted) 70%, transparent);
+  background: color-mix(in oklab, var(--hakushi-node-background) 25%, transparent);
+  box-shadow: none;
+  color: var(--hakushi-muted);
+  opacity: 0.55;
+}
+
+.hakushi-kit-table[data-hakushi-faint] :is(.hakushi-kit-table-head, .hakushi-kit-column + .hakushi-kit-column) {
+  border-color: transparent;
+}
+
+.hakushi-kit-table[data-hakushi-faint] :is(.hakushi-icon, .hakushi-kit-key) {
+  color: inherit;
+}
+
+/* The schema before the name, as one word with it: no gap of the head's. */
+.hakushi-kit-table-schema {
+  margin-right: -0.4375rem;
+  color: var(--hakushi-muted);
+  font-weight: 400;
+}
+
+.hakushi-kit-table-schema + .hakushi-kit-table-name {
+  flex: 1;
 }
 
 /* Schema: a table. */

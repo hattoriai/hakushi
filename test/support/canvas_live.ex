@@ -68,9 +68,15 @@ defmodule HakushiTest.CanvasLive do
            ]
          ),
        user: user(params),
-       readonly: params["readonly"] == "true"
+       readonly: readonly(params["readonly"]),
+       way: params["layout"] && String.to_existing_atom(params["layout"]),
+       tidy: params["tidy"] == "true"
      )}
   end
+
+  defp readonly("true"), do: true
+  defp readonly("arrange"), do: :arrange
+  defp readonly(_other), do: false
 
   # ?member=true: a user of the app's own struct, whose Issho.Actor says its key.
   defp user(%{"user" => id, "member" => "true"}),
@@ -93,6 +99,12 @@ defmodule HakushiTest.CanvasLive do
     {:noreply, assign(socket, :graph, graph)}
   end
 
+  def handle_event("app_layout", params, socket) do
+    opts = for {k, v} <- params, do: {String.to_existing_atom(k), String.to_existing_atom(v)}
+    Hakushi.Live.layout("schema", opts)
+    {:noreply, socket}
+  end
+
   def handle_event("app_change", _params, socket) do
     Hakushi.Live.change("schema", Hakushi.Change.move([{"note", 7, 7}]))
     {:noreply, socket}
@@ -109,6 +121,8 @@ defmodule HakushiTest.CanvasLive do
       issho={@issho}
       user={@user}
       readonly={@readonly}
+      layout={@way}
+      tidy={@tidy}
       rules={[cycles: false]}
       papers={[:dots, :lines, %{name: "iso", label: "Isometric"}]}
       label="Schema"

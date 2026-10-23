@@ -15,12 +15,26 @@ defmodule Hakushi.Kits.Schema do
         ]
       }
 
-  Each column has a handle on each side, of the column's type: an edge
-  joins two columns of one type, and takes the sides nearest each other.
+  Each column has a handle on each side, of the column's family of types
+  (`family/1`): an edge joins two columns of one family (`integer` to
+  `bigint`, `varchar(64)` to `text`, but not `text` to `uuid`), and takes
+  the sides nearest each other.
   A column's handles are its `"id"` (its name, for a column without one),
   so a foreign key stays when people rename the column.
   People rename the table and its columns in place, pick a column's type,
   set its key, and add and remove columns.
+
+  A table of another schema than the one shown (the table a foreign key
+  points to, in `billing`) is a stub: data with `"external" => true` and
+  its `"schema"`, and only the columns its foreign keys use. It is drawn
+  faint, with a dashed border and its qualified name (`billing.invoices`),
+  its edges dashed, and nobody edits it, even on a canvas they edit:
+
+      %{"name" => "invoices", "schema" => "billing", "external" => true,
+        "columns" => [%{"name" => "id", "type" => "uuid", "key" => "pk"}]}
+
+  A table may name its `"schema"` without being a stub; its name shows
+  qualified too.
 
   In Markdown, a schema is a Mermaid entity relationship diagram: each
   table with its columns (`uuid id PK`), and a foreign key as a
@@ -39,6 +53,80 @@ defmodule Hakushi.Kits.Schema do
   @doc "The column types people pick from."
   @spec column_types() :: [String.t()]
   def column_types, do: @types
+
+  # The families of types, by the names databases give them (sizes and
+  # modifiers aside): Postgres, MySQL, SQLite, SQL Server, and Ecto's.
+  @families %{
+    "integer" =>
+      ~w(integer int int2 int4 int8 smallint bigint tinyint mediumint serial serial2 serial4 serial8 smallserial bigserial id),
+    "decimal" => ~w(decimal numeric money smallmoney),
+    "float" => ~w(float float4 float8 real double) ++ ["double precision"],
+    "text" =>
+      ~w(text varchar char character nchar nvarchar bpchar citext string tinytext mediumtext longtext clob ntext name) ++
+        ["character varying", "national character varying"],
+    "uuid" => ~w(uuid uniqueidentifier binary_id),
+    "timestamp" =>
+      ~w(timestamp timestamptz datetime datetime2 datetimeoffset smalldatetime utc_datetime utc_datetime_usec naive_datetime naive_datetime_usec),
+    "date" => ~w(date),
+    "time" => ~w(time timetz time_usec),
+    "boolean" => ~w(boolean bool bit),
+    "json" => ~w(json jsonb map),
+    "binary" => ~w(bytea blob tinyblob mediumblob longblob binary varbinary image)
+  }
+
+  @family_of for {family, types} <- @families, type <- types, into: %{}, do: {type, family}
+
+  @doc """
+  The family of a column's type: the types whose columns a foreign key
+  joins. Sizes, precisions and modifiers do not count (`varchar(255)`,
+  `numeric(12,2)`, `int unsigned`, `timestamp with time zone`), nor case.
+
+      iex> Hakushi.Kits.Schema.family("int4")
+      "integer"
+      iex> Hakushi.Kits.Schema.family("character varying(255)")
+      "text"
+      iex> Hakushi.Kits.Schema.family("TIMESTAMP WITH TIME ZONE")
+      "timestamp"
+
+  The families are `integer`, `decimal`, `float`, `text`, `uuid`,
+  `timestamp`, `date`, `time`, `boolean`, `json` and `binary`. A type of
+  none of them is a family of its own (its name, in lower case, with
+  underscores for spaces), so it joins only its own type. Add or change
+  families with `config :hakushi, Hakushi.Kits.Schema, families: %{"geometry" =>
+  "geometry", "ltree" => "text"}`.
+  """
+  @spec family(String.t() | nil) :: String.t() | nil
+  def family(nil), do: nil
+
+  def family(type) do
+    type = type |> to_string() |> String.downcase() |> String.trim()
+    families = Application.get_env(:hakushi, __MODULE__, [])[:families] || %{}
+
+    case families[type] do
+      nil ->
+        # MySQL's booleans are tinyint(1); an array is a family of its own.
+        base =
+          if type == "tinyint(1)",
+            do: "boolean",
+            else: type |> String.replace(~r/\([^)]*\)/, "") |> plain()
+
+        families[base] || @family_of[base] || String.replace(base, " ", "_")
+
+      family ->
+        family
+    end
+  end
+
+  # A type without its modifiers: unsigned, zerofill, time zones, varying.
+  defp plain(type) do
+    type
+    |> String.replace(
+      ~r/\b(unsigned|signed|zerofill|with(out)? time zone|with local time zone)\b/,
+      ""
+    )
+    |> String.replace(~r/\s+/, " ")
+    |> String.trim()
+  end
 
   @impl true
   def name, do: "schema"
@@ -75,18 +163,27 @@ defmodule Hakushi.Kits.Schema do
 
   defp handle_id(column), do: get(column, "id") || get(column, "name")
 
+  # A table of another schema than the canvas's: a stub, never edited.
+  defp external?(data), do: get(data, "external") in [true, "true"]
+
   @impl true
   def node(assigns) do
+    external = external?(assigns.node.data)
+
     assigns =
       assign(assigns,
         name: get(assigns.node.data, "name"),
+        schema: get(assigns.node.data, "schema"),
+        external: external,
+        readonly: assigns.readonly or external,
         columns: Enum.with_index(get(assigns.node.data, "columns") || [])
       )
 
     ~H"""
-    <div class="hakushi-kit-table">
+    <div class="hakushi-kit-table" data-hakushi-faint={@external}>
       <div class="hakushi-kit-table-head">
         <.icon name="database" size={13} />
+        <span :if={@schema} class="hakushi-kit-table-schema">{@schema}.</span>
         <input
           :if={!@readonly}
           class="hakushi-kit-field hakushi-kit-table-name"
@@ -103,7 +200,12 @@ defmodule Hakushi.Kits.Schema do
         <span :if={@readonly} class="hakushi-kit-table-name">{@name}</span>
       </div>
       <div :for={{c, i} <- @columns} class="hakushi-kit-column">
-        <.handle id={handle_id(c)} side={:left} type={get(c, "type")} accepts={[get(c, "type")]} />
+        <.handle
+          id={handle_id(c)}
+          side={:left}
+          type={family(get(c, "type"))}
+          accepts={[family(get(c, "type"))]}
+        />
         <button
           type="button"
           class="hakushi-kit-key"
@@ -168,7 +270,12 @@ defmodule Hakushi.Kits.Schema do
         >
           <.icon name="x" size={12} />
         </button>
-        <.handle id={handle_id(c)} side={:right} type={get(c, "type")} accepts={[get(c, "type")]} />
+        <.handle
+          id={handle_id(c)}
+          side={:right}
+          type={family(get(c, "type"))}
+          accepts={[family(get(c, "type"))]}
+        />
       </div>
       <button
         :if={!@readonly}
@@ -189,6 +296,11 @@ defmodule Hakushi.Kits.Schema do
   defp types_with(type), do: if(type in @types or is_nil(type), do: @types, else: [type | @types])
 
   @impl true
+  def edit(action, params, data)
+
+  def edit(_action, _params, %{"external" => external}) when external in [true, "true"],
+    do: :error
+
   def edit("name", %{"value" => name}, data) do
     case identifier(name) do
       nil -> :error
@@ -265,7 +377,11 @@ defmodule Hakushi.Kits.Schema do
       end)
 
     extra =
-      Map.new(tables, &{&1.id, %{"name" => get(&1.data, "name"), "columns" => columns[&1.id]}})
+      Map.new(tables, fn table ->
+        own = %{"name" => get(table.data, "name"), "columns" => columns[table.id]}
+        stub = %{"schema" => get(table.data, "schema"), "external" => external?(table.data)}
+        {table.id, Map.merge(own, Map.reject(stub, fn {_k, v} -> v in [nil, false] end))}
+      end)
 
     Enum.join(
       ["erDiagram" | entities] ++
@@ -278,7 +394,8 @@ defmodule Hakushi.Kits.Schema do
   defp entity_names(tables) do
     {names, _seen} =
       Enum.map_reduce(tables, MapSet.new(), fn table, seen ->
-        base = word(get(table.data, "name") || table.id)
+        name = get(table.data, "name") || table.id
+        base = word(if schema = get(table.data, "schema"), do: "#{schema}.#{name}", else: name)
 
         name =
           Stream.iterate(1, &(&1 + 1))
@@ -325,7 +442,9 @@ defmodule Hakushi.Kits.Schema do
         %{
           m: name,
           type: "schema-table",
-          data: %{"name" => place["name"] || name, "columns" => place["columns"] || parsed}
+          data:
+            %{"name" => place["name"] || name, "columns" => place["columns"] || parsed}
+            |> Map.merge(Map.take(place, ["schema", "external"]))
         }
       end)
 

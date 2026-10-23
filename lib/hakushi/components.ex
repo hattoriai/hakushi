@@ -135,7 +135,15 @@ defmodule Hakushi.Components do
     with ⌘, Ctrl or a pinch), for a canvas in a page that scrolls, as an embed\
     """
 
-  attr :fit, :boolean, default: true, doc: "when `true`, the canvas opens on all of its nodes"
+  attr :fit, :any,
+    default: true,
+    values: [true, false, :readable],
+    doc: """
+    when `true`, the canvas opens on all of its nodes; when `:readable`, on all of them if they \
+    are large enough to read (60% or more), else on its most joined node and its neighbours, at a \
+    zoom people read: for a large graph (a schema of hundreds of tables), whose whole would show \
+    no detail\
+    """
 
   attr :refit, :boolean,
     default: false,
@@ -155,22 +163,36 @@ defmodule Hakushi.Components do
     default: true,
     doc: "when `true`, buttons to zoom, fit, tidy up, undo and redo, and to download the canvas"
 
-  attr :layout, :atom,
+  attr :layout, :any,
     default: nil,
-    values: [nil, :right, :down],
     doc: """
-    the way the tidy up (⇧L, the controls) lays the nodes out: in layers from left to right, \
-    or from top to bottom (the default is a kit's, else `:right`); see \
+    the way the tidy up (⇧L, the controls) lays the nodes out: in layers from left to right \
+    (`:right`) or from top to bottom (`:down`), by forces (`:force`), or in a grid (`:grid`); \
+    `:layered` is `:right`, and `{:layered, :down}` is `:down`. The default is a kit's, else \
+    `:right`. People choose another in the menu by the tidy up button; see \
     [Layout and export](layout.md)\
+    """
+
+  attr :tidy, :boolean,
+    default: false,
+    doc: """
+    when `true`, the canvas lays its nodes out (its `layout`) as it opens, before people see \
+    them, for a graph whose nodes have no places of their own (a schema read from a database); \
+    not on a shared canvas, whose places are the room's. See [Layout and export](layout.md)\
     """
 
   attr :export, :boolean,
     default: true,
     doc: "when `true`, a button of the controls downloads the canvas as an image"
 
-  attr :readonly, :boolean,
+  attr :readonly, :any,
     default: false,
-    doc: "when `true`, people pan, zoom and select, and change nothing"
+    values: [true, false, :arrange],
+    doc: """
+    when `true`, people pan, zoom and select, and change nothing; when `:arrange`, they also \
+    move the nodes and tidy them up (and undo that), and change nothing else, as a diagram \
+    made from data; see [Layout and export](layout.md)\
+    """
 
   attr :follow, :any, default: nil, doc: "removed in 0.3: `issho`'s `:follow`"
 
@@ -235,9 +257,11 @@ defmodule Hakushi.Components do
       max_zoom={@max_zoom}
       minimap={@minimap}
       layout={@layout}
+      tidy={@tidy}
       export={@export}
       controls={@controls}
-      readonly={@readonly}
+      readonly={@readonly != false}
+      arrange={@readonly == :arrange}
       follow={@join == nil or @join.follow}
       show_people={@join == nil or @join.people}
       label={@label}
@@ -298,7 +322,7 @@ defmodule Hakushi.Components do
       background: pick(assigns.background, prefs[:background], :dots),
       grid: pick(assigns.grid, prefs[:grid], 20),
       snap: pick(assigns.snap, prefs[:snap], false),
-      layout: pick(assigns.layout, prefs[:layout], :right),
+      layout: Hakushi.Canvas.layout!(pick(assigns.layout, prefs[:layout], :right)),
       rules: rules
     )
   end

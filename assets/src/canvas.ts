@@ -15,14 +15,16 @@ import { exportImage, type ExportOptions } from "./export";
 import { icons } from "./icons";
 import { aspectResize, cropOf, dragCrop, fitImage, fullOf, imageAddress, rowAt, type Crop } from "./images";
 import { FLAT, inkBox, inside, outline, simplify, streamline, type InkPoint, type InkStroke } from "./ink";
-import { layered } from "./layout";
+import { layout as place, type Algorithm } from "./layout";
 import { Messages } from "./messages";
 import { Minimap } from "./minimap";
 import { check } from "./rules";
 import { align, snapToGrid, type Guide } from "./snap";
 import type { Config, EdgeModel, End, Handle, HandleKind, Live, NodeModel, Person, Point, Rect, Side, Tool, View } from "./types";
-import { centerOn, clamp, fit, reveal, toCanvas, visible, zoomAt } from "./view";
+import { centerOn, clamp, fit, readableView, reveal, toCanvas, visible, zoomAt } from "./view";
 
+// The smallest zoom a canvas that should be read (fit "readable") opens at.
+const READABLE_ZOOM = 0.6;
 // Nodes are culled (not laid out off the screen) above this many.
 const CULL_FROM = 150;
 // How far around the screen nodes stay laid out, in pixels.
@@ -256,6 +258,8 @@ export class Canvas {
 
     this.readNodes();
     this.readEdges();
+    this.tidying = this.config.tidy === true && !this.config.live;
+    if (!this.tidying) this.root.setAttribute("data-ui-tidied", "");
     this.observe();
     this.listen();
     this.measureRoot();
@@ -439,6 +443,11 @@ export class Canvas {
 
   private followScrolled: string | null = null;
 
+  /** Whether people move the nodes: on a canvas they edit, or one they only arrange. */
+  private get arranges(): boolean {
+    return !this.config.readonly || this.config.arrange === true;
+  }
+
   private part(suffix: string): HTMLElement {
     return this.root.querySelector<HTMLElement>(`#${CSS.escape(this.id + suffix)}`)!;
   }
@@ -447,6 +456,7 @@ export class Canvas {
     this.config = JSON.parse(this.hookEl.dataset.config || "{}") as Config;
     this.messages = new Messages(this.config.messages || {}, this.config.locale || "en");
     this.root.toggleAttribute("data-ui-readonly", this.config.readonly);
+    this.root.toggleAttribute("data-ui-arrange", this.arranges);
     this.root.dataset.uiWheel = this.config.wheel;
   }
 
@@ -458,7 +468,7 @@ export class Canvas {
     this.layoutVersion++;
     const minimap = this.config.minimap;
     const controls = this.config.controls;
-    const tools = JSON.stringify(this.config.tools ?? []) + this.config.readonly;
+    const tools = JSON.stringify(this.config.tools ?? []) + this.config.readonly + this.arranges;
     const papers = JSON.stringify(this.config.papers ?? []);
     const grid = this.config.grid;
     this.readConfig();
@@ -466,9 +476,14 @@ export class Canvas {
     if (grid !== this.config.grid) this.drawnView = null;
     if (minimap !== this.config.minimap || controls !== this.config.controls || papers !== JSON.stringify(this.config.papers ?? [])) {
       this.togglePaperMenu(false);
+      this.toggleLayoutMenu(false);
       this.buildControls();
     }
-    if (tools !== JSON.stringify(this.config.tools ?? []) + this.config.readonly) this.buildTools();
+    if (tools !== JSON.stringify(this.config.tools ?? []) + this.config.readonly + this.arranges) {
+      this.buildTools();
+      this.toggleLayoutMenu(false);
+      this.buildControls();
+    }
     this.drawPaperMenu();
     this.showNotice();
     this.schedule();
@@ -526,6 +541,7 @@ export class Canvas {
       group: element.dataset.group === "true",
       label: element.getAttribute("aria-label") || id,
       handles: old && old.el === element ? old.handles : [],
+      faint: element.querySelector("[data-hakushi-faint]") !== null,
       measured: false,
       el: element,
     };
@@ -883,8 +899,9 @@ export class Canvas {
 
   private render() {
     if (!this.fitted && this.size.width > 0) {
+      if (this.tidying) return this.startTidy();
       this.fitted = true;
-      this.view = this.config.fit && this.nodes.size ? this.fitView() : { x: 40, y: 40, zoom: 1 };
+      this.view = this.config.fit && this.nodes.size ? this.openingView() : { x: 40, y: 40, zoom: 1 };
     }
     const viewChanged = this.view !== this.drawnView;
     if (viewChanged) {
@@ -1034,6 +1051,7 @@ export class Canvas {
       const g = this.gesture;
       toggle(view.g, "data-ui-gone", this.gone.has(id) || (g?.kind === "connect" && g.reconnect === id));
       toggle(view.g, "data-animated", edge.animated);
+      toggle(view.g, "data-ui-faint", !!(this.nodes.get(edge.source)?.faint || this.nodes.get(edge.target)?.faint));
       if (edge.label) {
         if (!view.label) {
           view.label = el("div", { class: "hakushi-edge-label", "data-edge": id });
@@ -1343,9 +1361,10 @@ export class Canvas {
         button("zoom-in", t("zoomIn"), icons.zoomIn, () => this.zoomBy(1.25)),
         button("fit", t("fit"), icons.fit, () => this.fitAll()),
       ]);
-      if (!this.config.readonly) {
+      if (this.arranges) {
         group.append(
           button("layout", t("layout"), icons.layout, () => this.layout()),
+          this.layoutsButton(button),
           button("undo", t("undo"), icons.undo, () => this.undo()),
           button("redo", t("redo"), icons.redo, () => this.redo()),
         );
@@ -1372,6 +1391,93 @@ export class Canvas {
     }
   }
 
+  // -- The layouts ---------------------------------------------------------------
+  //
+  // A menu by the tidy up button of the ways to lay the nodes out. The way
+  // chosen is the person's, for this page: the next tidy up (⇧L, the
+  // button) lays out that way too.
+
+  private chosenLayout: { algorithm: Algorithm; direction: "right" | "down" } | null = null;
+  private layoutMenu: HTMLElement | null = null;
+
+  private static layouts: { key: string; algorithm: Algorithm; direction: "right" | "down" }[] = [
+    { key: "layoutRight", algorithm: "layered", direction: "right" },
+    { key: "layoutDown", algorithm: "layered", direction: "down" },
+    { key: "layoutForce", algorithm: "force", direction: "right" },
+    { key: "layoutGrid", algorithm: "grid", direction: "right" },
+  ];
+
+  /** The way the next tidy up lays the nodes out: the person's choice, else the canvas's. */
+  layoutChoice(): { algorithm: Algorithm; direction: "right" | "down" } {
+    return this.chosenLayout ?? { algorithm: this.config.algorithm ?? "layered", direction: this.config.layout ?? "right" };
+  }
+
+  private layoutsButton(button: (action: string, label: string, content: string, run: () => void) => HTMLElement) {
+    const b = button("layouts", this.messages.t("layouts"), icons.chevron, () => this.toggleLayoutMenu());
+    b.classList.add("hakushi-control-more");
+    b.setAttribute("aria-haspopup", "menu");
+    b.setAttribute("aria-expanded", "false");
+    return b;
+  }
+
+  private toggleLayoutMenu(open = !this.layoutMenu) {
+    const button = this.controlsEl?.querySelector<HTMLElement>('[data-action="layouts"]');
+    if (!open) {
+      this.layoutMenu?.remove();
+      this.layoutMenu = null;
+      document.removeEventListener("pointerdown", this.closeLayoutMenu, true);
+      button?.setAttribute("aria-expanded", "false");
+      return;
+    }
+    this.togglePaperMenu(false);
+    const choice = this.layoutChoice();
+    const menu = el("div", { class: "hakushi-paper-menu hakushi-layout-menu", role: "menu", "aria-label": this.messages.t("layouts") });
+    for (const way of Canvas.layouts) {
+      const checked = way.algorithm === choice.algorithm && (way.algorithm !== "layered" || way.direction === choice.direction);
+      const item = el("button", { type: "button", role: "menuitemradio", class: "hakushi-paper-item", "aria-checked": String(checked), tabindex: "-1", "data-layout": way.key }, [
+        el("span", {}, [this.messages.t(way.key)]),
+      ]);
+      item.addEventListener("click", () => {
+        this.chosenLayout = { algorithm: way.algorithm, direction: way.direction };
+        this.toggleLayoutMenu(false);
+        button?.focus();
+        void this.layout();
+      });
+      menu.append(item);
+    }
+    menu.addEventListener("pointerdown", (event) => event.stopPropagation());
+    menu.addEventListener("keydown", (event) => this.menuKey(event, menu, () => this.toggleLayoutMenu(false), button));
+    this.layoutMenu = menu;
+    this.ui.append(menu);
+    button?.setAttribute("aria-expanded", "true");
+    document.addEventListener("pointerdown", this.closeLayoutMenu, true);
+    menu.querySelector<HTMLElement>('[aria-checked="true"]')?.focus();
+  }
+
+  private closeLayoutMenu = (event: Event) => {
+    const target = event.target as Element | null;
+    if (target?.closest?.(".hakushi-layout-menu") || target?.closest?.('[data-action="layouts"]')) return;
+    this.toggleLayoutMenu(false);
+  };
+
+  // The keys of a menu: up and down, Home and End, Escape and Tab to close.
+  private menuKey(event: KeyboardEvent, menu: HTMLElement, close: () => void, button: HTMLElement | null | undefined) {
+    const items = [...menu.querySelectorAll<HTMLElement>(".hakushi-paper-item")];
+    const index = items.indexOf(document.activeElement as HTMLElement);
+    if (event.key === "Escape" || event.key === "Tab") {
+      if (event.key === "Escape") event.preventDefault();
+      close();
+      if (event.key === "Escape") button?.focus();
+    } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      items[(index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
+    } else if (event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      items[event.key === "Home" ? 0 : items.length - 1]?.focus();
+    }
+    event.stopPropagation();
+  }
+
   // -- The paper -----------------------------------------------------------------
   //
   // A menu of the papers the canvas offers, and of the sizes of their
@@ -1389,6 +1495,7 @@ export class Canvas {
       button?.setAttribute("aria-expanded", "false");
       return;
     }
+    this.toggleLayoutMenu(false);
     const menu = el("div", { class: "hakushi-paper-menu", role: "menu", "aria-label": this.messages.t("paper") });
     menu.addEventListener("pointerdown", (event) => event.stopPropagation());
     menu.addEventListener("keydown", (event) => this.paperKey(event));
@@ -1434,20 +1541,7 @@ export class Canvas {
   }
 
   private paperKey(event: KeyboardEvent) {
-    const items = [...(this.paperMenu?.querySelectorAll<HTMLElement>(".hakushi-paper-item") ?? [])];
-    const index = items.indexOf(document.activeElement as HTMLElement);
-    if (event.key === "Escape" || event.key === "Tab") {
-      if (event.key === "Escape") event.preventDefault();
-      this.togglePaperMenu(false);
-      if (event.key === "Escape") this.controlsEl?.querySelector<HTMLElement>('[data-action="paper"]')?.focus();
-    } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      items[(index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
-    } else if (event.key === "Home" || event.key === "End") {
-      event.preventDefault();
-      items[event.key === "Home" ? 0 : items.length - 1]?.focus();
-    }
-    event.stopPropagation();
+    if (this.paperMenu) this.menuKey(event, this.paperMenu, () => this.togglePaperMenu(false), this.controlsEl?.querySelector<HTMLElement>('[data-action="paper"]'));
   }
 
   /** Chooses a paper the canvas offers (its name) and the size of its squares: a change, which undoes. */
@@ -2282,6 +2376,31 @@ export class Canvas {
     return fit(union(list.map((n) => this.rect(n))), this.size.width, this.size.height, 48, this.config.minZoom, this.config.maxZoom);
   }
 
+  // The view it opens on: all of its nodes; or, when it should be read and
+  // they are too many to read at once, the most joined node and its
+  // neighbours, at a zoom people read.
+  private openingView(): View {
+    const all = this.fitView();
+    if (this.config.fit !== "readable" || all.zoom >= READABLE_ZOOM) return all;
+    let heart: string | null = null;
+    let most = -1;
+    for (const id of this.order) {
+      const count = this.byNode.get(id)?.size ?? 0;
+      if (count > most) {
+        most = count;
+        heart = id;
+      }
+    }
+    const near = new Set([heart!]);
+    for (const e of this.byNode.get(heart!) ?? []) {
+      const edge = this.edges.get(e);
+      if (edge) near.add(edge.source).add(edge.target);
+    }
+    const focus = union([...near].map((id) => this.nodes.get(id)).filter((n): n is NodeModel => !!n).map((n) => this.rect(n)));
+    const zoom = clamp(Math.max(READABLE_ZOOM, this.fitView(near).zoom), this.config.minZoom, this.config.maxZoom);
+    return readableView(all, focus, this.size.width, this.size.height, zoom);
+  }
+
   fitAll() {
     this.view = this.fitView();
     this.schedule();
@@ -2457,7 +2576,7 @@ export class Canvas {
       } else if (!this.selected.has(node.id)) {
         this.select([node.id]);
       }
-      if (!onGrip || this.config.readonly) return;
+      if (!onGrip || !this.arranges) return;
       event.preventDefault();
       this.root.focus({ preventScroll: true });
       this.startDrag(event, node.id, at);
@@ -2754,7 +2873,8 @@ export class Canvas {
           if (n) this.decorate(n);
         }
         this.root.querySelectorAll("[data-ui-drop-target]").forEach((e) => e.removeAttribute("data-ui-drop-target"));
-        if (g.moved && !cancelled) this.commitMove(g.origin, this.dropParents(g.origin));
+        // Arranged only, a node stays in its group.
+        if (g.moved && !cancelled) this.commitMove(g.origin, this.config.readonly ? new Map() : this.dropParents(g.origin));
         else if (g.moved) this.revert(g.origin);
         else if (!event.shiftKey && !event.metaKey && !event.ctrlKey) this.select([g.primary]);
         break;
@@ -3001,6 +3121,7 @@ export class Canvas {
   }
 
   private markDropTarget(g: Extract<Gesture, { kind: "drag" }>) {
+    if (this.config.readonly) return;
     const primary = this.nodes.get(g.primary);
     const target = primary && !(primary.parent && g.origin.has(primary.parent)) ? this.groupAt(this.center(primary), new Set(g.origin.keys())) : null;
     for (const el of this.root.querySelectorAll("[data-ui-drop-target]")) if (el !== target?.el) el.removeAttribute("data-ui-drop-target");
@@ -3090,11 +3211,11 @@ export class Canvas {
   }
 
   undo() {
-    if (!this.config.readonly) this.push("hakushi:undo", {}, (reply) => reply.error && this.announce(String(reply.error)));
+    if (this.arranges) this.push("hakushi:undo", {}, (reply) => reply.error && this.announce(String(reply.error)));
   }
 
   redo() {
-    if (!this.config.readonly) this.push("hakushi:redo", {}, (reply) => reply.error && this.announce(String(reply.error)));
+    if (this.arranges) this.push("hakushi:redo", {}, (reply) => reply.error && this.announce(String(reply.error)));
   }
 
   /** A new node at a point of the canvas: for an item, or a double click (`item` null). */
@@ -3351,7 +3472,7 @@ export class Canvas {
     if (key.startsWith("Arrow")) {
       event.preventDefault();
       if (event.altKey) return this.focusToward(key);
-      if (this.selected.size && !this.config.readonly) return this.nudgeBy(key, event.shiftKey);
+      if (this.selected.size && this.arranges) return this.nudgeBy(key, event.shiftKey);
       const step = event.shiftKey ? 200 : 50;
       const d = { ArrowLeft: [step, 0], ArrowRight: [-step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] }[key]!;
       this.view = { ...this.view, x: this.view.x + d[0], y: this.view.y + d[1] };
@@ -3740,17 +3861,26 @@ export class Canvas {
   // -- Layout ------------------------------------------------------------------
 
   /**
-   * Arranges the nodes in layers along their edges (`direction`, the
-   * canvas's `layout` unless given): the selected nodes when two or more
-   * are, else every node. A group is laid out as one box, with what is in
+   * Lays the nodes out (`algorithm` and `direction`, the way the person
+   * chose in the menu, else the canvas's `layout`, unless given): the
+   * selected nodes when two or more are, else every node. A group is laid out as one box, with what is in
    * it; locked nodes stay. The nodes glide to their places, and the change
    * is one move, which undoes at once.
    */
-  async layout(options: { direction?: "right" | "down" } = {}): Promise<void> {
-    if (this.config.readonly || this.gesture) return;
-    const chosen = this.selected.size >= 2 ? [...this.selected] : [...this.order];
-    // The nodes laid out: those of no group among the chosen ones, so that a
-    // group moves with what is in it.
+  async layout(options: { direction?: "right" | "down"; algorithm?: Algorithm } = {}): Promise<void> {
+    if (!this.arranges || this.gesture) return;
+    const plan = this.planLayout(this.selected.size >= 2 ? [...this.selected] : [...this.order], options);
+    if (!plan) return;
+    await this.glide(plan.origin, plan.target);
+    this.commitMove(plan.origin, new Map(), this.messages.t("laidOut", { n: plan.count }));
+  }
+
+  // Where a layout puts the chosen nodes: those of no group among them (a
+  // group moves with what is in it), and not the locked ones.
+  private planLayout(
+    chosen: string[],
+    options: { direction?: "right" | "down"; algorithm?: Algorithm },
+  ): { origin: Map<string, Point>; target: Map<string, Point>; count: number } | null {
     const set = new Set(chosen);
     const top = (id: string): string => {
       let node = this.nodes.get(id);
@@ -3761,13 +3891,18 @@ export class Canvas {
       .map((id) => this.nodes.get(id)!)
       .filter((n) => n && top(n.id) === n.id && !n.locked && !this.gone.has(n.id))
       .map((n) => ({ id: n.id, width: n.width, height: n.height }));
-    if (boxes.length < 2) return;
+    if (boxes.length < 2) return null;
     const laid = new Set(boxes.map((b) => b.id));
     const edges = [...this.edges.values()]
       .map((e) => ({ source: top(e.source), target: top(e.target) }))
       .filter((e) => laid.has(e.source) && laid.has(e.target));
 
-    const places = layered(boxes, edges, { direction: options.direction ?? this.config.layout ?? "right" });
+    const choice = this.layoutChoice();
+    const places = place(boxes, edges, {
+      algorithm: options.algorithm ?? choice.algorithm,
+      direction: options.direction ?? choice.direction,
+      aspect: this.size.width > 0 && this.size.height > 0 ? this.size.width / this.size.height : 1.6,
+    });
     // In place: the laid out nodes keep the top left corner they had.
     const before = union(boxes.map((b) => this.rect(this.nodes.get(b.id)!)))!;
     const after = union(boxes.map((b) => ({ ...places.get(b.id)!, width: b.width, height: b.height })))!;
@@ -3788,9 +3923,62 @@ export class Canvas {
         target.set(id, { x: round(n.x + dx), y: round(n.y + dy) });
       }
     }
+    return { origin, target, count: boxes.length };
+  }
 
-    await this.glide(origin, target);
-    this.commitMove(origin, new Map(), this.messages.t("laidOut", { n: boxes.length }));
+  // -- Tidy as it opens -----------------------------------------------------------
+  //
+  // A canvas with `tidy` lays its nodes out before anyone sees them: the
+  // server draws it with its nodes hidden (data-tidy) and a spinner, and
+  // the first frame with a size measures the nodes, lays them out at once,
+  // and shows them, fitted. The places are a move, as a tidy up's, on a
+  // canvas whose nodes people move; on a read-only one they are this
+  // page's only. A shared canvas keeps the room's places.
+
+  private tidying = false;
+  private tidyStarted = false;
+
+  private startTidy() {
+    if (this.tidyStarted) return;
+    this.tidyStarted = true;
+    // A frame for the spinner to show, then the work.
+    requestAnimationFrame(() =>
+      setTimeout(() => {
+        try {
+          this.tidyNow();
+        } finally {
+          this.tidying = false;
+          this.root.setAttribute("data-ui-tidied", "");
+          this.schedule();
+        }
+      }),
+    );
+  }
+
+  private tidyNow() {
+    // Their sizes now, as drawn: the canvas may have been hidden when it read them.
+    for (const node of this.nodes.values()) {
+      if (node.fixed) continue;
+      node.width = node.el.offsetWidth || node.width;
+      node.height = node.el.offsetHeight || node.height;
+    }
+    const plan = this.planLayout([...this.order], {});
+    if (!plan) return;
+    for (const [id, to] of plan.target) {
+      const node = this.nodes.get(id);
+      if (!node) continue;
+      node.x = to.x;
+      node.y = to.y;
+      node.el.style.translate = `${node.x}px ${node.y}px`;
+      this.decorate(node);
+      this.touchNode(id);
+    }
+    // Not undone, nor taken back if the server refuses it: the pile it
+    // opened as is no place to go back to.
+    if (this.arranges) {
+      const nodes = [...plan.target].map(([id, p]) => ({ id, x: p.x, y: p.y }));
+      this.push("hakushi:change", { op: "move", nodes, opened: true });
+    }
   }
 
   // The nodes from their places to others, in a quarter of a second (at
@@ -3864,6 +4052,7 @@ export class Canvas {
 
   destroy() {
     this.togglePaperMenu(false);
+    this.toggleLayoutMenu(false);
     clearTimeout(this.panTimer);
     for (const o of this.observers) o.disconnect();
     for (const cleanup of this.cleanups) cleanup();
