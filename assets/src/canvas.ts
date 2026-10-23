@@ -2330,6 +2330,11 @@ export class Canvas {
     on(this.root, "pointermove", (e) => this.pointerMove(e));
     on(this.root, "pointerup", (e) => this.pointerUp(e));
     on(this.root, "pointercancel", (e) => this.pointerUp(e, true));
+    // A gesture of the canvas is never a drag of the browser's: Firefox
+    // starts one from a node with an image, and then sends no pointerup.
+    on(this.root, "dragstart", (e) => {
+      if (this.gesture) e.preventDefault();
+    });
     on(this.root, "pointerleave", () => {
       this.pointer = null;
       this.sendPeer();

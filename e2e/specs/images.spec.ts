@@ -110,7 +110,7 @@ test("an image resizes with its aspect ratio, and Shift frees it", async ({ page
     }, { label, x: corner.x, y: corner.y });
   page.on("console", (m) => m.text().startsWith("DEBUG") && console.log(m.text()));
   page.on("pointercancel" as any, () => {});
-  await page.evaluate(() => ["pointerdown", "pointermove", "pointerup", "pointercancel", "lostpointercapture", "dragstart"].forEach((t) => document.addEventListener(t, (e: any) => t !== "pointermove" && console.log(`DEBUG event ${t} target=${(e.target as HTMLElement)?.className} prevented=${e.defaultPrevented}`), true)));
+  await page.evaluate(() => ["pointerdown", "pointermove", "pointerup", "pointercancel", "lostpointercapture", "dragstart", "mousedown", "mousemove", "mouseup", "dragend", "drop"].forEach((t) => window.addEventListener(t, (e: any) => console.log(`DEBUG event ${t} target=${e.target?.nodeName}.${e.target?.className ?? ""} xy=${e.clientX},${e.clientY} buttons=${e.buttons} prevented=${e.defaultPrevented}`), true)));
   await probe("before down");
   await page.mouse.down();
   await probe("after down");
