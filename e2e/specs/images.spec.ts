@@ -27,14 +27,20 @@ async function dropFile(page: Page, name: string, type: string, x: number, y: nu
   );
 }
 
-// A paste on the canvas, of a file or of text.
+const middle = (box: { x: number; y: number; width: number; height: number }) => ({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
+
+// A paste on the canvas, of a file or of text. A ClipboardEvent made by a
+// script does not keep the `clipboardData` given to it in every browser,
+// so the event carries it as a property of its own.
 async function pasteOn(page: Page, what: { text?: string; file?: { name: string; type: string; text: string } }): Promise<void> {
   await page.locator("#board").focus();
   await page.evaluate((what) => {
     const transfer = new DataTransfer();
     if (what.text) transfer.setData("text/plain", what.text);
     if (what.file) transfer.items.add(new File([what.file.text], what.file.name, { type: what.file.type }));
-    document.getElementById("board")!.dispatchEvent(new ClipboardEvent("paste", { clipboardData: transfer, bubbles: true, cancelable: true }));
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", { value: transfer });
+    document.getElementById("board")!.dispatchEvent(event);
   }, what);
 }
 
@@ -90,19 +96,21 @@ test("an image resizes with its aspect ratio, and Shift frees it", async ({ page
   await node(page, "quay").click();
   const ratio = async () => Number(await node(page, "quay").getAttribute("data-width")) / Number(await node(page, "quay").getAttribute("data-height"));
   const before = await ratio();
-  const corner = (await node(page, "quay").locator('.hakushi-resizer[data-corner="se"]').boundingBox())!;
-  await page.mouse.move(corner.x + 5, corner.y + 5);
+  // The middle of a resizer: it is as small as the zoom makes it, which
+  // depends on the fonts of the browser.
+  const corner = middle((await node(page, "quay").locator('.hakushi-resizer[data-corner="se"]').boundingBox())!);
+  await page.mouse.move(corner.x, corner.y);
   await page.mouse.down();
-  await page.mouse.move(corner.x + 85, corner.y + 15, { steps: 5 });
+  await page.mouse.move(corner.x + 80, corner.y + 10, { steps: 5 });
   await page.mouse.up();
   await expect.poll(() => node(page, "quay").getAttribute("data-width").then(Number)).toBeGreaterThan(400);
   expect(await ratio()).toBeCloseTo(before, 1);
 
-  const side = (await node(page, "quay").locator('.hakushi-resizer[data-corner="w"]').boundingBox())!;
-  await page.mouse.move(side.x + 3, side.y + 3);
+  const side = middle((await node(page, "quay").locator('.hakushi-resizer[data-corner="w"]').boundingBox())!);
+  await page.mouse.move(side.x, side.y);
   await page.mouse.down();
   await page.keyboard.down("Shift");
-  await page.mouse.move(side.x - 97, side.y + 3, { steps: 5 });
+  await page.mouse.move(side.x - 100, side.y, { steps: 5 });
   await page.mouse.up();
   await page.keyboard.up("Shift");
   await expect.poll(ratio).toBeGreaterThan(before + 0.2);
