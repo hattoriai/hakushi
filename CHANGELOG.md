@@ -7,9 +7,10 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.3.2] - 2026-10-23
+### Changed (breaking)
 
-One command installs Hakushi: `mix igniter.install hakushi`.
+- Requires `{:issho, "~> 0.4.2"}` for shared canvases. A canvas's code
+  stays as it was; see the Upgrading guide.
 
 ### Added
 
@@ -20,11 +21,133 @@ One command installs Hakushi: `mix igniter.install hakushi`.
   `Hakushi.Components` in the `html_helpers` of the web module. Without
   Igniter, the task works as before. Igniter is an optional dependency.
 - A Features guide: everything the canvas does, in one table.
+- The events of a shared canvas: each change is an event of its room,
+  named for what it did (`"canvas.added"`, `"canvas.connected"`,
+  `"canvas.reconnected"`, `"canvas.moved"`, `"canvas.updated"`,
+  `"canvas.deleted"`), with the ids of its nodes and edges, and who made
+  it (Issho's document `:events`). Agents wait for what people do on a
+  canvas (`wait_for_events` with `"canvas.*"`; `read_canvas` says so),
+  components hear them (`Issho.Live.subscribe/3`'s `:events`), and apps
+  act on them (`Issho.Events.subscribe/2`). See "Events" in the
+  Collaboration guide.
+- Comments on a canvas: `Hakushi.Issho.Place.label/3` says a place of the
+  canvas in words, from its graph (`The node “customers”`, `The node
+  “customers” and 2 more`, `A point on the canvas`), for the `:place`
+  slot of Issho's comments (`Issho.Components.comments/1`), in the
+  canvas's languages (`placeNode`, `placeNodes`, `placePoint`). The
+  development app's schema has the comments beside it (`?comments=1`).
+
+- Images (`Hakushi.Kits.Images`): image files dropped on the paper,
+  pasted, or picked with the kit's tool (I), each a node where it lands,
+  at its aspect ratio, sized to fit the view. A placeholder shows the
+  file and its progress while it uploads, to the others too; the node is
+  made once the server has the file and has checked it (PNG, JPEG, GIF or
+  WebP, by its bytes; `Hakushi.Images`). An image's address pasted is
+  fetched from the hosts the app allows (`fetch`). Images resize with
+  their aspect ratio (Shift frees it), are cropped in place, take a
+  caption on a double click and alt text from the panel, show a smaller
+  copy at small zooms (`thumbnail`) and load as they come near; the
+  export draws them.
+- The images are checked, stored and served with
+  [Storehouse](https://hexdocs.pm/storehouse), as Kotoba's attachments
+  are: the local disk, S3, or a store of the app's
+  (`config :storehouse, adapter: ...`); `Storehouse.Local.Plug` serves
+  them. Storehouse is an optional dependency: add `{:storehouse, "~> 0.1"}`
+  for images.
+- An agent adds an image: `add_image`, from an address or a file of the
+  app's, with its placeholder for the others while it comes.
+- Kits take files (`c:Hakushi.Kit.upload/0`, `uploaded/4`, `pasted/3`),
+  a style panel has a field for a text (`"text"`) and a button
+  (`"action"`), a tool may open a picker (`"pick"`), and an edit may move
+  and resize its node in the same change (`box`; `:update` takes `:x`,
+  `:y`, `:width` and `:height`). A text with `data-hakushi-text-own` is
+  written in place where it is.
+- Shapes (`Hakushi.Kits.Shapes`): rectangles, ellipses, diamonds,
+  triangles, text and lines, for diagrams, wireframes and whiteboards
+  with no `:node` slot. They are drawn by dragging with their tools (R,
+  O, D, T, and A for a line; Shift for a square or a circle). A shape's text is written
+  in place on a double click, centred and wrapped, and the shape grows
+  with it. A selected shape resizes by its corners and sides, and turns
+  by a knob. A panel beside the selection styles one shape or many in
+  one change: fill, stroke, its width and dash, corners, text size and
+  alignment, and a line's arrows. Each shape has a handle on each side
+  for edges. A line from a shape to a shape is an edge that follows
+  them; a line elsewhere is a node of its own. The colours are the
+  theme's (`--hakushi-shape-*`) and the app's own. In Markdown, shapes
+  are a Mermaid flowchart, and back.
+- An agent draws shapes: `draw_shape` adds a shape or a line, and
+  changes a shape's text, style and rotation.
+- Kits have a style panel (`c:Hakushi.Kit.styles/1`) and tools that draw
+  a box (`"box"`) or a line from a point to a point (`"line"`).
+  `"hakushi:edit"` takes several nodes in one change. Two kits' tools with
+  one letter take turns: the letter again takes the next. A node's
+  `data-hakushi-text` is written in place, and its `data-hakushi-rotate`
+  turns by a knob. Every resizable node now resizes by its sides as well
+  as its corners. `Hakushi.Test.draw_box/5`, and `edit/5` with a list of
+  nodes.
+- Mermaid: `Hakushi.Mermaid.flowchart/1` reads `((...))` as `:circle`
+  (was `:round`) and `[/...\]` as `:trapezoid`.
+
+- People choose the paper: `papers` (off unless given) puts a picker in
+  the controls, with the papers people choose from (`true` for dots,
+  graph paper, crosses and none, or a list, with papers of the app's own)
+  and the size of their squares. The paper chosen is the graph's
+  (`Hakushi.Graph`'s `paper`, kept by `dump/1` and `load/1`), and choosing
+  it is a change, `:paper` (`Hakushi.Change.paper/1`): it goes through
+  `on_change`, ⌘Z takes it back, and on a shared canvas everyone sees it.
+  `Hakushi.Test.paper/4` chooses one, `paper/2` reads it.
+- Papers of the app's own (`Hakushi.Paper`): a pattern of CSS, named in
+  `background` or `papers`, drawn with the canvas's properties.
+- An exported image may have the paper: `Hakushi.Live.export/2` with
+  `paper: true`.
+
+- Ink (`Hakushi.Kits.Ink`): drawing on the paper with a pen, over anything
+  on the canvas. A bar of tools at the top of the canvas has the pointer,
+  a pen and a highlighter (in seven colours and three widths), an eraser
+  of whole strokes and a lasso that selects strokes and nodes alike, to
+  move, copy or delete them (V, P, H, E and L; Escape for the pointer).
+  The line is smoothed as it is drawn, from every point the browser
+  gathers (`getCoalescedEvents`), thinner and thicker with a stylus's
+  pressure, and sharp at any zoom; when the pen lifts its points are
+  simplified, and the stroke is a node (`"ink-stroke"`, its points
+  relative to its box) that goes through the rules and `on_change`, moves,
+  goes in the frame it is drawn over, copies, exports and undoes as any.
+  Once a pen is used, a finger pans and only the pen draws. A stroke is
+  "Drawing" to a screen reader, near the node it is nearest.
+- On a shared canvas, the others see a line as it is drawn: it goes in
+  the person's awareness (`ink`), as a drag does, and becomes a change
+  when the pen lifts.
+- An agent draws: `draw_on_canvas` (`Hakushi.Issho.tools/0`) draws
+  strokes, or a ring `around` a node. The people see its pen draw each
+  stroke, under its pointer, unless it says `live: false`, the app sets
+  `config :hakushi, Hakushi.Issho, ink: [live: false]` (or `travel:
+  false`), or no one sees the canvas; `ink: [speed: ..., max: ...]` set
+  how fast it draws, and for how long at most.
+- Kits have tools: `c:Hakushi.Kit.tools/1` (a bar of tools on the
+  canvas, which draw, erase or lasso), `c:Hakushi.Kit.drawn/3` (the node
+  of a line drawn with one) and `c:Hakushi.Kit.label/2` (a node's name
+  for screen readers). `Hakushi.Test.draw/5` draws as a pen does.
 
 ### Changed
 
 - A shorter README: what Hakushi is, the install, a first canvas, and
   links to the guides.
+
+### Fixed
+
+- An agent that a person paused or stopped (Issho's `Issho.Work`) changes
+  nothing on a canvas, and does not go there: its tools that change
+  something say why at once, as Issho's room tools do. Before, its
+  pointer went and dragged, and only the change was refused.
+- A shared canvas skips a change it has already, rather than read the
+  whole graph again: on Issho 0.4 a canvas hears its document's changes
+  before it reads the graph, so that none falls between them, and one
+  may come twice. A change of a document that started again (another
+  epoch) reads it again.
+- What a person selects on a shared canvas is their place in the room
+  (Issho's `"place"`, `%{"node" => id}` or `%{"nodes" => ids}`): Issho's
+  comments go on it, and Issho's pointers show it when their pointer is
+  off the canvas, as a text's selection and a grid's cell already are.
 
 ## [0.3.1] - 2026-10-22
 
@@ -274,8 +397,7 @@ The first release.
   Japanese.
 - `hakushi.css` and the Sumi theme, `hakushi-sumi.css`.
 
-[Unreleased]: https://github.com/hattoriai/hakushi/compare/v0.3.2...HEAD
-[0.3.2]: https://github.com/hattoriai/hakushi/releases/tag/v0.3.2
+[Unreleased]: https://github.com/hattoriai/hakushi/compare/v0.3.1...HEAD
 [0.3.1]: https://github.com/hattoriai/hakushi/releases/tag/v0.3.1
 [0.3.0]: https://github.com/hattoriai/hakushi/releases/tag/v0.3.0
 [0.2.0]: https://github.com/hattoriai/hakushi/releases/tag/v0.2.0

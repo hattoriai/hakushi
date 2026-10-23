@@ -66,9 +66,10 @@ test("deletes with the key, and the server takes the edges with the node", async
 
 test("duplicates and pastes with new nodes", async ({ page }) => {
   await openCanvas(page, "/board");
+  const count = await page.locator("#board .hakushi-node").count();
   await node(page, "tide").locator(".note").click();
   await page.keyboard.press(`${await mod(page)}+d`);
-  await expect(page.locator("#board .hakushi-node")).toHaveCount(10);
+  await expect(page.locator("#board .hakushi-node")).toHaveCount(count + 1);
   // The copy is the selection.
   await expect(page.locator("#board .hakushi-node[data-ui-selected]")).toHaveCount(1);
   await expect(node(page, "tide")).not.toHaveAttribute("data-ui-selected", "");
@@ -76,7 +77,7 @@ test("duplicates and pastes with new nodes", async ({ page }) => {
   await page.keyboard.press(`${await mod(page)}+c`);
   await page.mouse.move(700, 300);
   await page.keyboard.press(`${await mod(page)}+v`);
-  await expect(page.locator("#board .hakushi-node")).toHaveCount(11);
+  await expect(page.locator("#board .hakushi-node")).toHaveCount(count + 2);
 });
 
 test("an item of the palette dragged onto the canvas becomes a node", async ({ page }) => {

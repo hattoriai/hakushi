@@ -13,12 +13,14 @@ import { editable, el, interactive, isApple, numberAttr, prefersReducedMotion, s
 import { contains, edgePath, facing, fromCorners, grow, intersects, sidePoint, union } from "./geometry";
 import { exportImage, type ExportOptions } from "./export";
 import { icons } from "./icons";
+import { aspectResize, cropOf, dragCrop, fitImage, fullOf, imageAddress, rowAt, type Crop } from "./images";
+import { FLAT, inkBox, inside, outline, simplify, streamline, type InkPoint, type InkStroke } from "./ink";
 import { layered } from "./layout";
 import { Messages } from "./messages";
 import { Minimap } from "./minimap";
 import { check } from "./rules";
 import { align, snapToGrid, type Guide } from "./snap";
-import type { Config, EdgeModel, End, Handle, HandleKind, Live, NodeModel, Person, Point, Rect, Side, View } from "./types";
+import type { Config, EdgeModel, End, Handle, HandleKind, Live, NodeModel, Person, Point, Rect, Side, Tool, View } from "./types";
 import { centerOn, clamp, fit, reveal, toCanvas, visible, zoomAt } from "./view";
 
 // Nodes are culled (not laid out off the screen) above this many.
@@ -37,6 +39,12 @@ const PEER_INTERVAL = 50;
 const PEER_TIMEOUT = 30_000;
 // The most nodes, and edges, of what a person sees that go to the room.
 const SEEN_MAX = 200;
+// The most points of a line being drawn that go to the others (the server
+// takes no more).
+const INK_SENT_MAX = 1_400;
+// How far from the line a point of a stroke may be left out when the pen
+// lifts, in pixels of the screen.
+const INK_TOLERANCE = 0.6;
 
 type Gesture =
   | { kind: "pan"; pointer: number; start: Point; view: View }
@@ -64,7 +72,16 @@ type Gesture =
       // An end of an edge dragged to another handle: the edge.
       reconnect?: string;
     }
-  | { kind: "resize"; pointer: number; id: string; corner: string; start: Point; rect: Rect }
+  // A node resized by a corner or a side; an image (`data-hakushi-aspect`) keeps its aspect ratio, unless Shift.
+  | { kind: "resize"; pointer: number; id: string; corner: string; start: Point; rect: Rect; aspect: number | null }
+  // A line drawn with a tool of a kit (ink), the strokes an eraser passes over, a lasso.
+  | { kind: "ink"; pointer: number; tool: Tool; stroke: InkStroke; pen: boolean }
+  | { kind: "erase"; pointer: number; tool: Tool; last: Point; hit: Set<string> }
+  | { kind: "lasso"; pointer: number; points: Point[]; base: Set<string> }
+  // A shape drawn as a box (Shift: as wide as high), or a line from a point to a point.
+  | { kind: "shape"; pointer: number; tool: Tool; start: Point; end: Point; square: boolean }
+  // A node turned by its knob, about its middle.
+  | { kind: "rotate"; pointer: number; id: string; center: Point; from: number; base: number; deg: number; el: HTMLElement }
   | { kind: "pinch"; distance: number; mid: Point; view: View };
 
 interface EdgeView {
@@ -97,6 +114,11 @@ interface Peer {
   // Their pointer is on this canvas on a page of the room with Issho's
   // pointers, which draw it there.
   paged?: boolean;
+  // The line they draw, as they draw it.
+  ink: InkStroke | null;
+  // The files they upload: a box and a progress each, and their placeholders.
+  files: number[][];
+  fileEls: HTMLElement[];
 }
 
 // The canvas of a room this person uses last (it has their pointer, a
@@ -181,6 +203,19 @@ export class Canvas {
   private followedAt = "";
   private culledVersion = -1;
   private culledView: View | null = null;
+  // The tools of the kits: the one chosen (null: the pointer), the colour
+  // and width of each drawing tool, and whether a pen was used (then touch
+  // pans, and only the pen draws).
+  private tool: Tool | null = null;
+  private toolsEl: HTMLElement | null = null;
+  private inkPrefs = new Map<string, { color: string; size: number }>();
+  private penSeen = false;
+  // The lines being drawn: this person's, theirs drawn until they are
+  // nodes, and the others'.
+  private inkG: SVGGElement;
+  private inkPaths = new Map<string, { path: SVGPathElement; stroke: InkStroke; length: number }>();
+  private inkPending: { key: string; stroke: InkStroke; id: string | null }[] = [];
+  private inkSeq = 0;
 
   constructor(
     readonly root: HTMLElement,
@@ -203,12 +238,13 @@ export class Canvas {
     this.edgesG = svg("g", { class: "hakushi-edge-lines" });
     this.overlay = svg("g", { class: "hakushi-overlay" });
     this.raisedG = svg("g", { class: "hakushi-edge-lines" });
+    this.inkG = svg("g", { class: "hakushi-ink-live" });
     const raisedSvg = root.querySelector<SVGSVGElement>(`#${CSS.escape(this.id)}-svg-raised`);
     if (raisedSvg) {
       this.edgesSvg.append(this.edgesG);
-      raisedSvg.append(this.raisedG, this.overlay);
+      raisedSvg.append(this.raisedG, this.inkG, this.overlay);
     } else {
-      this.edgesSvg.append(this.edgesG, this.raisedG, this.overlay);
+      this.edgesSvg.append(this.edgesG, this.raisedG, this.inkG, this.overlay);
     }
 
     this.status = el("div", { class: "hakushi-status", role: "status", "aria-live": "polite" });
@@ -216,6 +252,7 @@ export class Canvas {
     this.cursorsEl = el("div", { class: "hakushi-cursors", "aria-hidden": "true" });
     this.ui.append(this.cursorsEl, this.boxEl, this.status);
     this.buildControls();
+    this.buildTools();
 
     this.readNodes();
     this.readEdges();
@@ -421,8 +458,18 @@ export class Canvas {
     this.layoutVersion++;
     const minimap = this.config.minimap;
     const controls = this.config.controls;
+    const tools = JSON.stringify(this.config.tools ?? []) + this.config.readonly;
+    const papers = JSON.stringify(this.config.papers ?? []);
+    const grid = this.config.grid;
     this.readConfig();
-    if (minimap !== this.config.minimap || controls !== this.config.controls) this.buildControls();
+    // Another size of squares: the paper is drawn again at once.
+    if (grid !== this.config.grid) this.drawnView = null;
+    if (minimap !== this.config.minimap || controls !== this.config.controls || papers !== JSON.stringify(this.config.papers ?? [])) {
+      this.togglePaperMenu(false);
+      this.buildControls();
+    }
+    if (tools !== JSON.stringify(this.config.tools ?? []) + this.config.readonly) this.buildTools();
+    this.drawPaperMenu();
     this.showNotice();
     this.schedule();
   }
@@ -484,11 +531,18 @@ export class Canvas {
     };
     this.nodes.set(id, node);
     if (!old) this.order.push(id);
+    // A file's node, which its placeholder waits for.
+    const wait = old ? undefined : this.nodeWaits.get(id);
+    if (wait) {
+      this.nodeWaits.delete(id);
+      queueMicrotask(wait);
+    }
     // A node in another group: the nodes in it are deeper or shallower too.
     if (old && (old.parent !== node.parent || old.group !== node.group)) this.parentsChanged = true;
     this.measureHandles(node);
     if (later) later.push(node);
     else this.decorate(node);
+    this.thumbs(element);
     this.touchNode(id);
     return node;
   }
@@ -549,11 +603,17 @@ export class Canvas {
     }
     if (node.resizable && this.selected.has(node.id) && !this.config.readonly && !node.locked) this.addResizers(node);
     else element.querySelectorAll(":scope > .hakushi-resizer").forEach((r) => r.remove());
+    // The knob of a node that turns (`data-hakushi-rotate`), when it is the one selected.
+    const turns = this.selected.size === 1 && this.selected.has(node.id) && !this.config.readonly && !node.locked && element.querySelector("[data-hakushi-rotate]") !== null;
+    const knob = element.querySelector(":scope > .hakushi-rotator");
+    if (turns && !knob) element.append(el("span", { class: "hakushi-rotator", "aria-hidden": "true", title: this.messages.t("shapeRotate") }));
+    else if (!turns && knob) knob.remove();
   }
 
+  // The corners and the sides of a node that resizes, to drag.
   private addResizers(node: NodeModel) {
     if (node.el.querySelector(":scope > .hakushi-resizer")) return;
-    for (const corner of ["nw", "ne", "sw", "se"]) {
+    for (const corner of ["nw", "ne", "sw", "se", "n", "e", "s", "w"]) {
       node.el.append(el("span", { class: "hakushi-resizer", "data-corner": corner, "aria-hidden": "true" }));
     }
   }
@@ -735,7 +795,7 @@ export class Canvas {
         if (!name.startsWith("data-") || name.startsWith("data-ui-")) continue;
       }
       const target = record.target instanceof Element ? record.target : record.target.parentElement;
-      if (target?.closest(".hakushi-resizer")) continue;
+      if (target?.closest(".hakushi-resizer, .hakushi-rotator")) continue;
       const node = target?.closest<HTMLElement>(".hakushi-node");
       if (node && this.nodesEl.contains(node)) touched.add(node);
     }
@@ -774,6 +834,15 @@ export class Canvas {
     this.allDirty = true;
     this.layoutVersion++;
     if (this.pendingSelect) this.selectPending();
+    // A text drawn with its tool: written at once.
+    if (this.editOnArrive && this.nodes.has(this.editOnArrive)) {
+      const node = this.nodes.get(this.editOnArrive)!;
+      this.editOnArrive = null;
+      requestAnimationFrame(() => this.editText(node));
+    }
+    if (this.styleEl) this.drawStylePanel();
+    // A stroke of this person's is a node now: drawn by it.
+    if (this.inkPending.some((p) => p.id && this.nodes.has(p.id))) this.inkPending = this.inkPending.filter((p) => !(p.id && this.nodes.has(p.id)));
     this.schedule();
   }
 
@@ -838,7 +907,10 @@ export class Canvas {
       bg.setProperty("--hakushi-grid-x", `${((this.view.x % period) + period) % period}px`);
       bg.setProperty("--hakushi-grid-y", `${((this.view.y % period) + period) % period}px`);
       const far = this.view.zoom < 0.5 ? "far" : "near";
-      if (this.root.dataset.uiZoom !== far) this.root.dataset.uiZoom = far;
+      if (this.root.dataset.uiZoom !== far) {
+        this.root.dataset.uiZoom = far;
+        this.thumbs(this.nodesEl);
+      }
     }
 
     // Culled again when the view moved half the margin, or the zoom by a
@@ -858,6 +930,7 @@ export class Canvas {
     }
     this.drawEdges(recull && viewChanged);
     this.drawOverlay();
+    this.drawInk();
     this.drawPeers();
     this.reportSeen();
     const percent = `${Math.round(this.view.zoom * 100)}%`;
@@ -1150,6 +1223,28 @@ export class Canvas {
     }
 
     const g = this.gesture;
+    if (g?.kind === "shape") {
+      if (g.tool.mode === "line") {
+        this.overlay.append(svg("line", { class: "hakushi-shape-preview", x1: `${g.start.x}`, y1: `${g.start.y}`, x2: `${g.end.x}`, y2: `${g.end.y}`, "vector-effect": "non-scaling-stroke" }));
+      } else {
+        const b = this.shapeBox(g);
+        const shape =
+          g.tool.tool === "ellipse"
+            ? svg("ellipse", { cx: `${b.x + b.width / 2}`, cy: `${b.y + b.height / 2}`, rx: `${b.width / 2}`, ry: `${b.height / 2}` })
+            : g.tool.tool === "diamond"
+              ? svg("polygon", { points: `${b.x + b.width / 2},${b.y} ${b.x + b.width},${b.y + b.height / 2} ${b.x + b.width / 2},${b.y + b.height} ${b.x},${b.y + b.height / 2}` })
+              : g.tool.tool === "triangle"
+                ? svg("polygon", { points: `${b.x + b.width / 2},${b.y} ${b.x + b.width},${b.y + b.height} ${b.x},${b.y + b.height}` })
+                : svg("rect", { x: `${b.x}`, y: `${b.y}`, width: `${b.width}`, height: `${b.height}`, rx: g.tool.tool === "text" ? "0" : "6" });
+        shape.setAttribute("class", "hakushi-shape-preview");
+        shape.setAttribute("vector-effect", "non-scaling-stroke");
+        this.overlay.append(shape);
+      }
+    }
+    if (g?.kind === "lasso" && g.points.length > 1) {
+      const d = g.points.map((p, i) => `${i === 0 ? "M" : "L"}${round(p.x)} ${round(p.y)}`).join("") + "Z";
+      this.overlay.append(svg("path", { class: "hakushi-lasso", d, "vector-effect": "non-scaling-stroke" }));
+    }
     if (g?.kind === "connect") {
       const node = this.nodes.get(g.from.node);
       if (node) {
@@ -1256,6 +1351,13 @@ export class Canvas {
         );
       }
       if (this.config.exportable) group.append(button("export", t("export"), icons.download, () => void this.download()));
+      // The papers people choose from (the canvas's `papers`), in a menu.
+      if ((this.config.papers ?? []).length > 1) {
+        const paper = button("paper", t("paper"), icons.paper, () => this.togglePaperMenu());
+        paper.setAttribute("aria-haspopup", "menu");
+        paper.setAttribute("aria-expanded", "false");
+        group.append(paper);
+      }
       group.addEventListener("pointerdown", (event) => event.stopPropagation());
       this.controlsEl = group;
       this.ui.append(group);
@@ -1267,6 +1369,897 @@ export class Canvas {
         this.schedule();
       });
       this.ui.append(this.minimap.el);
+    }
+  }
+
+  // -- The paper -----------------------------------------------------------------
+  //
+  // A menu of the papers the canvas offers, and of the sizes of their
+  // squares. A paper chosen is a change of the graph's (Hakushi.Paper): it
+  // undoes, and on a shared canvas everyone sees it.
+
+  private paperMenu: HTMLElement | null = null;
+
+  private togglePaperMenu(open = !this.paperMenu) {
+    const button = this.controlsEl?.querySelector<HTMLElement>('[data-action="paper"]');
+    if (!open) {
+      this.paperMenu?.remove();
+      this.paperMenu = null;
+      document.removeEventListener("pointerdown", this.closePaperMenu, true);
+      button?.setAttribute("aria-expanded", "false");
+      return;
+    }
+    const menu = el("div", { class: "hakushi-paper-menu", role: "menu", "aria-label": this.messages.t("paper") });
+    menu.addEventListener("pointerdown", (event) => event.stopPropagation());
+    menu.addEventListener("keydown", (event) => this.paperKey(event));
+    this.paperMenu = menu;
+    this.drawPaperMenu();
+    this.ui.append(menu);
+    button?.setAttribute("aria-expanded", "true");
+    document.addEventListener("pointerdown", this.closePaperMenu, true);
+    menu.querySelector<HTMLElement>('[aria-checked="true"]')?.focus();
+  }
+
+  // A press anywhere but the menu and its button closes it.
+  private closePaperMenu = (event: Event) => {
+    const target = event.target as Element | null;
+    if (target?.closest?.(".hakushi-paper-menu") || target?.closest?.('[data-action="paper"]')) return;
+    this.togglePaperMenu(false);
+  };
+
+  private drawPaperMenu() {
+    const menu = this.paperMenu;
+    if (!menu) return;
+    const focused = (document.activeElement as HTMLElement | null)?.dataset?.paperItem;
+    const current = this.config.background ?? this.root.dataset.background ?? "dots";
+    const grid = this.config.grid;
+    const item = (key: string, label: string, checked: boolean, choose: () => void, swatch?: string) => {
+      const b = el("button", { type: "button", role: "menuitemradio", class: "hakushi-paper-item", "aria-checked": String(checked), tabindex: "-1", "data-paper-item": key });
+      if (swatch !== undefined) b.append(el("span", { class: "hakushi-paper-frame", "aria-hidden": "true" }, [el("span", { class: "hakushi-paper-swatch", "data-background": swatch })]));
+      b.append(el("span", {}, [label]));
+      b.addEventListener("click", choose);
+      return b;
+    };
+    const papers = el("div", { role: "group", "aria-label": this.messages.t("paper") });
+    for (const paper of this.config.papers ?? []) {
+      papers.append(item(`paper:${paper.name}`, paper.label, paper.name === current, () => this.choosePaper(paper.name, this.config.grid), paper.name));
+    }
+    const sizes = el("div", { role: "group", class: "hakushi-paper-sizes", "aria-label": this.messages.t("paperSquares") });
+    const names = ["squaresSmall", "squaresMedium", "squaresLarge"];
+    (this.config.paperGrids ?? []).forEach((size, i) => {
+      sizes.append(item(`grid:${size}`, this.messages.t(names[i] ?? "paperSquares"), size === grid, () => this.choosePaper(this.config.background ?? current, size)));
+    });
+    menu.replaceChildren(papers, el("div", { class: "hakushi-paper-heading", "aria-hidden": "true" }, [this.messages.t("paperSquares")]), sizes);
+    if (focused) menu.querySelector<HTMLElement>(`[data-paper-item="${CSS.escape(focused)}"]`)?.focus();
+  }
+
+  private paperKey(event: KeyboardEvent) {
+    const items = [...(this.paperMenu?.querySelectorAll<HTMLElement>(".hakushi-paper-item") ?? [])];
+    const index = items.indexOf(document.activeElement as HTMLElement);
+    if (event.key === "Escape" || event.key === "Tab") {
+      if (event.key === "Escape") event.preventDefault();
+      this.togglePaperMenu(false);
+      if (event.key === "Escape") this.controlsEl?.querySelector<HTMLElement>('[data-action="paper"]')?.focus();
+    } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      items[(index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
+    } else if (event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      items[event.key === "Home" ? 0 : items.length - 1]?.focus();
+    }
+    event.stopPropagation();
+  }
+
+  /** Chooses a paper the canvas offers (its name) and the size of its squares: a change, which undoes. */
+  choosePaper(background: string, grid: number = this.config.grid) {
+    if (this.config.readonly) return;
+    const paper = (this.config.papers ?? []).find((p) => p.name === background);
+    if (!paper || (background === this.config.background && grid === this.config.grid)) return;
+    this.push("hakushi:change", { op: "paper", paper: { background, grid } }, (reply) => {
+      if (!reply.error) this.announce(this.messages.t("paperChosen", { name: paper.label }));
+    });
+  }
+
+  // -- Shapes ------------------------------------------------------------------
+  //
+  // A kit's tool of the mode "box" draws a node as a box dragged on the
+  // paper; one of the mode "line", a line from a point to a point, which
+  // is an edge when it goes from a node to another, and a node of the kit's
+  // else. A node with text (`data-hakushi-text`) is written in place on a
+  // double click; one that turns (`data-hakushi-rotate`) has a knob; a
+  // kit's styles (`styles/1`) are a panel beside the selection.
+
+  private editOnArrive: string | null = null;
+  private styleEl: HTMLElement | null = null;
+
+  // The box a shape gesture drew: from corner to corner, as wide as high with Shift.
+  private shapeBox(g: Extract<Gesture, { kind: "shape" }>): Rect {
+    let w = g.end.x - g.start.x;
+    let h = g.end.y - g.start.y;
+    if (g.square) {
+      const side = Math.max(Math.abs(w), Math.abs(h));
+      w = Math.sign(w || 1) * side;
+      h = Math.sign(h || 1) * side;
+    }
+    return fromCorners(g.start, { x: g.start.x + w, y: g.start.y + h });
+  }
+
+  // The node a line may end on: the one on top under the point, with handles.
+  private nodeAt(p: Point, except?: string): NodeModel | null {
+    for (let i = this.order.length - 1; i >= 0; i--) {
+      const node = this.nodes.get(this.order[i]);
+      if (!node || node.id === except || this.gone.has(node.id) || node.group || !node.handles.length) continue;
+      if (contains(this.rect(node), p)) return node;
+    }
+    return null;
+  }
+
+  private markLineEnd(end: Point, start: Point) {
+    const from = this.nodeAt(start);
+    const to = this.nodeAt(end, from?.id);
+    for (const e of this.root.querySelectorAll("[data-ui-target]")) if (e !== to?.el) e.removeAttribute("data-ui-target");
+    if (from && to) to.el.setAttribute("data-ui-target", "");
+  }
+
+  private commitShape(g: Extract<Gesture, { kind: "shape" }>) {
+    const tool = `${g.tool.kit}:${g.tool.tool}`;
+    const back = () => this.setTool(null);
+    if (g.tool.mode === "line") {
+      if (Math.hypot(g.end.x - g.start.x, g.end.y - g.start.y) * this.view.zoom < 6) return;
+      const from = this.nodeAt(g.start);
+      const to = this.nodeAt(g.end, from?.id);
+      if (from && to) {
+        // From a node to a node: an edge, which follows them.
+        this.push("hakushi:change", { op: "connect", edges: [{ source: from.id, sourceHandle: null, target: to.id, targetHandle: null }] }, (reply) => {
+          if (!reply.error) this.announce(this.messages.t("connected", { source: from.label, target: to.label }));
+        });
+      } else {
+        this.push("hakushi:draw", { tool, points: [[round(g.start.x), round(g.start.y)], [round(g.end.x), round(g.end.y)]] }, (reply) => {
+          if (typeof reply.drawn === "string") this.pendingSelect = [reply.drawn];
+          this.selectPending();
+        });
+      }
+      back();
+      return;
+    }
+    const b = this.shapeBox(g);
+    const clicked = b.width * this.view.zoom < 6 && b.height * this.view.zoom < 6;
+    const box = clicked ? [round(g.start.x), round(g.start.y), 0, 0] : [round(b.x), round(b.y), round(b.width), round(b.height)];
+    const group = this.groupAt({ x: b.x + b.width / 2, y: b.y + b.height / 2 }, new Set());
+    const text = g.tool.tool === "text";
+    this.push("hakushi:draw", { tool, box, parent: group?.id ?? null }, (reply) => {
+      if (typeof reply.drawn !== "string") return;
+      this.pendingSelect = [reply.drawn];
+      if (text) this.editOnArrive = reply.drawn;
+      this.selectPending();
+    });
+    back();
+  }
+
+  private startRotate(event: PointerEvent, node: NodeModel) {
+    const turning = node.el.querySelector<HTMLElement>("[data-hakushi-rotate]");
+    if (!turning) return;
+    const at = this.canvasPoint(event);
+    const center = this.center(node);
+    const base = parseFloat(getComputedStyle(turning).getPropertyValue("--hakushi-rotation")) || 0;
+    this.capture(event);
+    this.gesture = { kind: "rotate", pointer: event.pointerId, id: node.id, center, from: (Math.atan2(at.y - center.y, at.x - center.x) * 180) / Math.PI, base, deg: base, el: turning };
+  }
+
+  /** Writes the text of a node that has one, in place: Escape takes it back, a click elsewhere keeps it. */
+  editText(node: NodeModel) {
+    const text = node.el.querySelector<HTMLElement>("[data-hakushi-text]");
+    if (!text || this.config.readonly) return;
+    const turning = node.el.querySelector<HTMLElement>("[data-hakushi-rotate]");
+    const rotation = turning ? getComputedStyle(turning).getPropertyValue("--hakushi-rotation").trim() || "0deg" : "0deg";
+    const at = this.placeOf(node);
+    // A text with a place of its own in its node (an image's caption, under it): there.
+    const own = text.hasAttribute("data-hakushi-text-own");
+    const box = own ? { x: at.x + text.offsetLeft, y: at.y + text.offsetTop, width: text.offsetWidth, height: Math.max(text.offsetHeight, 24) } : { ...at, width: node.width, height: node.height };
+    const editor = el("div", { class: `${text.className} hakushi-text-editor`, contenteditable: "plaintext-only", role: "textbox", "aria-multiline": "true", "aria-label": text.dataset.hakushiTextLabel ?? this.messages.t("shapeTextLabel"), "data-size": text.dataset.size ?? "m", "data-align": text.dataset.align ?? "center" });
+    editor.textContent = text.dataset.hakushiText ?? text.textContent ?? "";
+    const style = getComputedStyle(text);
+    Object.assign(editor.style, { translate: `${box.x}px ${box.y}px`, width: `${box.width}px`, minHeight: `${box.height}px`, rotate: rotation, color: style.color, fontFamily: style.fontFamily, padding: style.padding });
+    this.labelsEl.append(editor);
+    text.style.visibility = "hidden";
+    editor.focus();
+    const range = document.createRange();
+    range.selectNodeContents(editor);
+    getSelection()?.removeAllRanges();
+    getSelection()?.addRange(range);
+    let done = false;
+    const finish = (save: boolean) => {
+      if (done) return;
+      done = true;
+      const value = (editor.innerText ?? "").replace(/\n$/, "");
+      // A text longer than the shape: the shape grows with it.
+      const needed = Math.ceil(editor.scrollHeight);
+      editor.remove();
+      text.style.visibility = "";
+      this.root.focus({ preventScroll: true });
+      if (!save || value === (text.dataset.hakushiText ?? "")) return;
+      this.push("hakushi:edit", { node: node.id, action: "text", value }, (reply) => {
+        const current = this.nodes.get(node.id);
+        if (own || reply.error || !current || needed <= current.height + 1) return;
+        this.push("hakushi:change", { op: "move", nodes: [{ id: current.id, x: current.x, y: current.y, width: current.width, height: needed }] });
+      });
+    };
+    editor.addEventListener("keydown", (event) => {
+      event.stopPropagation();
+      if (event.key === "Escape") finish(false);
+      if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) finish(true);
+    });
+    editor.addEventListener("blur", () => finish(true));
+    editor.addEventListener("pointerdown", (event) => event.stopPropagation());
+  }
+
+  // The style panel of a kit (`styles/1`), beside the selection, when every
+  // selected node is of its types: the choices the nodes have, the one they
+  // share pressed.
+  private drawStylePanel() {
+    const panels = this.config.styles ?? [];
+    const ids = [...this.selected];
+    const nodes = ids.map((id) => this.nodes.get(id)).filter((n): n is NodeModel => !!n && !this.gone.has(n.id));
+    const panel = nodes.length && !this.tool ? panels.find((p) => nodes.every((n) => p.types.includes(n.type))) : undefined;
+    if (!panel || this.config.readonly || this.cropping) {
+      this.styleEl?.remove();
+      this.styleEl = null;
+      return;
+    }
+    // A field of the panel being written in stays as it is, for the same nodes.
+    const typing = this.styleEl?.contains(document.activeElement) && document.activeElement instanceof HTMLInputElement;
+    if (typing && this.styleEl!.dataset.nodes === ids.join(" ")) return;
+    const styles = nodes.map((n) => {
+      try {
+        return JSON.parse(n.el.querySelector<HTMLElement>("[data-hakushi-style]")?.dataset.hakushiStyle ?? "{}") as Record<string, unknown>;
+      } catch {
+        return {};
+      }
+    });
+    if (!this.styleEl) {
+      this.styleEl = el("div", { class: "hakushi-style-panel", role: "toolbar", "aria-label": this.messages.t("shapeStyle"), "aria-orientation": "vertical" });
+      this.styleEl.addEventListener("pointerdown", (event) => event.stopPropagation());
+      this.ui.append(this.styleEl);
+    }
+    this.styleEl.dataset.nodes = ids.join(" ");
+    const groups: HTMLElement[] = [];
+    for (const group of panel.groups) {
+      const values = styles.filter((st) => group.key in st).map((st) => JSON.stringify(st[group.key]));
+      if (!values.length) continue;
+      const shared = values.every((v) => v === values[0]) ? values[0] : null;
+      const row = el("div", { class: "hakushi-style-group", role: "group", "aria-label": group.label, "data-kind": group.kind });
+      if (group.kind === "action") {
+        // A button of the canvas's own, for one node.
+        if (nodes.length !== 1) continue;
+        const b = el("button", { type: "button", class: "hakushi-style-option hakushi-style-action", "data-key": group.key, title: group.label });
+        b.innerHTML = (icons as Record<string, string>)[group.icon ?? ""] ?? "";
+        b.append(el("span", {}, [group.label]));
+        b.addEventListener("click", () => this.styleAction(group.key, nodes[0]));
+        row.append(b);
+        groups.push(row);
+        continue;
+      }
+      row.append(el("span", { class: "hakushi-style-label", "aria-hidden": "true" }, [group.label]));
+      if (group.kind === "text") {
+        const input = el("input", { type: "text", class: "hakushi-style-text", "data-key": group.key, "aria-label": group.label, placeholder: group.placeholder ?? "" });
+        input.value = shared !== null ? String(JSON.parse(shared) ?? "") : "";
+        const save = () => {
+          const value = input.value;
+          if (shared !== null && JSON.stringify(value) === shared) return;
+          this.push("hakushi:edit", { nodes: ids, action: "style", style: { [group.key]: value } });
+        };
+        input.addEventListener("change", save);
+        input.addEventListener("keydown", (event) => {
+          event.stopPropagation();
+          if (event.key === "Enter") {
+            save();
+            this.root.focus({ preventScroll: true });
+          } else if (event.key === "Escape") {
+            input.value = shared !== null ? String(JSON.parse(shared) ?? "") : "";
+            this.root.focus({ preventScroll: true });
+          }
+        });
+        row.append(input);
+        groups.push(row);
+        continue;
+      }
+      const options = el("div", { class: "hakushi-style-options" });
+      for (const option of group.options) {
+        const b = el("button", { type: "button", class: "hakushi-style-option", "aria-label": `${group.label}: ${option.label}`, title: option.label, "aria-pressed": String(JSON.stringify(option.value) === shared), "data-key": group.key, "data-value": JSON.stringify(option.value) });
+        if (group.kind === "color") {
+          b.classList.add("hakushi-style-swatch");
+          b.dataset.color = String(option.value);
+          b.style.setProperty("--hakushi-swatch", option.value === "none" ? "transparent" : `var(--hakushi-shape-${option.value})`);
+        } else if (group.kind === "width") {
+          b.append(el("span", {}));
+          b.style.setProperty("--hakushi-style-width", `${Number(option.value)}px`);
+        } else {
+          b.textContent = option.label;
+        }
+        b.addEventListener("click", () => {
+          this.push("hakushi:edit", { nodes: ids, action: "style", style: { [group.key]: option.value } });
+        });
+        options.append(b);
+      }
+      row.append(options);
+      groups.push(row);
+    }
+    this.styleEl.replaceChildren(...groups);
+  }
+
+  // -- Files (a kit that takes them: Hakushi.Kits.Images) ----------------------
+  //
+  // Files dropped, pasted or picked go to the canvas's LiveView upload (its
+  // file input, with LiveView's `track-uploads`), each with a placeholder
+  // where it lands: the file, faded, with its progress, which the others
+  // see too. The server says how each goes (`hakushi:file`): its progress,
+  // then the node it became (selected), or why it did not. An image's
+  // address, pasted or dropped, goes the same way, as `hakushi:paste-url`.
+
+  private filePlaces = new Map<string, { box: Rect; progress: number; el: HTMLElement; blob: string | null; name: string }>();
+  private filePicker: HTMLInputElement | null = null;
+  private fileSeq = 0;
+  private pasteTimer = 0;
+  private copiedText: string | null = null;
+
+  /** Opens the browser's picker of files, for a canvas that takes them. */
+  openPicker() {
+    const files = this.config.files;
+    if (!files || this.config.readonly) return;
+    if (!this.filePicker) {
+      const input = el("input", { type: "file", multiple: "", accept: files.accept.join(","), hidden: "", tabindex: "-1", "aria-hidden": "true", class: "hakushi-file-picker" });
+      // Its events are not the app's form's.
+      input.addEventListener("input", (event) => event.stopPropagation());
+      input.addEventListener("change", (event) => {
+        event.stopPropagation();
+        const chosen = [...(input.files ?? [])];
+        input.value = "";
+        // In the middle of the view: the pointer was on the bar.
+        void this.addFiles(chosen, toCanvas(this.view, this.size.width / 2, this.size.height / 2));
+      });
+      this.ui.append(input);
+      this.filePicker = input;
+    }
+    this.filePicker.click();
+  }
+
+  private takesFile(file: File): boolean {
+    const accept = this.config.files?.accept ?? [];
+    const dot = file.name.lastIndexOf(".");
+    const extension = dot >= 0 ? file.name.slice(dot).toLowerCase() : "";
+    const byType: Record<string, string[]> = { "image/png": [".png"], "image/jpeg": [".jpg", ".jpeg"], "image/gif": [".gif"], "image/webp": [".webp"] };
+    return accept.includes(extension) || (byType[file.type] ?? []).some((e) => accept.includes(e));
+  }
+
+  // The pointer, when it is on the canvas, else the middle of the view.
+  private pointerOrCenter(): Point {
+    if (this.pointer && contains(visible(this.view, this.size.width, this.size.height), this.pointer)) return this.pointer;
+    return toCanvas(this.view, this.size.width / 2, this.size.height / 2);
+  }
+
+  /** Uploads image files to the canvas: in a row about `at` (the pointer, or the middle of the view). */
+  async addFiles(files: File[], at?: Point): Promise<void> {
+    const input = this.root.querySelector<HTMLInputElement>("input[data-hakushi-files]");
+    if (!this.config.files || this.config.readonly || !input) return;
+    const taken = files.filter((f) => this.takesFile(f));
+    if (!taken.length) {
+      if (files.length) this.announce(this.messages.t("refusedNotAnImage"));
+      return;
+    }
+    const center = at ?? this.pointerOrCenter();
+    const z = this.view.zoom;
+    const seen = { width: this.size.width / z, height: this.size.height / z };
+    const blobs = taken.map((f) => URL.createObjectURL(f));
+    const pixels = await Promise.all(blobs.map((b) => pixelsOf(b)));
+    const boxes = rowAt(pixels.map((p) => fitImage(p ?? { width: 4, height: 3 }, seen)), center);
+    const group = this.groupAt(center, new Set());
+    input.dispatchEvent(new CustomEvent("track-uploads", { bubbles: true, detail: { files: taken } }));
+    // LiveView gives each file its entry's ref as it sends the form's change.
+    const refOf = (file: File) => (file as File & { _phxRef?: string })._phxRef;
+    if (taken.some((f) => refOf(f) === undefined)) await new Promise((resolve) => window.setTimeout(resolve, 0));
+    taken.forEach((file, i) => {
+      const ref = refOf(file);
+      if (ref === undefined) return URL.revokeObjectURL(blobs[i]);
+      const box = boxes[i];
+      this.showFile(ref, box, file.name, blobs[i]);
+      this.push("hakushi:place", { ref, box: [box.x, box.y, box.width, box.height].map(round), parent: group?.id ?? null });
+    });
+    this.announce(this.messages.t("imageUploading", { name: taken.length === 1 ? taken[0].name : String(taken.length) }));
+    this.sendPeer();
+  }
+
+  // An image's address: the server fetches it, if the app lets it.
+  private pasteUrl(url: string, at?: Point) {
+    const ref = `${this.id}-u${++this.fileSeq}`;
+    const z = this.view.zoom;
+    const [box] = rowAt([fitImage({ width: 400, height: 300 }, { width: this.size.width / z, height: this.size.height / z })], at ?? this.pointerOrCenter());
+    const group = this.groupAt({ x: box.x + box.width / 2, y: box.y + box.height / 2 }, new Set());
+    this.showFile(ref, box, url, null);
+    this.push("hakushi:paste-url", { url, ref, box: [box.x, box.y, box.width, box.height].map(round), parent: group?.id ?? null }, (reply) => {
+      if (reply.ok !== true) this.dropFile(ref);
+    });
+    this.sendPeer();
+  }
+
+  private showFile(ref: string, box: Rect, name: string, blob: string | null) {
+    const placeholder = el("div", { class: "hakushi-file", "data-ref": ref, role: "img", "aria-label": this.messages.t("imageUploading", { name }) }, [el("div", { class: "hakushi-file-bar" }, [el("span", {})])]);
+    if (blob) placeholder.prepend(el("img", { src: blob, alt: "", draggable: "false" }));
+    placeFile(placeholder, box, 0);
+    this.labelsEl.append(placeholder);
+    this.filePlaces.set(ref, { box, progress: 0, el: placeholder, blob, name });
+  }
+
+  private dropFile(ref: string) {
+    const place = this.filePlaces.get(ref);
+    if (!place) return;
+    place.el.remove();
+    if (place.blob) URL.revokeObjectURL(place.blob);
+    this.filePlaces.delete(ref);
+    this.sendPeer();
+  }
+
+  /** What the server says of a file: its `progress`, the node it became (`id`), or an `error`. */
+  fileEvent(payload: Record<string, unknown>) {
+    const ref = String(payload.ref);
+    const place = this.filePlaces.get(ref);
+    if (typeof payload.progress === "number") {
+      if (place) {
+        place.progress = payload.progress;
+        placeFile(place.el, place.box, place.progress);
+        this.sendPeer();
+      }
+      return;
+    }
+    // The node comes with this event, or just after it: the placeholder
+    // stays until it is there.
+    if (typeof payload.id === "string") {
+      const id = payload.id;
+      const done = () => {
+        this.dropFile(ref);
+        this.pendingSelect = [...(this.pendingSelect ?? []).filter((n) => n !== id), id];
+        this.selectPending();
+        this.announce(this.messages.t("imageAdded"));
+      };
+      if (this.nodes.has(id)) done();
+      else this.whenNode(id, done);
+      return;
+    }
+    this.dropFile(ref);
+  }
+
+  private nodeWaits = new Map<string, () => void>();
+
+  // Once the node is on the canvas (the server's patch after its event).
+  private whenNode(id: string, fn: () => void) {
+    this.nodeWaits.set(id, fn);
+    window.setTimeout(() => {
+      const wait = this.nodeWaits.get(id);
+      if (wait === fn) {
+        this.nodeWaits.delete(id);
+        fn();
+      }
+    }, 2000);
+  }
+
+  private dragOver(event: DragEvent) {
+    const files = this.config.files;
+    if (!files || this.config.readonly || !event.dataTransfer) return;
+    const types = [...event.dataTransfer.types];
+    if (!types.includes("Files") && !(files.urls && types.includes("text/uri-list"))) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    this.root.setAttribute("data-ui-dropping", "");
+  }
+
+  private dropFiles(event: DragEvent) {
+    const files = this.config.files;
+    this.root.removeAttribute("data-ui-dropping");
+    if (!files || this.config.readonly || !event.dataTransfer) return;
+    const dropped = [...event.dataTransfer.files];
+    const at = this.canvasPoint(event);
+    if (dropped.length) {
+      event.preventDefault();
+      void this.addFiles(dropped, at);
+      return;
+    }
+    const url = files.urls ? imageAddress(event.dataTransfer.getData("text/uri-list").split(/\r?\n/).find((l) => l && !l.startsWith("#")) ?? "") : null;
+    if (url) {
+      event.preventDefault();
+      this.pasteUrl(url, at);
+    }
+  }
+
+  // Whether the canvas has the keys (its root, or a node), not a field.
+  private hasKeys(): boolean {
+    const active = document.activeElement;
+    return active instanceof HTMLElement && this.root.contains(active) && !editable(active) && !active.closest(".hakushi-style-panel, .hakushi-tools, .hakushi-controls");
+  }
+
+  // A paste on a canvas that takes files: the clipboard's images, or an
+  // image's address, else the nodes copied here.
+  private pasteFrom(event: ClipboardEvent) {
+    if (!this.config.files || this.config.readonly || !this.hasKeys()) return;
+    clearTimeout(this.pasteTimer);
+    event.preventDefault();
+    const data = event.clipboardData;
+    const files = data ? [...data.files].filter((f) => this.takesFile(f)) : [];
+    if (files.length) return void this.addFiles(files);
+    const text = data?.getData("text/plain") ?? "";
+    const url = this.config.files.urls && text !== this.copiedText ? imageAddress(text) : null;
+    if (url) return this.pasteUrl(url);
+    this.paste();
+  }
+
+  // Nodes copied here: the clipboard says so (their names), and has no image
+  // of before that a paste would take for them.
+  private copied(event: ClipboardEvent) {
+    if (!this.config.files || !this.selected.size || !this.hasKeys() || !event.clipboardData) return;
+    const text = [...this.selected].map((id) => this.nodes.get(id)?.label ?? id).join("\n");
+    event.clipboardData.setData("text/plain", text);
+    this.copiedText = text;
+    event.preventDefault();
+  }
+
+  // The others' files, as they upload.
+  private drawPeerFiles(peer: Peer, color: string) {
+    while (peer.fileEls.length > peer.files.length) peer.fileEls.pop()!.remove();
+    peer.files.forEach(([x, y, width, height, progress], i) => {
+      let placeholder = peer.fileEls[i];
+      if (!placeholder) {
+        placeholder = el("div", { class: "hakushi-file", "data-peer": "", "aria-hidden": "true" }, [el("div", { class: "hakushi-file-bar" }, [el("span", {})])]);
+        this.labelsEl.append(placeholder);
+        peer.fileEls.push(placeholder);
+      }
+      placeholder.style.setProperty("--hakushi-peer", color);
+      placeFile(placeholder, { x, y, width, height }, progress);
+    });
+  }
+
+  // An image's smaller copy (`data-thumb`) while the canvas is zoomed out, its file otherwise.
+  private thumbs(scope: Element) {
+    const far = this.root.dataset.uiZoom === "far";
+    for (const image of scope.querySelectorAll<HTMLImageElement>("img[data-thumb]")) {
+      const want = far ? image.dataset.thumb : image.dataset.src;
+      if (want && image.getAttribute("src") !== want) image.setAttribute("src", want);
+    }
+  }
+
+  // A button of a style panel (`kind: "action"`): the canvas's own actions.
+  private styleAction(key: string, node: NodeModel) {
+    if (key === "crop") this.startCrop(node);
+  }
+
+  // -- Cropping an image in place ----------------------------------------------
+  //
+  // The whole file, faded, around the node, and the part it shows in a box
+  // whose corners and sides are dragged, and which is dragged as a whole.
+  // Enter (or a press elsewhere) keeps it, as one change of the node's crop
+  // and box; Escape leaves it as it was.
+
+  private cropping: { node: NodeModel; full: Rect; box: Rect; start: Rect; el: HTMLElement; frame: HTMLElement; view: HTMLImageElement; drag: { pointer: number; handle: string; from: Point; rect: Rect } | null } | null = null;
+
+  /** Crops an image node in place (its `data-hakushi-crop`). */
+  startCrop(node: NodeModel) {
+    const figure = node.el.querySelector<HTMLElement>("[data-hakushi-crop]");
+    const src = figure?.querySelector<HTMLImageElement>("img")?.dataset.src;
+    if (!figure || !src || this.config.readonly || node.locked) return;
+    this.finishCrop(false);
+    let crop: Crop;
+    try {
+      crop = JSON.parse(figure.dataset.hakushiCrop ?? "[0,0,1,1]") as Crop;
+    } catch {
+      crop = [0, 0, 1, 1];
+    }
+    const at = this.placeOf(node);
+    const box = { x: at.x, y: at.y, width: node.width, height: node.height };
+    const full = fullOf(box, crop);
+    const view = el("img", { src, alt: "", draggable: "false" });
+    const frame = el("div", { class: "hakushi-crop-box", "data-handle": "move" }, [el("div", { class: "hakushi-crop-view" }, [view])]);
+    for (const handle of ["nw", "n", "ne", "e", "se", "s", "sw", "w"]) frame.append(el("span", { class: "hakushi-crop-handle", "data-handle": handle }));
+    const overlay = el("div", { class: "hakushi-crop", role: "dialog", "aria-label": this.messages.t("imageCrop") }, [el("img", { class: "hakushi-crop-ghost", src, alt: "", draggable: "false" }), frame]);
+    Object.assign(overlay.style, { translate: `${full.x}px ${full.y}px`, width: `${full.width}px`, height: `${full.height}px` });
+    this.labelsEl.append(overlay);
+    node.el.setAttribute("data-ui-cropping", "");
+    this.cropping = { node, full, box, start: box, el: overlay, frame, view, drag: null };
+    this.drawCrop();
+    overlay.addEventListener("pointerdown", (event) => this.cropDown(event));
+    overlay.addEventListener("pointermove", (event) => this.cropMove(event));
+    overlay.addEventListener("pointerup", (event) => this.cropUp(event));
+    overlay.addEventListener("pointercancel", (event) => this.cropUp(event));
+    this.drawStylePanel();
+    this.root.focus({ preventScroll: true });
+    this.announce(this.messages.t("imageCropHint"));
+  }
+
+  private drawCrop() {
+    const c = this.cropping;
+    if (!c) return;
+    const { full, box } = c;
+    Object.assign(c.frame.style, { left: `${box.x - full.x}px`, top: `${box.y - full.y}px`, width: `${box.width}px`, height: `${box.height}px` });
+    Object.assign(c.view.style, { left: `${full.x - box.x}px`, top: `${full.y - box.y}px`, width: `${full.width}px`, height: `${full.height}px` });
+  }
+
+  private cropDown(event: PointerEvent) {
+    const c = this.cropping;
+    event.stopPropagation();
+    if (!c || event.button !== 0) return;
+    const handle = (event.target as Element).closest<HTMLElement>("[data-handle]")?.dataset.handle;
+    if (!handle) return;
+    event.preventDefault();
+    c.el.setPointerCapture(event.pointerId);
+    c.drag = { pointer: event.pointerId, handle, from: { x: event.clientX, y: event.clientY }, rect: c.box };
+  }
+
+  private cropMove(event: PointerEvent) {
+    const c = this.cropping;
+    if (!c?.drag || c.drag.pointer !== event.pointerId) return;
+    const z = this.view.zoom;
+    c.box = dragCrop(c.full, c.drag.rect, c.drag.handle, (event.clientX - c.drag.from.x) / z, (event.clientY - c.drag.from.y) / z);
+    this.drawCrop();
+  }
+
+  private cropUp(event: PointerEvent) {
+    const c = this.cropping;
+    if (!c?.drag || c.drag.pointer !== event.pointerId) return;
+    c.drag = null;
+  }
+
+  private finishCrop(keep: boolean) {
+    const c = this.cropping;
+    if (!c) return;
+    this.cropping = null;
+    c.el.remove();
+    c.node.el.removeAttribute("data-ui-cropping");
+    this.drawStylePanel();
+    const { box, start, full, node } = c;
+    const same = Math.abs(box.x - start.x) < 0.5 && Math.abs(box.y - start.y) < 0.5 && Math.abs(box.width - start.width) < 0.5 && Math.abs(box.height - start.height) < 0.5;
+    if (!keep || same) return;
+    this.push("hakushi:edit", { node: node.id, action: "crop", crop: cropOf(full, box), box: [box.x, box.y, box.width, box.height].map(round) });
+  }
+
+  // -- The tools of the kits ---------------------------------------------------
+  //
+  // A bar of the kits' tools (Hakushi.Kit's `tools/1`), over the canvas:
+  // the pointer, which selects and drags as usual, then each tool, and the
+  // colours and widths of a drawing tool. A drawing tool's line (ink) is
+  // smoothed as it comes, goes to the others as it is drawn, and becomes a
+  // node of the kit's when the pen lifts.
+
+  private buildTools() {
+    this.toolsEl?.remove();
+    this.toolsEl = null;
+    const tools = this.config.readonly ? [] : (this.config.tools ?? []);
+    if (this.tool && !tools.some((t) => t.kit === this.tool!.kit && t.tool === this.tool!.tool)) this.tool = null;
+    this.root.toggleAttribute("data-ui-tool", false);
+    if (!tools.length) return;
+    const t = (key: string, values: Record<string, string | number> = {}) => this.messages.t(key, values);
+    const bar = el("div", { class: "hakushi-tools", role: "toolbar", "aria-label": t("inkTools") });
+    const button = (name: string, label: string, icon: string, key: string | null) => {
+      const b = el("button", { type: "button", class: "hakushi-control hakushi-tool", "data-tool": name, "aria-label": label, title: key ? `${label} (${key.toUpperCase()})` : label, "aria-pressed": "false" });
+      b.innerHTML = (icons as Record<string, string>)[icon] ?? icons.pointer;
+      b.addEventListener("click", (event) => {
+        event.stopPropagation();
+        this.setTool(name === "pointer" ? null : name);
+      });
+      return b;
+    };
+    bar.append(button("pointer", t("inkSelect"), "pointer", "v"));
+    for (const tool of tools) bar.append(button(`${tool.kit}:${tool.tool}`, tool.label, tool.icon, tool.key));
+    bar.append(el("div", { class: "hakushi-tool-options", role: "group" }));
+    bar.addEventListener("pointerdown", (event) => event.stopPropagation());
+    this.toolsEl = bar;
+    this.ui.append(bar);
+    this.showTool();
+  }
+
+  /** Chooses a tool of the kits by its name (`"ink:pen"`), or the pointer (`null`). */
+  setTool(name: string | null) {
+    const tool = name ? (this.config.tools ?? []).find((t) => `${t.kit}:${t.tool}` === name) : undefined;
+    if (this.config.readonly || (name && !tool)) return;
+    // A picker of files: it opens, and the tool stays as it was.
+    if (tool?.mode === "pick") return this.openPicker();
+    if (this.gesture) this.cancelGesture();
+    this.tool = tool ?? null;
+    this.showTool();
+    this.announce(tool ? tool.label : this.messages.t("inkSelect"));
+  }
+
+  /** The tool chosen (`"ink:pen"`), or `null` for the pointer. */
+  getTool(): string | null {
+    return this.tool ? `${this.tool.kit}:${this.tool.tool}` : null;
+  }
+
+  private showTool() {
+    this.drawStylePanel();
+    const name = this.getTool() ?? "pointer";
+    if (this.tool) this.root.dataset.uiTool = this.tool.mode;
+    else delete this.root.dataset.uiTool;
+    const bar = this.toolsEl;
+    if (!bar) return;
+    for (const b of bar.querySelectorAll<HTMLElement>(".hakushi-tool")) b.setAttribute("aria-pressed", String(b.dataset.tool === name));
+    // The colours and widths of a drawing tool.
+    const options = bar.querySelector<HTMLElement>(".hakushi-tool-options")!;
+    options.replaceChildren();
+    const tool = this.tool;
+    if (tool?.mode !== "draw") {
+      options.hidden = true;
+      return;
+    }
+    options.hidden = false;
+    const prefs = this.inkPrefsOf(tool);
+    for (const color of tool.colors ?? []) {
+      const label = this.messages.t(`color${color[0].toUpperCase()}${color.slice(1)}`);
+      const b = el("button", { type: "button", class: "hakushi-control hakushi-swatch", "data-color": color, "data-tool": tool.tool, "aria-label": label, title: label, "aria-pressed": String(color === prefs.color) });
+      b.addEventListener("click", () => this.setInk(tool, { color }));
+      options.append(b);
+    }
+    for (const size of tool.sizes ?? []) {
+      const label = this.messages.t("inkSize", { n: size });
+      const b = el("button", { type: "button", class: "hakushi-control hakushi-width", "data-color": prefs.color, "data-tool": tool.tool, "aria-label": label, title: label, "aria-pressed": String(size === prefs.size) }, [el("span", {})]);
+      b.style.setProperty("--hakushi-ink-width", `${Math.min(18, Math.max(3, size * (tool.flat ? 0.6 : 1.2)))}px`);
+      b.addEventListener("click", () => this.setInk(tool, { size }));
+      options.append(b);
+    }
+  }
+
+  private inkPrefsOf(tool: Tool): { color: string; size: number } {
+    const key = `${tool.kit}:${tool.tool}`;
+    let prefs = this.inkPrefs.get(key);
+    if (!prefs) this.inkPrefs.set(key, (prefs = { color: tool.color ?? tool.colors?.[0] ?? "ink", size: tool.size ?? tool.sizes?.[0] ?? 4 }));
+    return prefs;
+  }
+
+  private setInk(tool: Tool, change: { color?: string; size?: number }) {
+    Object.assign(this.inkPrefsOf(tool), change);
+    this.showTool();
+  }
+
+  private flat(stroke: InkStroke): boolean {
+    const tool = (this.config.tools ?? []).find((t) => `${t.kit}:${t.tool}` === stroke.tool);
+    return tool ? tool.flat === true : stroke.tool.endsWith("highlighter");
+  }
+
+  // The points of a move (each of those the browser gathered since the
+  // last, for a smooth line), a little behind the pointer, with the pen's
+  // pressure (a mouse's and a finger's is flat).
+  private addInkPoints(event: PointerEvent) {
+    const g = this.gesture;
+    if (g?.kind !== "ink") return;
+    const events = typeof event.getCoalescedEvents === "function" ? event.getCoalescedEvents() : [];
+    const flat = g.tool.flat === true;
+    for (const e of events.length ? events : [event]) {
+      const p = this.canvasPoint(e);
+      const pressure = !flat && e.pointerType === "pen" && e.pressure > 0 ? e.pressure : FLAT;
+      const points = g.stroke.points;
+      const last = points[points.length - 1];
+      if (last && Math.hypot(p.x - last[0], p.y - last[1]) * this.view.zoom < 0.75) continue;
+      points.push(streamline(last, [p.x, p.y, pressure]));
+    }
+  }
+
+  // A line drawn: simplified, to the server, which makes a node of it;
+  // drawn here until the node comes.
+  private commitInk(stroke: InkStroke) {
+    if (!stroke.points.length) return;
+    const points = simplify(stroke.points, INK_TOLERANCE / this.view.zoom).map(([x, y, p]): InkPoint => [round(x), round(y), Math.round(p * 100) / 100]);
+    const done: InkStroke = { ...stroke, points };
+    const pending = { key: `pending-${this.inkSeq++}`, stroke: done, id: null as string | null };
+    this.inkPending.push(pending);
+    const box = inkBox(points, stroke.size, this.flat(stroke));
+    const group = this.groupAt({ x: box.x + box.width / 2, y: box.y + box.height / 2 }, new Set());
+    this.push("hakushi:draw", { tool: stroke.tool, points, color: stroke.color, size: stroke.size, parent: group?.id ?? null }, (reply) => {
+      if (typeof reply.drawn === "string" && !this.nodes.has(reply.drawn)) {
+        pending.id = reply.drawn;
+        this.announce(this.messages.t("drawn"));
+      } else {
+        this.inkPending = this.inkPending.filter((p) => p !== pending);
+      }
+      this.schedule();
+    });
+  }
+
+  // A line as it goes to the others: its points, fewer when there are many.
+  private inkToSend(stroke: InkStroke): InkStroke {
+    let points = stroke.points;
+    for (let tolerance = 0.5; points.length > INK_SENT_MAX; tolerance *= 2) points = simplify(stroke.points, tolerance / this.view.zoom);
+    return { ...stroke, points: points.map(([x, y, p]): InkPoint => [round(x), round(y), Math.round(p * 100) / 100]) };
+  }
+
+  // The nodes an eraser takes that it passed over, from one point to the
+  // next: hidden now, deleted when it lifts.
+  private eraseAlong(from: Point, to: Point) {
+    const g = this.gesture;
+    if (g?.kind !== "erase") return;
+    const types = new Set(g.tool.types ?? []);
+    const reach = 6 / this.view.zoom;
+    const steps = Math.max(1, Math.ceil((Math.hypot(to.x - from.x, to.y - from.y) * this.view.zoom) / 4));
+    const candidates = [...this.nodes.values()].filter((n) => types.has(n.type) && !this.gone.has(n.id) && !n.locked && intersects(grow(fromCorners(from, to), reach), this.rect(n)));
+    for (const node of candidates) {
+      const at = this.placeOf(node);
+      const aim = node.el.querySelector<SVGGeometryElement>(".hakushi-ink-aim");
+      for (let i = 0; i <= steps; i++) {
+        const p = { x: from.x + ((to.x - from.x) * i) / steps, y: from.y + ((to.y - from.y) * i) / steps };
+        const hit = aim ? hitsStroke(aim, p.x - at.x, p.y - at.y, reach) : contains(grow(this.rect(node), reach), p);
+        if (hit) {
+          g.hit.add(node.id);
+          this.gone.add(node.id);
+          this.decorate(node);
+          this.touchNode(node.id);
+          break;
+        }
+      }
+    }
+  }
+
+  private unerase(ids: Set<string>) {
+    for (const id of ids) this.gone.delete(id);
+    this.refresh(ids);
+  }
+
+  private commitErase(ids: Set<string>) {
+    const nodes = [...ids].filter((id) => this.nodes.has(id));
+    if (!nodes.length) return;
+    this.push("hakushi:change", { op: "delete", nodes, edges: [] }, (reply) => {
+      if (reply.error) this.unerase(ids);
+      else this.announce(this.messages.count("deleted", nodes.length));
+    });
+  }
+
+  // What a lasso encloses: a node by its middle, a stroke by most of its line.
+  private selectLassoed(points: Point[], base: Set<string>) {
+    const ids = new Set(base);
+    if (points.length >= 3) {
+      for (const node of this.nodes.values()) {
+        if (this.gone.has(node.id)) continue;
+        const aim = node.el.querySelector<SVGGeometryElement>(".hakushi-ink-aim");
+        if (aim && !node.el.hasAttribute("data-ui-culled")) {
+          const at = this.placeOf(node);
+          const length = aim.getTotalLength();
+          const samples = 12;
+          let within = 0;
+          for (let i = 0; i <= samples; i++) {
+            const p = aim.getPointAtLength((length * i) / samples);
+            if (inside(points, { x: p.x + at.x, y: p.y + at.y })) within++;
+          }
+          if (within / (samples + 1) >= 0.6) ids.add(node.id);
+        } else if (inside(points, this.center(node))) {
+          ids.add(node.id);
+        }
+      }
+    }
+    this.selectedEdges.clear();
+    this.setSelection(ids);
+    this.selectionChanged();
+  }
+
+  // The lines being drawn: this person's, theirs until they are nodes, and
+  // the others' (in the colour of their ink, under their cursor).
+  private drawInk() {
+    const want = new Map<string, InkStroke>();
+    const g = this.gesture;
+    if (g?.kind === "ink" && g.stroke.points.length) want.set("self", g.stroke);
+    for (const p of this.inkPending) want.set(p.key, p.stroke);
+    for (const [id, peer] of this.peers) if (peer.ink && this.people.has(id)) want.set(`peer:${id}`, peer.ink);
+    for (const [key, drawn] of this.inkPaths) {
+      if (!want.has(key)) {
+        drawn.path.remove();
+        this.inkPaths.delete(key);
+      }
+    }
+    for (const [key, stroke] of want) {
+      let drawn = this.inkPaths.get(key);
+      if (!drawn) {
+        drawn = { path: svg("path", {}), stroke, length: -1 };
+        this.inkPaths.set(key, drawn);
+        this.inkG.append(drawn.path);
+      }
+      if (drawn.stroke === stroke && drawn.length === stroke.points.length) continue;
+      drawn.stroke = stroke;
+      drawn.length = stroke.points.length;
+      const [, tool] = stroke.tool.split(":");
+      drawn.path.setAttribute("data-tool", tool ?? stroke.tool);
+      drawn.path.setAttribute("data-color", stroke.color);
+      drawn.path.setAttribute("d", outline(stroke.points, stroke.size, this.flat(stroke)));
     }
   }
 
@@ -1357,12 +2350,23 @@ export class Canvas {
     on(document, "pointerdown", (e) => this.itemDown(e as PointerEvent), { capture: true });
     on(document, "keydown", (e) => this.itemKey(e as KeyboardEvent));
     on(window, "scroll", () => (this.bounds = null), { capture: true, passive: true });
+    on(this.root, "dragover", (e) => this.dragOver(e));
+    on(this.root, "dragleave", (e) => {
+      if (!this.root.contains(e.relatedTarget as Node | null)) this.root.removeAttribute("data-ui-dropping");
+    });
+    on(this.root, "drop", (e) => this.dropFiles(e));
+    on(document, "paste", (e) => this.pasteFrom(e as ClipboardEvent));
+    on(document, "copy", (e) => this.copied(e as ClipboardEvent));
+    on(document, "cut", (e) => this.copied(e as ClipboardEvent));
   }
 
   private pointerDown(event: PointerEvent) {
     const target = event.target as Element;
+    // A press away from a crop keeps it.
+    if (this.cropping && !target.closest(".hakushi-crop")) this.finishCrop(true);
     this.root.removeAttribute("data-ui-keyboard");
-    if (target.closest(".hakushi-controls, .hakushi-minimap, .hakushi-edge-input, [data-hakushi-people], .hakushi-following")) return;
+    if (target.closest(".hakushi-controls, .hakushi-tools, .hakushi-paper-menu, .hakushi-minimap, .hakushi-edge-input, [data-hakushi-people], .hakushi-following")) return;
+    if (event.pointerType === "pen") this.penSeen = true;
     this.bounds = this.root.getBoundingClientRect();
     this.pointers.set(event.pointerId, this.local(event));
 
@@ -1390,6 +2394,33 @@ export class Canvas {
     }
     if (event.button !== 0) return;
 
+    // A tool of a kit: it draws, erases or lassoes over anything on the
+    // canvas. Once a pen is used, a finger pans and only the pen draws.
+    if (this.tool && !this.config.readonly && !(this.tool.mode === "lasso" && node && this.selected.has(node.id))) {
+      event.preventDefault();
+      this.root.focus({ preventScroll: true });
+      if (event.pointerType === "touch" && this.penSeen) return this.startPan(event);
+      this.capture(event);
+      if (this.tool.mode === "draw") {
+        const prefs = this.inkPrefsOf(this.tool);
+        const stroke: InkStroke = { tool: `${this.tool.kit}:${this.tool.tool}`, color: prefs.color, size: prefs.size, points: [] };
+        this.gesture = { kind: "ink", pointer: event.pointerId, tool: this.tool, stroke, pen: event.pointerType === "pen" };
+        this.addInkPoints(event);
+      } else if (this.tool.mode === "erase") {
+        this.gesture = { kind: "erase", pointer: event.pointerId, tool: this.tool, last: at, hit: new Set() };
+        this.eraseAlong(at, at);
+      } else if (this.tool.mode === "box" || this.tool.mode === "line") {
+        const start = this.config.snap && this.tool.mode === "box" ? { x: snapToGrid(at.x, this.config.grid), y: snapToGrid(at.y, this.config.grid) } : at;
+        this.gesture = { kind: "shape", pointer: event.pointerId, tool: this.tool, start, end: start, square: event.shiftKey };
+      } else {
+        const base = event.shiftKey ? new Set(this.selected) : new Set<string>();
+        if (!event.shiftKey) this.select([]);
+        this.gesture = { kind: "lasso", pointer: event.pointerId, points: [at], base };
+      }
+      this.schedule();
+      return;
+    }
+
     // The ends of the selected edge come first, over the handles they sit on.
     const knob = this.knobAt(event);
     if (knob && !this.config.readonly) {
@@ -1402,11 +2433,17 @@ export class Canvas {
       this.startConnect(event, node, handleEl, at);
       return;
     }
+    const rotator = target.closest<HTMLElement>(".hakushi-rotator");
+    if (rotator && node && !this.config.readonly) {
+      event.preventDefault();
+      this.startRotate(event, node);
+      return;
+    }
     const resizer = target.closest<HTMLElement>(".hakushi-resizer");
     if (resizer && node) {
       event.preventDefault();
       this.capture(event);
-      this.gesture = { kind: "resize", pointer: event.pointerId, id: node.id, corner: resizer.dataset.corner!, start: at, rect: this.rect(node) };
+      this.gesture = { kind: "resize", pointer: event.pointerId, id: node.id, corner: resizer.dataset.corner!, start: at, rect: this.rect(node), aspect: aspectOf(node.el) };
       return;
     }
     const grips = node?.el.querySelectorAll("[data-hakushi-drag]");
@@ -1612,6 +2649,15 @@ export class Canvas {
         if (!node) return;
         const dx = at.x - g.start.x;
         const dy = at.y - g.start.y;
+        if (g.aspect && !event.shiftKey) {
+          const r = aspectResize(g.rect, g.corner, dx, dy, g.aspect);
+          Object.assign(node, { x: round(r.x), y: round(r.y), width: round(r.width), height: round(r.height), fixed: true });
+          this.decorate(node);
+          this.measureHandles(node);
+          this.touchNode(node.id);
+          this.schedule();
+          return;
+        }
         let { x, y, width, height } = g.rect;
         if (g.corner.includes("e")) width = Math.max(40, width + dx);
         if (g.corner.includes("s")) height = Math.max(24, height + dy);
@@ -1637,6 +2683,46 @@ export class Canvas {
       case "connect": {
         g.at = at;
         g.target = this.targetAt(event, g);
+        this.schedule();
+        return;
+      }
+      case "ink": {
+        if (event.pointerId !== g.pointer) return;
+        this.addInkPoints(event);
+        this.sendPeer();
+        this.schedule();
+        return;
+      }
+      case "erase": {
+        if (event.pointerId !== g.pointer) return;
+        this.eraseAlong(g.last, at);
+        g.last = at;
+        this.sendPeer();
+        this.schedule();
+        return;
+      }
+      case "shape": {
+        if (event.pointerId !== g.pointer) return;
+        g.end = this.config.snap && g.tool.mode === "box" ? { x: snapToGrid(at.x, this.config.grid), y: snapToGrid(at.y, this.config.grid) } : at;
+        g.square = event.shiftKey;
+        if (g.tool.mode === "line") this.markLineEnd(g.end, g.start);
+        this.schedule();
+        return;
+      }
+      case "rotate": {
+        if (event.pointerId !== g.pointer) return;
+        const angle = (Math.atan2(at.y - g.center.y, at.x - g.center.x) * 180) / Math.PI;
+        let deg = g.base + angle - g.from;
+        if (event.shiftKey) deg = Math.round(deg / 15) * 15;
+        g.deg = ((Math.round(deg) % 360) + 360) % 360;
+        g.el.style.setProperty("--hakushi-rotation", `${g.deg}deg`);
+        return;
+      }
+      case "lasso": {
+        if (event.pointerId !== g.pointer) return;
+        const last = g.points[g.points.length - 1];
+        if (Math.hypot(at.x - last.x, at.y - last.y) * this.view.zoom >= 2) g.points.push(at);
+        this.sendPeer();
         this.schedule();
         return;
       }
@@ -1687,6 +2773,27 @@ export class Canvas {
         if (g.reconnect) this.dirty.add(g.reconnect);
         if (!cancelled && g.target) this.commitConnect(g);
         break;
+      case "ink":
+        if (!cancelled) this.commitInk(g.stroke);
+        break;
+      case "erase":
+        if (cancelled) this.unerase(g.hit);
+        else this.commitErase(g.hit);
+        break;
+      case "lasso":
+        if (!cancelled) this.selectLassoed(g.points, g.base);
+        break;
+      case "shape":
+        this.root.querySelectorAll("[data-ui-target]").forEach((e) => e.removeAttribute("data-ui-target"));
+        if (!cancelled) this.commitShape(g);
+        break;
+      case "rotate":
+        if (cancelled || g.deg === g.base) g.el.style.removeProperty("--hakushi-rotation");
+        else
+          this.push("hakushi:edit", { node: g.id, action: "rotate", value: g.deg }, (reply) => {
+            if (reply.error || reply.ok === false) g.el.style.removeProperty("--hakushi-rotation");
+          });
+        break;
     }
     this.sendPeer();
     this.schedule();
@@ -1702,6 +2809,10 @@ export class Canvas {
       if (g.reconnect) this.dirty.add(g.reconnect);
     }
     if (g.kind === "box") this.boxEl.hidden = true;
+    if (g.kind === "erase") this.unerase(g.hit);
+    if (g.kind === "rotate") g.el.style.removeProperty("--hakushi-rotation");
+    if (g.kind === "shape") this.root.querySelectorAll("[data-ui-target]").forEach((e) => e.removeAttribute("data-ui-target"));
+    if (g.kind === "ink" || g.kind === "erase" || g.kind === "lasso") this.sendPeer();
     if (g.kind === "resize") {
       const node = this.nodes.get(g.id);
       if (node) this.readNode(node.el);
@@ -1734,7 +2845,19 @@ export class Canvas {
   }
 
   private doubleClick(event: MouseEvent) {
+    // A tool draws, and makes nothing of a double click.
+    if (this.tool) return;
     const target = event.target as Element;
+    // The text of a node that has one (`data-hakushi-text`), written in place.
+    // The canvas has the pointer (a press captures it): what is under it.
+    const under = document.elementFromPoint(event.clientX, event.clientY) ?? target;
+    const textNode = under.closest<HTMLElement>(".hakushi-node");
+    const textNodeModel = textNode && this.nodesEl.contains(textNode) ? this.nodes.get(textNode.dataset.id || "") : undefined;
+    if (textNodeModel && !this.config.readonly && !textNodeModel.locked && textNode!.querySelector("[data-hakushi-text]") && !interactive(under, textNode!)) {
+      event.preventDefault();
+      this.editText(textNodeModel);
+      return;
+    }
     const edgeId = target.closest<SVGGElement>(".hakushi-edge")?.dataset.edge ?? target.closest<HTMLElement>(".hakushi-edge-label")?.dataset.edge;
     if (edgeId && !this.config.readonly) {
       this.editLabel(edgeId);
@@ -1743,7 +2866,7 @@ export class Canvas {
     const nodeEl = target.closest<HTMLElement>(".hakushi-node");
     const group = nodeEl && this.nodes.get(nodeEl.dataset.id || "")?.group;
     // On the paper, or on a group's inside.
-    if ((nodeEl && (!group || interactive(target, nodeEl) || target.closest("[data-hakushi-drag]"))) || target.closest(".hakushi-controls, .hakushi-minimap, [data-hakushi-people], .hakushi-following")) return;
+    if ((nodeEl && (!group || interactive(target, nodeEl) || target.closest("[data-hakushi-drag]"))) || target.closest(".hakushi-controls, .hakushi-tools, .hakushi-minimap, [data-hakushi-people], .hakushi-following")) return;
     if (this.config.readonly || !this.config.newNode) return;
     const at = this.canvasPoint(event);
     this.drop(null, this.config.snap ? { x: snapToGrid(at.x, this.config.grid), y: snapToGrid(at.y, this.config.grid) } : at);
@@ -2041,6 +3164,7 @@ export class Canvas {
 
   private selectionChanged() {
     this.allDirty = true;
+    this.drawStylePanel();
     const n = this.selected.size + this.selectedEdges.size;
     if (n === 1 && this.selected.size === 1) {
       const node = this.nodes.get([...this.selected][0]);
@@ -2065,9 +3189,27 @@ export class Canvas {
     if (!nodeEl || event.target !== nodeEl) return;
     const node = this.nodes.get(nodeEl.dataset.id || "");
     if (!node) return;
-    node.el.setAttribute("aria-description", this.describe(node));
+    node.el.setAttribute("aria-description", [this.near(node), this.describe(node)].filter(Boolean).join(". "));
     if (!this.selected.has(node.id)) this.select([node.id]);
     this.revealNodes([node.id]);
+  }
+
+  // Where a node is that says so (a drawing: "Near Release"), by the
+  // nearest node of another kind, for screen readers.
+  private near(node: NodeModel): string {
+    if (!node.el.querySelector("[data-hakushi-near]")) return "";
+    const box = this.rect(node);
+    const c = this.center(node);
+    let best: { node: NodeModel; gap: number; d: number } | null = null;
+    for (const other of this.nodes.values()) {
+      if (other.id === node.id || this.gone.has(other.id) || other.el.querySelector("[data-hakushi-near]")) continue;
+      const r = this.rect(other);
+      const gap = Math.hypot(Math.max(0, r.x - (box.x + box.width), box.x - (r.x + r.width)), Math.max(0, r.y - (box.y + box.height), box.y - (r.y + r.height)));
+      const o = this.center(other);
+      const d = Math.hypot(o.x - c.x, o.y - c.y);
+      if (!best || gap < best.gap || (gap === best.gap && d < best.d)) best = { node: other, gap, d };
+    }
+    return best ? this.messages.t("near", { name: best.node.label }) : "";
   }
 
   // The connections of a node, in words, for screen readers.
@@ -2084,11 +3226,15 @@ export class Canvas {
 
   private keyDown(event: KeyboardEvent) {
     if (event.defaultPrevented) return;
+    if (this.cropping && (event.key === "Enter" || event.key === "Escape")) {
+      event.preventDefault();
+      return this.finishCrop(event.key === "Enter");
+    }
     if (event.key === "Tab" || event.key.startsWith("Arrow")) this.root.setAttribute("data-ui-keyboard", "");
     const target = event.target as HTMLElement;
     // The buttons of the controls are the canvas's: its keys work there, but
     // Enter and Space, which press them, and Tab.
-    if (target.closest(".hakushi-controls")) {
+    if (target.closest(".hakushi-controls, .hakushi-tools, .hakushi-style-panel")) {
       if (event.key === "Enter" || event.key === " " || event.key === "Tab") return;
     } else if (editable(target) || (target !== this.root && !target.classList.contains("hakushi-node") && interactive(target, this.root))) {
       // Escape from a field of a node goes back to the node.
@@ -2118,8 +3264,21 @@ export class Canvas {
     }
     if (key === "Escape") {
       if (this.gesture) this.cancelGesture();
+      else if (this.tool) this.setTool(null);
       else this.select([]);
       return;
+    }
+    // The tools of the kits, by their letters, and V for the pointer. Tools
+    // of two kits with one letter: the letter again takes the next.
+    if (!mod && !event.altKey && !event.shiftKey && this.toolsEl && key.length === 1) {
+      const letter = key.toLowerCase();
+      const tools = (this.config.tools ?? []).filter((t) => t.key === letter);
+      if (tools.length || letter === "v") {
+        event.preventDefault();
+        const at = this.tool ? tools.indexOf(this.tool) : -1;
+        const tool = tools[(at + 1) % Math.max(tools.length, 1)];
+        return this.setTool(tool ? `${tool.kit}:${tool.tool}` : null);
+      }
     }
     if (key === "Tab") {
       this.tab(event);
@@ -2144,6 +3303,14 @@ export class Canvas {
     if (mod && key.toLowerCase() === "c") return this.copy();
     if (mod && key.toLowerCase() === "x") return this.copy(true);
     if (mod && key.toLowerCase() === "v") {
+      // A canvas that takes files: what the clipboard has comes with the
+      // paste event (pasteFrom), and the nodes copied here unless it has a
+      // file or an image's address.
+      if (this.config.files) {
+        clearTimeout(this.pasteTimer);
+        this.pasteTimer = window.setTimeout(() => this.paste(), 50);
+        return;
+      }
       event.preventDefault();
       return this.paste();
     }
@@ -2416,7 +3583,7 @@ export class Canvas {
 
   receivePeer(payload: Record<string, unknown>) {
     const id = String(payload.person);
-    const peer: Peer = this.peers.get(id) ?? { cursor: null, view: null, selected: [], dragging: new Map(), seen: 0, el: null, from: null, dragFrom: new Map(), start: 0, duration: 0 };
+    const peer: Peer = this.peers.get(id) ?? { cursor: null, view: null, selected: [], dragging: new Map(), seen: 0, el: null, from: null, dragFrom: new Map(), start: 0, duration: 0, ink: null, files: [], fileEls: [] };
     // Their page's session (Issho's pointers), not their canvas's: only whether those draw them here.
     if (!("cursor" in payload)) {
       peer.paged = payload.paged === true;
@@ -2452,6 +3619,8 @@ export class Canvas {
     const draggedBefore = new Set(peer.dragging.keys());
     peer.selected = (payload.selected as string[]) ?? [];
     peer.dragging = dragging;
+    peer.ink = readInk(payload.ink);
+    peer.files = ((payload.files as unknown[]) ?? []).filter((f): f is number[] => Array.isArray(f) && f.length === 5 && f.every((n) => typeof n === "number"));
     peer.seen = Date.now();
     this.peers.set(id, peer);
     if (id === this.followKey) {
@@ -2480,6 +3649,7 @@ export class Canvas {
     const peer = this.peers.get(id);
     if (!peer) return;
     peer.el?.remove();
+    for (const f of peer.fileEls) f.remove();
     this.peers.delete(id);
     for (const n of [...peer.selected, ...peer.dragging.keys()]) {
       const node = this.nodes.get(n);
@@ -2518,6 +3688,7 @@ export class Canvas {
         this.schedule();
       }
       const person = this.people.get(id);
+      this.drawPeerFiles(peer, person?.color ?? "");
       if (!peer.cursor || !person || (page && peer.paged)) {
         if (peer.el) peer.el.hidden = true;
         continue;
@@ -2559,6 +3730,8 @@ export class Canvas {
       selected: [...this.selected],
       dragging,
       viewport: this.size.width > 0 ? [round(-this.view.x / z), round(-this.view.y / z), round(this.size.width / z), round(this.size.height / z)] : null,
+      ink: g?.kind === "ink" ? this.inkToSend(g.stroke) : null,
+      files: [...this.filePlaces.values()].map((f) => [round(f.box.x), round(f.box.y), round(f.box.width), round(f.box.height), f.progress]),
     });
   }
 
@@ -2690,13 +3863,67 @@ export class Canvas {
   }
 
   destroy() {
+    this.togglePaperMenu(false);
     clearTimeout(this.panTimer);
     for (const o of this.observers) o.disconnect();
     for (const cleanup of this.cleanups) cleanup();
     cancelAnimationFrame(this.frame);
     clearTimeout(this.noticeTimer);
     clearTimeout(this.peerTimer);
+    clearTimeout(this.pasteTimer);
+    for (const f of this.filePlaces.values()) if (f.blob) URL.revokeObjectURL(f.blob);
   }
+}
+
+// A placeholder of a file, at its box, with its progress (0 to 100).
+function placeFile(element: HTMLElement, box: Rect, progress: number) {
+  Object.assign(element.style, { translate: `${box.x}px ${box.y}px`, width: `${box.width}px`, height: `${box.height}px` });
+  const bar = element.querySelector<HTMLElement>(".hakushi-file-bar > span");
+  if (bar) bar.style.width = `${Math.max(0, Math.min(100, progress))}%`;
+}
+
+// The aspect ratio an image keeps (`data-hakushi-aspect`), or null.
+function aspectOf(element: HTMLElement): number | null {
+  const value = Number(element.querySelector("[data-hakushi-aspect]")?.getAttribute("data-hakushi-aspect"));
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+// The width and height of an image file, from the browser's own decoding, or null.
+function pixelsOf(url: string): Promise<{ width: number; height: number } | null> {
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.onload = () => resolve(image.naturalWidth > 0 ? { width: image.naturalWidth, height: image.naturalHeight } : null);
+    image.onerror = () => resolve(null);
+    image.src = url;
+  });
+}
+
+// A line drawn by someone, as it comes: checked, as the server checked it.
+function readInk(value: unknown): InkStroke | null {
+  const ink = value as Partial<InkStroke> | null | undefined;
+  if (!ink || typeof ink.tool !== "string" || typeof ink.color !== "string" || typeof ink.size !== "number" || !Array.isArray(ink.points)) return null;
+  const points = ink.points.filter((p): p is InkPoint => Array.isArray(p) && p.length === 3 && p.every((n) => typeof n === "number"));
+  return points.length ? { tool: ink.tool, color: ink.color, size: ink.size, points } : null;
+}
+
+// Whether a point (of the stroke's box) is on a stroke's line, or near it.
+function hitsStroke(aim: SVGGeometryElement, x: number, y: number, reach: number): boolean {
+  const svgEl = aim.ownerSVGElement;
+  try {
+    const point = svgEl ? svgEl.createSVGPoint() : new DOMPoint(x, y);
+    point.x = x;
+    point.y = y;
+    return aim.isPointInStroke(point);
+  } catch {
+    // An engine that cannot tell (a hidden element): the line's points.
+  }
+  const length = aim.getTotalLength();
+  const steps = Math.min(400, Math.max(1, Math.ceil(length / 3)));
+  for (let i = 0; i <= steps; i++) {
+    const p = aim.getPointAtLength((length * i) / steps);
+    if (Math.hypot(p.x - x, p.y - y) <= reach) return true;
+  }
+  return false;
 }
 
 function toggle(element: Element, name: string, on: boolean) {

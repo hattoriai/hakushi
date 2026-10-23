@@ -10,9 +10,12 @@ defmodule Hakushi.Kit do
   Kits are optional: a canvas draws anything with `:node` slots, and a
   kit is a way to package a kind of canvas (its nodes, how people make and
   edit them, its paper and its rules) so that it is used in one line, by
-  one app or many. Hakushi has three: `Hakushi.Kits.Schema` (tables,
+  one app or many. Hakushi has six: `Hakushi.Kits.Schema` (tables,
   their columns and foreign keys), `Hakushi.Kits.Flow` (triggers, steps
-  and conditions) and `Hakushi.Kits.Notes` (sticky notes); an app makes
+  and conditions), `Hakushi.Kits.Notes` (sticky notes),
+  `Hakushi.Kits.Ink` (drawing with a pen), `Hakushi.Kits.Shapes`
+  (rectangles, ellipses, text, lines) and `Hakushi.Kits.Images` (image
+  files); an app makes
   its own with the same callbacks. See the [Kits](kits.md) guide.
 
   ## A kit of the app's own
@@ -145,7 +148,95 @@ defmodule Hakushi.Kit do
   """
   @callback from_markdown(text :: String.t()) :: {:ok, Hakushi.Graph.t()} | :error
 
-  @optional_callbacks resizable?: 1, canvas: 0, to_markdown: 1, from_markdown: 1
+  @doc """
+  The tools of the kit, for a bar on the canvas: a way to make its nodes
+  by drawing them, as a pen draws ink (`Hakushi.Kits.Ink`). Defaults to
+  none.
+
+  A tool is a map with `tool` (its name in the kit), `label`, `icon` (a
+  name of `Hakushi.Icons`), `key` (a letter that takes it, or `nil`) and
+  `mode`, what the pointer does with it on the canvas:
+
+    * `"draw"`: draws a line, which becomes a node (`c:drawn/3`) when the
+      pen lifts. Its options are `colors` (the names of the colours the
+      bar has, `--hakushi-ink-<name>` in the CSS), `color`, `sizes`, `size`
+      and `flat` (one width, whatever the pressure).
+    * `"erase"`: deletes the nodes of the kit's types that it passes over.
+    * `"lasso"`: selects what a line drawn around encloses.
+    * `"pick"`: opens the browser's picker of files, for a kit that takes
+      them (`c:upload/0`); the pointer stays as it was.
+
+  The bar has the pointer first, which selects and drags as usual.
+  """
+  @callback tools(messages :: map()) :: [map()]
+
+  @doc """
+  A new node for a line drawn with a tool of the kit (`c:tools/1`), or
+  `nil`. `params` are the line's `"points"` on the canvas (`[x, y,
+  pressure]`), and the `"color"` and `"size"` chosen in the bar. A node
+  with no `id` gets one; drawn over a group, it is in it.
+  """
+  @callback drawn(tool :: String.t(), params :: map(), messages :: map()) :: map() | nil
+
+  @doc """
+  The style of the kit's nodes that people change, in a panel over the
+  selection, for one node or many, as one change: a list of groups, each
+  with a `key` of the nodes' data, a `label`, a `kind` (`"color"`,
+  `"width"` or `"choice"`) and its `options` (maps of `value` and `label`);
+  or a field for a text (`"text"`, with a `placeholder`), which sends its
+  value as a choice does; or a button of the canvas's own for one node
+  (`"action"`, by its `key`: `"crop"` crops an image in place).
+  A node shows its style in its element's `data-hakushi-style` (JSON of
+  those keys it has); a choice sends `"hakushi:edit"` with the nodes, the
+  action `"style"` and `%{"style" => %{key => value}}`, which `c:edit/3`
+  gets for each node. Defaults to none. See `Hakushi.Kits.Shapes`.
+  """
+  @callback styles(messages :: map()) :: [map()]
+
+  @doc """
+  A node's name for screen readers, where the canvas's `node_label` is
+  its default: `"Drawing"`. Defaults to the default's.
+  """
+  @callback label(node :: Hakushi.Node.t(), messages :: map()) :: String.t()
+
+  @doc """
+  The files people drop, paste or pick on the canvas, for a kit whose
+  nodes are made of them (`Hakushi.Kits.Images`): the options of a
+  LiveView upload (`Phoenix.LiveView.allow_upload/3`'s `accept`,
+  `max_file_size` and `max_entries`), which the canvas allows for the
+  first such kit of its kits. Defaults to none.
+  """
+  @callback upload() :: keyword()
+
+  @doc """
+  A node of an uploaded file, which the canvas adds where the person put
+  it: `{:ok, node}`, or `{:error, reason}` for a file the kit refuses.
+  `path` is the uploaded file, a temporary file; `meta` has the client's
+  `:name` and `:content_type` (a claim); `box` is the place the person
+  put it, `[x, y, width, height]`, or `nil`.
+  """
+  @callback uploaded(path :: Path.t(), meta :: map(), box :: [number()] | nil, messages :: map()) ::
+              {:ok, map()} | {:error, term()}
+
+  @doc """
+  A node of an address (a URL) pasted on the canvas, as `c:uploaded/4`.
+  It runs away from the LiveView (it may download), and the canvas adds
+  its node when it is done.
+  """
+  @callback pasted(url :: String.t(), box :: [number()] | nil, messages :: map()) ::
+              {:ok, map()} | {:error, term()}
+
+  @optional_callbacks resizable?: 1,
+                      upload: 0,
+                      uploaded: 4,
+                      pasted: 3,
+                      canvas: 0,
+                      to_markdown: 1,
+                      from_markdown: 1,
+                      tools: 1,
+                      styles: 1,
+                      drawn: 3,
+                      label: 2
 
   defmacro __using__(_opts) do
     quote do
@@ -233,6 +324,39 @@ defmodule Hakushi.Kit do
     do: exports?(kit, :resizable?, 1) and kit.resizable?(type)
 
   @doc false
+  # The tools of a canvas's kits, for its bar: each with its kit's name.
+  def tools(kits, messages) do
+    for kit <- kits, exports?(kit, :tools, 1), tool <- kit.tools(messages) do
+      Map.put(tool, :kit, kit.name())
+    end
+  end
+
+  @doc false
+  # The style panels of a canvas's kits: each kit's, with its node types.
+  def styles(kits, messages) do
+    for kit <- kits, exports?(kit, :styles, 1) do
+      %{kit: kit.name(), types: kit.types(), groups: kit.styles(messages)}
+    end
+  end
+
+  @doc false
+  # The kit that takes files, among a canvas's kits: the first.
+  def uploader(kits), do: Enum.find(kits, &exports?(&1, :upload, 0))
+
+  @doc false
+  def drawn(kit, tool, params, messages),
+    do: if(exports?(kit, :drawn, 3), do: kit.drawn(tool, params, messages))
+
+  @doc false
+  # A kit's name for a node, or nil for none of its own.
+  def label(kits, node, messages) do
+    case for_type(kits, node.type) do
+      nil -> nil
+      kit -> if exports?(kit, :label, 2), do: kit.label(node, messages)
+    end
+  end
+
+  @doc false
   # The canvas the kits like: the first kit's paper and layout, every
   # kit's rules (the first kit's, for a rule two kits set).
   def canvas_prefs(kits) do
@@ -251,9 +375,35 @@ defmodule Hakushi.Kit do
     Keyword.put(paper, :rules, rules)
   end
 
+  @doc false
+  # A kit the canvas is given is a module that is there: the Images kit is
+  # there only when the app has Storehouse, for its files.
+  def check!(Hakushi.Kits.Images = kit) do
+    unless Code.ensure_loaded?(kit) do
+      raise ArgumentError, """
+      Hakushi.Kits.Images keeps the images' files with Storehouse, which is \
+      not in the app's deps. Add it to mix.exs, and run mix deps.get:
+
+          {:storehouse, "~> 0.1"}
+      """
+    end
+
+    :ok
+  end
+
+  def check!(kit) do
+    unless Code.ensure_loaded?(kit) do
+      raise ArgumentError,
+            "a canvas's kit must be a module, got: #{inspect(kit)}, which is not one"
+    end
+
+    :ok
+  end
+
+  @doc false
   # An optional callback of a kit: the module is loaded first, as
   # function_exported?/3 is false for a module not loaded yet.
-  defp exports?(kit, function, arity),
+  def exports?(kit, function, arity),
     do: Code.ensure_loaded?(kit) and function_exported?(kit, function, arity)
 
   @doc false

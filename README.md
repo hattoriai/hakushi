@@ -130,8 +130,8 @@ LiveView and storage.
   `on_change` before people see it. → [Changes](guides/changes.md)
 * **Shared canvases.** Live cursors, selections and drags, and your
   policy for who may do what. → [Collaboration](guides/collaboration.md)
-* **Ready-made kits.** Schema, Flow and Notes canvases in one line, or
-  kits of your own. → [Kits](guides/kits.md)
+* **Ready-made kits.** Schema, Flow, Notes, Ink, Shapes and Images in
+  one line, or kits of your own. → [Kits](guides/kits.md)
 * **Groups and frames, tidy up, and export as PNG or SVG.**
   → [Groups](guides/groups.md), [Layout and export](guides/layout.md)
 * **Keyboard and screen readers.** The shortcuts of a design tool, and

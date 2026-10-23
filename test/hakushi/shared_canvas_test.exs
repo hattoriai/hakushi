@@ -134,6 +134,30 @@ defmodule Hakushi.SharedCanvasTest do
     refute Map.has_key?(state, "selected")
   end
 
+  test "what a person selects is their place in the room, and goes with the selection" do
+    topic = topic()
+    ada = open(topic, "ada")
+    doc = "canvas:" <> topic
+    {:ok, watcher} = Issho.join_as(HakushiTest.Issho, %{id: "watcher"}, doc)
+
+    place_of_ada = fn ->
+      assert_receive {Issho.Participant, ^watcher, "aware", %{"states" => states}}, 1_000
+      [state] = for {_session, %{"key" => "ada", "state" => state}} <- states, do: state
+      state["place"]
+    end
+
+    hook = element(ada, "#schema-hook")
+
+    render_hook(hook, "hakushi:peer", %{"selected" => ["note"]})
+    assert place_of_ada.() == %{"doc" => doc, "at" => %{"node" => "note"}}
+
+    render_hook(hook, "hakushi:peer", %{"selected" => ["note", "frame"]})
+    assert place_of_ada.() == %{"doc" => doc, "at" => %{"nodes" => ["note", "frame"]}}
+
+    render_hook(hook, "hakushi:peer", %{"selected" => []})
+    assert place_of_ada.() == nil
+  end
+
   test "the app changes a canvas as someone: on_change gets them as :by" do
     topic = topic()
     _ada = open(topic, "ada", self())
@@ -457,5 +481,202 @@ defmodule Hakushi.SharedCanvasTest do
     assert boxes["orders"] == nil
     assert [%{id: "fk", source: "orders", target: "users"} = fk] = edges
     assert fk["passes_under"] == ["note"]
+  end
+
+  test "each change of a shared canvas is an event of its room, named for its op" do
+    topic = topic()
+    room = "canvas:" <> topic
+    :ok = Issho.Events.subscribe(HakushiTest.Issho, room)
+    ada = open(topic, "ada")
+
+    assert :ok = move(ada, "schema", "note", {11, 22})
+
+    assert_receive {Issho, :event,
+                    %Issho.Event{name: "canvas.moved", document: ^room, by: %{key: "ada"}} = moved}
+
+    assert moved.data == %{nodes: [%{id: "note", x: 11, y: 22}]}
+
+    assert :ok = connect(ada, "schema", "note", "orders")
+    assert_receive {Issho, :event, %Issho.Event{name: "canvas.connected", data: data}}
+    assert [%{id: edge, source: "note", target: "orders"}] = data.edges
+
+    assert :ok = remove(ada, "schema", nodes: ["note"])
+    assert_receive {Issho, :event, %Issho.Event{name: "canvas.deleted", data: data}}
+    # The edges that went with the node too.
+    assert data == %{nodes: ["note"], edges: [edge]}
+
+    # The event as JSON, for a model or a browser.
+    assert %{"name" => "canvas.deleted", "data" => %{"nodes" => ["note"]}} =
+             Issho.Event.to_map(%Issho.Event{
+               name: "canvas.deleted",
+               room: room,
+               data: data,
+               at: DateTime.utc_now()
+             })
+  end
+
+  test "the events of a transaction are its changes as they applied, one each" do
+    graph =
+      Hakushi.Graph.new(
+        nodes: [
+          %{id: "group", x: 0, y: 0, width: 400, height: 300},
+          %{id: "a", x: 10, y: 10, parent: "group"},
+          %{id: "b", x: 500, y: 0, type: "note"}
+        ],
+        edges: [%{id: "ab", source: "a", target: "b"}]
+      )
+
+    changes = [
+      Hakushi.Change.add([%{id: "c", x: 0, y: 400, type: "note"}], [
+        %{id: "bc", source: "b", target: "c"}
+      ]),
+      Hakushi.Change.move([{"group", 100, 0}]),
+      Hakushi.Change.reconnect([%{id: "ab", target: "c"}]),
+      Hakushi.Change.update(nodes: [%{id: "b", data: %{label: "B"}}]),
+      Hakushi.Change.paper(background: :lines),
+      # A change that does not apply (the node is not there) makes none.
+      Hakushi.Change.delete(nodes: ["gone"]),
+      Hakushi.Change.delete(nodes: ["group"])
+    ]
+
+    assert [
+             {"canvas.added",
+              %{nodes: [%{id: "c", type: "note"}], edges: [%{id: "bc", source: "b", target: "c"}]}},
+             {"canvas.moved",
+              %{nodes: [%{id: "group", x: 100, y: 0}, %{id: "a", x: 110, y: 10}]}},
+             {"canvas.reconnected", %{edges: [%{id: "ab", source: "a", target: "c"}]}},
+             {"canvas.updated", %{nodes: ["b"], edges: []}},
+             {"canvas.deleted", %{nodes: ["group", "a"], edges: ["ab"]}}
+           ] = Hakushi.Issho.events(changes, %{before: graph})
+
+    spec = Hakushi.Issho.spec(graph, Hakushi.Rules.new([]), nil, "flow")
+    assert spec.events == (&Hakushi.Issho.events/2)
+  end
+
+  test "an agent waits for what people do on the canvas" do
+    topic = topic()
+    room = "canvas:" <> topic
+    ada = open(topic, "ada")
+    agent = Context.new(HakushiTest.Issho, %{id: "watcher", name: "Watcher", kind: :agent})
+
+    assert {:ok, _} =
+             Issho.Tools.call(Hakushi.Issho.tools(), "read_canvas", %{"canvas" => room}, agent)
+
+    assert :ok = move(ada, "schema", "note", {40, 50})
+
+    assert {:ok, %{"events" => [event]}} =
+             Issho.Tools.call(
+               Issho.Tools.room(),
+               "wait_for_events",
+               %{"room" => room, "names" => ["canvas.*"], "seconds" => 5},
+               agent
+             )
+
+    assert %{
+             "name" => "canvas.moved",
+             "by" => %{"key" => "ada"},
+             "data" => %{"nodes" => [%{"id" => "note", "x" => 40, "y" => 50}]}
+           } = event
+  end
+
+  test "an agent that a person paused changes nothing on the canvas, and is told why" do
+    topic = topic()
+    room = "canvas:" <> topic
+    ada = open(topic, "ada")
+    agent = Context.new(HakushiTest.Issho, %{id: "paused", name: "Paused", kind: :agent})
+    tools = Hakushi.Issho.tools()
+
+    assert {:ok, _} = Issho.Tools.call(tools, "read_canvas", %{"canvas" => room}, agent)
+
+    :ok =
+      Issho.Work.interrupt(HakushiTest.Issho, room, Context.key(agent), :pause,
+        by: %{id: "ada", name: "Ada"}
+      )
+
+    participant = Issho.Agents.participant(HakushiTest.Issho, Context.key(agent), room)
+    wait_until(fn -> Issho.Participant.interrupted(participant) end)
+
+    move = %{"canvas" => room, "node" => "note", "x" => 40, "y" => 80}
+    assert {:error, message} = Issho.Tools.call(tools, "move_node", move, agent)
+    assert message =~ "Ada paused you"
+
+    # It still reads.
+    assert {:ok, %{"nodes" => _}} =
+             Issho.Tools.call(tools, "read_canvas", %{"canvas" => room}, agent)
+
+    # Nor did it go there: its pointer stayed where it was.
+    Process.sleep(50)
+    settle(ada)
+    refute_push_event(ada, "hakushi:peer", %{"person" => "paused", "cursor" => _})
+    assert %{x: 0, y: 300} = Enum.find(nodes(ada, "schema"), &(&1.id == "note"))
+  end
+
+  test "a change the canvas has already, heard again, changes nothing" do
+    topic = topic()
+    ada = open(topic, "ada")
+    assert :ok = move(ada, "schema", "note", {11, 22})
+    settle(ada)
+
+    # A session hears the changes before its snapshot: the move again, as
+    # a canvas that opened between them hears it.
+    %{"revision" => revision, "epoch" => epoch} =
+      Issho.Authority.snapshot(Issho.Documents.whereis(HakushiTest.Issho, "canvas:" <> topic))
+      |> elem(1)
+
+    stale = %{
+      "revision" => revision,
+      "epoch" => epoch,
+      "ops" => [Hakushi.Change.add([%{id: "twice", x: 0, y: 0}])]
+    }
+
+    Phoenix.LiveView.send_update(view_pid(ada), Hakushi.Canvas,
+      id: "schema",
+      issho: {"tx", "canvas:" <> topic, stale}
+    )
+
+    settle(ada)
+    refute Enum.any?(nodes(ada, "schema"), &(&1.id == "twice"))
+    assert %{x: 11, y: 22} = Enum.find(nodes(ada, "schema"), &(&1.id == "note"))
+  end
+
+  test "a place of the canvas in words, for a thread of comments" do
+    alias Hakushi.Issho.Place
+
+    graph = HakushiTest.CanvasLive.graph()
+    doc = "canvas:words"
+
+    assert Place.label(%{"doc" => doc, "at" => %{"node" => "users"}}, graph) ==
+             "The node “users”"
+
+    assert Place.label(%{"nodes" => ["note", "gone", "orders"]}, graph) ==
+             "The node “A note” and 1 more"
+
+    assert Place.label(%{"point" => [1, 2]}, graph) == "A point on the canvas"
+    assert Place.label(%{"node" => "users"}, graph, locale: "pt-BR") == "O nó “users”"
+
+    assert Place.label(%{"node" => "users"}, graph, node_label: &String.upcase(&1.id)) ==
+             "The node “USERS”"
+
+    assert Place.label(%{"node" => "note"}, graph, messages: %{"placeNode" => "{name}"}) ==
+             "A note"
+
+    # Not the canvas's, or gone: the app's own words.
+    assert Place.label(%{"doc" => "other", "at" => %{"node" => "users"}}, graph, document: doc) ==
+             nil
+
+    assert Place.label(%{"doc" => doc, "at" => %{"node" => "users"}}, graph, document: doc)
+    assert Place.label(%{"node" => "gone"}, graph) == nil
+    assert Place.label(nil, graph) == nil
+    assert Place.label(%{"node" => "users"}, nil) == nil
+  end
+
+  defp view_pid(view), do: view.pid
+
+  defp wait_until(fun, tries \\ 100) do
+    cond do
+      fun.() -> :ok
+      tries == 0 -> flunk("it never came")
+      true -> Process.sleep(10) && wait_until(fun, tries - 1)
+    end
   end
 end

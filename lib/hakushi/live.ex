@@ -69,14 +69,16 @@ defmodule Hakushi.Live do
 
   @doc """
   Downloads the canvas `canvas` of this LiveView as an image, in the
-  person's browser: `format: :png` (the default) or `:svg`, and
-  `filename` (the canvas's id unless given), without its extension.
+  person's browser: `format: :png` (the default) or `:svg`, `filename`
+  (the canvas's id unless given), without its extension, and `paper:
+  true` for the canvas's paper behind the nodes (none unless asked).
   """
   @spec export(String.t(), keyword()) :: :ok
   def export(canvas, opts \\ []) when is_binary(canvas) do
     payload = %{
       "format" => Atom.to_string(opts[:format] || :png),
-      "filename" => opts[:filename] || canvas
+      "filename" => opts[:filename] || canvas,
+      "paper" => opts[:paper] == true
     }
 
     send_update(Hakushi.Canvas, id: canvas, hakushi_push: {"hakushi:export", payload})
@@ -89,7 +91,7 @@ defmodule Hakushi.Live do
     cond do
       not Code.ensure_loaded?(Issho.Live) ->
         raise ArgumentError, """
-        the canvas #{inspect(canvas)} has `issho`, which needs Issho: add {:issho, "~> 0.3"} \
+        the canvas #{inspect(canvas)} has `issho`, which needs Issho: add {:issho, "~> 0.4.2"} \
         to your dependencies\
         """
 

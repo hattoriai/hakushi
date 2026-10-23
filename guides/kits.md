@@ -6,7 +6,7 @@ package one kind of canvas, so that it is used in one line, by one app or
 by many: its nodes and how they look, how people make and edit them, its
 paper, the rules of its edges, and how it reads and writes as Markdown.
 
-Kits are optional. Hakushi has three, and you write your own with the same
+Kits are optional. Hakushi has five, and you write your own with the same
 callbacks (`Hakushi.Kit`).
 
 ## The kits of Hakushi
@@ -16,6 +16,9 @@ callbacks (`Hakushi.Kit`).
 | `Hakushi.Kits.Schema` | tables (`"schema-table"`), their columns, and foreign keys from a column to a column of its type | the table's and columns' names, a column's type and key, adding and removing columns | graph paper |
 | `Hakushi.Kits.Flow` | a trigger, steps, and conditions with two ways out (`"flow-trigger"`, `"flow-step"`, `"flow-condition"`) | the title and the detail | dots |
 | `Hakushi.Kits.Notes` | sticky notes (`"note"`) in five colours, which resize | the text, the colour | crosses, snapped |
+| `Hakushi.Kits.Ink` | strokes of a pen or a highlighter (`"ink-stroke"`), drawn over anything | drawing, erasing, lassoing, with a bar of tools on the canvas | the canvas's |
+| `Hakushi.Kits.Shapes` | rectangles, ellipses, diamonds, triangles and text (`"shape"`), and lines (`"shape-line"`) | drawing them with the bar of tools, their text in place, their style from a panel, turning and resizing them | the canvas's |
+| `Hakushi.Kits.Images` | images (`"image"`), uploaded through the app | dropping, pasting or picking them, resizing with their aspect ratio, cropping, a caption and alt text | the canvas's |
 
 ## Use a kit
 
@@ -35,6 +38,141 @@ of the person's own, as a move is: it goes through your rules and
 
 A canvas may have several kits (`kits={[Schema, Notes]}`): their nodes
 on one paper, with the first kit's paper and every kit's rules.
+
+### Ink
+
+Ink is drawn, not dropped: a canvas with `Hakushi.Kits.Ink` has a bar of
+tools at its top, and its items (`kit_items/1`) are none.
+
+```heex
+<.canvas id="board" graph={@graph} kits={[Hakushi.Kits.Notes, Hakushi.Kits.Ink]} on_change={&save/2} />
+```
+
+| Tool | Key | What it does |
+| --- | --- | --- |
+| Pointer | V, Escape | selects and drags, as usual |
+| Pen | P | draws a line, in a colour and a width of the bar, thinner and thicker with a stylus's pressure |
+| Highlighter | H | draws a wide line of one width, that lets what is under it show |
+| Eraser | E | deletes the strokes it passes over (⌘Z brings them back) |
+| Lasso | L | selects what a line drawn around encloses, strokes and nodes alike: drag them, copy them, delete them |
+
+The line is smoothed as it is drawn, and simplified when the pen lifts:
+it is then a stroke, a node whose data is its points, relative to its box
+(see `Hakushi.Kits.Ink`). It goes through your rules and `on_change` as
+any node, in the frame or group it is drawn over, and ⌘Z takes it back.
+The box of a stroke takes no clicks, only its line: a ring drawn around a
+node leaves the node to click. Once a pen is used on the canvas, a finger
+pans, and only the pen draws.
+
+`Hakushi.Kits.Ink.stroke/2` makes a stroke's node from points of the
+canvas, for your app's own drawings; `Hakushi.Test.draw/5` draws in a
+test as a pen does.
+
+On a shared canvas, the others see a line as it is drawn, and an agent
+draws with `draw_on_canvas` (see the [Collaboration](collaboration.md)
+guide).
+
+### Shapes
+
+Shapes are drawn with the bar of tools too, for diagrams, wireframes and
+whiteboards with no `:node` slot of yours:
+
+```heex
+<.canvas id="board" graph={@graph} kits={[Hakushi.Kits.Shapes, Hakushi.Kits.Ink]} on_change={&save/2} />
+```
+
+| Tool | Key | What it does |
+| --- | --- | --- |
+| Rectangle, ellipse, diamond, triangle | R, O, D | a drag on the paper draws the shape (Shift: a square, a circle); a click, one of the kind's size |
+| Text | T | a click or a drag: text with no box, written at once |
+| Line | A | from a point to a point, an arrow unless styled otherwise: an edge, when it goes from a shape to a shape (it follows them), else a straight line of its own (for lines drawn by hand, add `Hakushi.Kits.Ink`) |
+
+The pointer is back once a shape is drawn, with the shape selected. A
+double click on a shape writes its text in place (centred and wrapped;
+the shape grows with a longer text; Escape takes it back). A selected
+shape resizes by its corners and sides, and turns by the knob above it
+(Shift: by 15°). A panel beside the selection has the style of the shapes
+selected (fill, stroke, its width and dash, corners, text size and
+alignment, a line's arrows), for one or many, in one change. Each shape
+has a handle on each side, so a flowchart of shapes is Hakushi's edges
+and rules as they are.
+
+Two kits' tools with one letter: the letter takes the first, and again
+the next, in turn.
+
+Its colours are the theme's (`--hakushi-shape-<name>`), and your own (see
+`Hakushi.Kits.Shapes`). `Hakushi.Kits.Shapes.shape/3` and `line/3` make
+the nodes for your app's own drawings; `Hakushi.Test.draw_box/5` draws as
+a drag does, and `edit/5` with a list of nodes styles them as the panel
+does. In Markdown, shapes are a Mermaid flowchart.
+
+### Images
+
+Images are files people drop on the paper, paste, or pick with the kit's
+tool (I), for a moodboard, a screenshot to mark up, references beside a
+plan:
+
+```heex
+<.canvas id="board" graph={@graph} kits={[Hakushi.Kits.Ink, Hakushi.Kits.Images]} on_change={&save/2} />
+```
+
+Each file is an image where it lands, at its own aspect ratio, sized to
+fit the view (several at once: a row). While it uploads, the canvas
+shows a placeholder with the file and its progress, which the others
+see too on a shared canvas; the node is made once the server has the
+file and has checked it: a PNG, a JPEG, a GIF or a WebP, by its bytes,
+not its name (`Hakushi.Images`). An image's address pasted (or dropped
+from another tab) is fetched by the server, from the hosts you allow
+only, and stored as an upload is.
+
+A selected image resizes by its corners and sides with its aspect ratio
+kept (Shift frees it). The panel beside it has its alt text, and Crop:
+the whole file shows around it, faded, and a box of the part it keeps,
+whose corners and sides are dragged (Enter keeps it, Escape leaves it as
+it was; ⌘Z takes it back). A double click writes its caption, under it.
+Its edges, groups, copy and paste and export (PNG and SVG, with the
+images in them) are those of any node.
+
+The files go to your app's store with
+[Storehouse](https://hexdocs.pm/storehouse), as Kotoba's attachments do:
+the local disk, S3 (and the stores that speak its API: R2, MinIO,
+LocalStack), or a store of your own. Add it to your deps (a canvas
+without images never needs it):
+
+```elixir
+{:storehouse, "~> 0.1"}
+```
+
+On the local disk:
+
+```elixir
+# config/runtime.exs, in the :prod block
+config :storehouse, Storehouse.Local,
+  root: System.get_env("UPLOADS", "/var/lib/my_app/uploads")
+
+# lib/my_app_web/endpoint.ex, before the router
+plug Storehouse.Local.Plug
+```
+
+On S3, `config :storehouse, adapter: Storehouse.S3` and its bucket (see
+Storehouse's [Stores](https://hexdocs.pm/storehouse/stores.html) guide).
+
+The limits, and what else the kit does, are its config:
+
+```elixir
+config :hakushi, Hakushi.Kits.Images,
+  max_file_size: 10_000_000,        # bytes (the default)
+  max_entries: 10,                  # files at once (the default)
+  fetch: ["images.example.com"],    # hosts whose addresses are fetched (none by default)
+  thumbnail: &MyApp.Images.thumbnail/2,  # a smaller copy, for small zooms
+  files: &MyApp.Images.path/1       # an agent's add_image `file`, by name
+```
+
+The canvas has a LiveView upload of its own: it must not be in a form of
+yours. `Hakushi.Kits.Images.image_node/3` makes the node of an image you
+stored with `Hakushi.Images.store/2` (seeds, imports). With many images,
+those off the screen load as they come near, and with `thumbnail` the
+canvas shows the smaller copy when it is zoomed out.
 
 ### The paper, the tidy up and the rules
 
@@ -132,6 +270,18 @@ end
 * `canvas/0` (optional) is its paper, tidy up and rules; `resizable?/1`
   (optional) says which types resize by their corners.
 * `icon/0` and the elements' icons are names of `Hakushi.Icons`.
+* `tools/1` (optional) puts tools in a bar on the canvas, which draw a
+  line (`"draw"`), a box (`"box"`) or a line from a point to a point
+  (`"line"`) that `drawn/3` makes a node of, erase or lasso; `label/2`
+  (optional) names a node for screen readers. See `Hakushi.Kits.Ink` and
+  `Hakushi.Kits.Shapes`.
+* `styles/1` (optional) is a panel of styles beside the selection, whose
+  choices go to `edit/3` (the action `"style"`) for each node, in one
+  change.
+* A node's element with `data-hakushi-text` is written in place on a
+  double click (`edit/3`, the action `"text"`); one with
+  `data-hakushi-rotate` turns by a knob (the action `"rotate"`, in
+  degrees), and the canvas sets `--hakushi-rotation` on it while it turns.
 
 Test a kit with `Hakushi.Test`: `drop/5` makes its node from its item
 (`"roadmap:milestone"`), `edit/5` sends an action as its controls do,

@@ -18,17 +18,22 @@ defmodule Hakushi.Graph do
   `apply/2` applies a `Hakushi.Change` and gives back the change that
   undoes it; the canvas uses it for every change, and so can the app, to
   keep its own copy of the graph or to save it.
+
+  `paper` is the canvas's paper when it has one of its own (people chose
+  it with the canvas's picker, or the app did): a `Hakushi.Paper`, or `nil`
+  for the canvas's `background` and `grid`.
   """
 
-  alias Hakushi.{Change, Edge, Node}
+  alias Hakushi.{Change, Edge, Node, Paper}
 
-  defstruct nodes: %{}, edges: %{}, node_order: [], edge_order: []
+  defstruct nodes: %{}, edges: %{}, node_order: [], edge_order: [], paper: nil
 
   @type t :: %__MODULE__{
           nodes: %{Node.id() => Node.t()},
           edges: %{Edge.id() => Edge.t()},
           node_order: [Node.id()],
-          edge_order: [Edge.id()]
+          edge_order: [Edge.id()],
+          paper: Paper.t() | nil
         }
 
   @typedoc "Why a change does not apply."
@@ -37,15 +42,17 @@ defmodule Hakushi.Graph do
   @doc """
   Makes a graph of `nodes` and `edges`: `Hakushi.Node`s and
   `Hakushi.Edge`s, or maps and keyword lists for `Hakushi.Node.new/1` and
-  `Hakushi.Edge.new/1`. Raises on two nodes or two edges with one id, and
-  on an edge to a node the graph does not have.
+  `Hakushi.Edge.new/1`, and its `paper` (see `Hakushi.Paper.new/1`).
+  Raises on two nodes or two edges with one id, and on an edge to a node
+  the graph does not have.
   """
   @spec new(keyword()) :: t()
   def new(opts \\ []) do
     nodes = opts |> Keyword.get(:nodes, []) |> Enum.map(&Node.new/1)
     edges = opts |> Keyword.get(:edges, []) |> Enum.map(&Edge.new/1)
+    paper = opts |> Keyword.get(:paper) |> Paper.new()
 
-    case put_all(%__MODULE__{}, nodes, edges) do
+    case put_all(%__MODULE__{paper: paper}, nodes, edges) do
       {:ok, graph} -> graph
       {:error, reason, id} -> raise ArgumentError, "#{describe(reason)}: #{inspect(id)}"
     end
@@ -178,12 +185,27 @@ defmodule Hakushi.Graph do
 
   def apply(%__MODULE__{} = graph, %Change{op: :update} = change) do
     with {:ok, graph, node_undo} <-
-           update_all(graph, :nodes, change.nodes, [:data, :type, :locked]),
+           update_all(graph, :nodes, change.nodes, [
+             :data,
+             :type,
+             :locked,
+             :x,
+             :y,
+             :width,
+             :height
+           ]),
          {:ok, graph, edge_undo} <-
            update_all(graph, :edges, change.edges, [:label, :path, :marker, :animated, :data]) do
       {:ok, graph, change,
        %Change{op: :update, nodes: node_undo, edges: edge_undo, by: change.by}}
     end
+  end
+
+  def apply(%__MODULE__{} = graph, %Change{op: :paper, paper: paper} = change) do
+    paper = Paper.new(paper)
+
+    {:ok, %{graph | paper: paper}, %{change | paper: paper},
+     %Change{op: :paper, paper: graph.paper, by: change.by}}
   end
 
   def apply(%__MODULE__{} = graph, %Change{op: :delete} = change) do
@@ -206,11 +228,12 @@ defmodule Hakushi.Graph do
 
       gone_edges = MapSet.new(edge_ids)
 
-      applied = %__MODULE__{
-        nodes: Map.drop(graph.nodes, node_ids),
-        edges: Map.drop(graph.edges, edge_ids),
-        node_order: Enum.reject(graph.node_order, &MapSet.member?(gone, &1)),
-        edge_order: Enum.reject(graph.edge_order, &MapSet.member?(gone_edges, &1))
+      applied = %{
+        graph
+        | nodes: Map.drop(graph.nodes, node_ids),
+          edges: Map.drop(graph.edges, edge_ids),
+          node_order: Enum.reject(graph.node_order, &MapSet.member?(gone, &1)),
+          edge_order: Enum.reject(graph.edge_order, &MapSet.member?(gone_edges, &1))
       }
 
       inverse = %Change{
@@ -445,16 +468,19 @@ defmodule Hakushi.Graph do
 
   @doc """
   What changed from one graph to another: the nodes and edges that are
-  new or not the same, and the ids of those that went away.
+  new or not the same, the ids of those that went away, and whether the
+  paper changed.
   """
   @spec diff(t(), t()) :: %{
           nodes: [Node.t()],
           edges: [Edge.t()],
           deleted_nodes: [Node.id()],
-          deleted_edges: [Edge.id()]
+          deleted_edges: [Edge.id()],
+          paper: boolean()
         }
   def diff(%__MODULE__{} = old, %__MODULE__{} = new) do
     %{
+      paper: old.paper != new.paper,
       nodes: for(node <- nodes(new), Map.get(old.nodes, node.id) != node, do: node),
       edges: for(edge <- edges(new), Map.get(old.edges, edge.id) != edge, do: edge),
       deleted_nodes: for(id <- old.node_order, not Map.has_key?(new.nodes, id), do: id),
@@ -482,13 +508,23 @@ defmodule Hakushi.Graph do
           edge |> Map.from_struct() |> Map.reject(fn {_k, v} -> is_nil(v) end) |> stringify()
         end)
     }
+    |> dump_paper(graph.paper)
   end
+
+  defp dump_paper(map, nil), do: map
+
+  defp dump_paper(map, paper),
+    do: Map.put(map, "paper", paper |> Map.reject(fn {_k, v} -> is_nil(v) end) |> stringify())
 
   defp stringify(map), do: Map.new(map, fn {k, v} -> {Atom.to_string(k), v} end)
 
   @doc "The graph of `dump/1`'s maps."
   @spec load(map()) :: t()
   def load(%{} = map) do
-    new(nodes: Map.get(map, "nodes", []), edges: Map.get(map, "edges", []))
+    new(
+      nodes: Map.get(map, "nodes", []),
+      edges: Map.get(map, "edges", []),
+      paper: Map.get(map, "paper")
+    )
   end
 end

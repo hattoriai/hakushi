@@ -14,6 +14,8 @@ export interface ExportOptions {
   transparent: boolean;
   /** The name of the file, without its extension (`download`). */
   filename: string;
+  /** Whether the image has the canvas's paper (its pattern) behind the nodes; it has none unless asked. */
+  paper: boolean;
 }
 
 const XHTML = "http://www.w3.org/1999/xhtml";
@@ -25,7 +27,7 @@ export async function exportImage(root: HTMLElement, world: HTMLElement, box: Re
   const padding = options.padding ?? 32;
   const width = Math.ceil(box.width + padding * 2);
   const height = Math.ceil(box.height + padding * 2);
-  const svgText = await serialize(root, world, box, padding, width, height, options.transparent ?? false);
+  const svgText = await serialize(root, world, box, padding, width, height, options.transparent ?? false, options.paper ?? false);
 
   if ((options.format ?? "png") === "svg") return new Blob([svgText], { type: "image/svg+xml" });
 
@@ -53,7 +55,7 @@ export async function exportImage(root: HTMLElement, world: HTMLElement, box: Re
   }
 }
 
-async function serialize(root: HTMLElement, world: HTMLElement, box: Rect, padding: number, width: number, height: number, transparent: boolean): Promise<string> {
+async function serialize(root: HTMLElement, world: HTMLElement, box: Rect, padding: number, width: number, height: number, transparent: boolean, paper: boolean): Promise<string> {
   const style = getComputedStyle(root);
   const clone = world.cloneNode(true) as HTMLElement;
   clone.removeAttribute("id");
@@ -62,7 +64,8 @@ async function serialize(root: HTMLElement, world: HTMLElement, box: Rect, paddi
   for (const el of clone.querySelectorAll("[data-ui-culled], [data-ui-selected], [data-ui-peer], [data-ui-drop-target], [data-ui-valid], [data-ui-target]")) {
     for (const name of ["data-ui-culled", "data-ui-selected", "data-ui-peer", "data-ui-drop-target", "data-ui-valid", "data-ui-target"]) el.removeAttribute(name);
   }
-  clone.querySelectorAll(".hakushi-resizer, .hakushi-overlay, .hakushi-edge-input").forEach((el) => el.remove());
+  clone.querySelectorAll(".hakushi-resizer, .hakushi-rotator, .hakushi-overlay, .hakushi-ink-live, .hakushi-edge-input, .hakushi-text-editor, .hakushi-file, .hakushi-crop").forEach((el) => el.remove());
+  await inlineImages(clone);
   clone.querySelectorAll<SVGGElement>(".hakushi-edge").forEach((g) => (g.style.display = ""));
   // The edges raised above the nodes (of a selection) go back under them, as they are drawn.
   const lines = clone.querySelector(".hakushi-edges:not(.hakushi-edges-raised) .hakushi-edge-lines");
@@ -84,13 +87,23 @@ async function serialize(root: HTMLElement, world: HTMLElement, box: Rect, paddi
 
   const wrapper = document.createElementNS(XHTML, "div") as HTMLElement;
   wrapper.setAttribute("class", `${root.className} hakushi-export`);
-  wrapper.setAttribute("data-background", "none");
+  // The paper, when asked: its pattern at 100%, where it is under the nodes.
+  const background = paper ? (root.dataset.background ?? "none") : "none";
+  wrapper.setAttribute("data-background", background);
   wrapper.setAttribute(
     "style",
     `${vars.join(" ")} position: relative; width: ${width}px; height: ${height}px; overflow: hidden; ` +
       `font-family: ${style.fontFamily}; font-size: ${style.fontSize}; color: ${style.color}; ` +
       `background: ${transparent ? "transparent" : style.backgroundColor};`,
   );
+  if (background !== "none") {
+    const grid = Number(JSON.parse(root.querySelector<HTMLElement>(".hakushi-hook")?.dataset.config ?? "{}").grid) || 20;
+    const at = `${padding - box.x}px ${padding - box.y}px`;
+    const pattern = document.createElementNS(XHTML, "div") as HTMLElement;
+    pattern.setAttribute("class", "hakushi-background");
+    pattern.setAttribute("style", `--hakushi-grid-size: ${grid}px; inset: 0; translate: none; background-position: ${at}; mask-position: ${at}; -webkit-mask-position: ${at};`);
+    wrapper.append(pattern);
+  }
   wrapper.append(clone);
 
   const css = await styleSheets();
@@ -102,6 +115,35 @@ async function serialize(root: HTMLElement, world: HTMLElement, box: Rect, paddi
     html +
     `</foreignObject></svg>`
   );
+}
+
+// The images of the nodes, as data: an SVG drawn as an image loads nothing.
+// An image the page cannot read (another origin, with no CORS) is left out.
+async function inlineImages(clone: HTMLElement): Promise<void> {
+  const images = [...clone.querySelectorAll<HTMLImageElement>("img")];
+  await Promise.all(
+    images.map(async (image) => {
+      const src = image.dataset.src ?? image.getAttribute("src");
+      image.removeAttribute("loading");
+      image.removeAttribute("srcset");
+      if (!src || src.startsWith("data:")) return;
+      try {
+        const response = await fetch(new URL(src, location.href), { credentials: "same-origin" });
+        if (!response.ok) throw new Error(String(response.status));
+        image.setAttribute("src", await dataUrl(await response.blob()));
+      } catch {
+        image.remove();
+      }
+    }),
+  );
+}
+
+function dataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.readAsDataURL(blob);
+  });
 }
 
 // The rules of the page's style sheets that it can read (not those of

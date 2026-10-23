@@ -5,9 +5,12 @@
 # (/, tables with a handle on each column, foreign keys between columns of
 # one type), an automation (/workflow, steps dragged from a palette, a
 # condition with two ways out, no cycles), a moodboard (/board, notes that
-# resize, swatches, labelled arrows, snapped to the grid) and two thousand
+# resize, swatches, labelled arrows, snapped to the grid, and ink: a pen,
+# a highlighter, an eraser and a lasso; images dropped, pasted or picked;
+# a picker of papers, one of them the
+# app's own) and two thousand
 # nodes in a grid, joined to their neighbours (/scale, `?n=` for another
-# count). The schema and the workflow are
+# count). The schema, the workflow and the moodboard are
 # shared: open them in two windows as two people. The graphs are kept in
 # memory while the server runs. The browser tests in e2e/ run against it.
 #
@@ -15,7 +18,9 @@
 # reloads on a change.
 #
 # Query params of every page: `as` - who you are: `ada` (the default),
-# `kenji`, `ines`, or `viewer` (read-only); `theme=sumi`, `dark=1`.
+# `kenji`, `ines`, or `viewer` (read-only); `theme=sumi`, `dark=1`. The
+# schema with `comments=1` has Issho's comments beside it: threads on its
+# tables, said by name.
 #
 # Environment:
 #
@@ -28,6 +33,20 @@ watch? = System.get_env("HAKUSHI_DEV_WATCH") != "false"
 
 Application.put_env(:phoenix, :json_library, JSON)
 Application.put_env(:issho, Issho.MCP, instance: HakushiDev.Issho)
+
+# The moodboard's images (Hakushi.Kits.Images): kept in tmp/uploads, and
+# served by Storehouse.Local.Plug. Addresses pasted are fetched from
+# two hosts of photos, and from this server itself (over http) for the
+# browser tests, which a real app would not allow; an agent's `file` is a
+# photo of test/fixtures/images.
+Application.put_env(:storehouse, Storehouse.Local, root: Path.expand("tmp/uploads", __DIR__))
+
+Application.put_env(:hakushi, Hakushi.Kits.Images,
+  fetch: ["images.unsplash.com", "upload.wikimedia.org", "127.0.0.1", "localhost"],
+  http: true,
+  files: &HakushiDev.Seeds.photo_path/1
+)
+
 Logger.configure(level: :info)
 
 Application.put_env(:hakushi, HakushiDev.Endpoint,
@@ -79,6 +98,26 @@ defmodule HakushiDev.Seeds do
   @moduledoc "The canvases of Atelier, as they start."
 
   alias Hakushi.Graph
+  alias Hakushi.Kits.{Images, Ink}
+
+  @photos Path.expand("test/fixtures/images", __DIR__)
+
+  @doc "A photo of the moodboard's, by its name (an agent's `file`)."
+  def photo_path(name) do
+    path = Path.join(@photos, Path.basename(name))
+    if File.regular?(path), do: {:ok, path}, else: :error
+  end
+
+  # A photo, stored as an upload is (once, for every room of the tests).
+  defp photo(name, opts \\ []) do
+    key = {__MODULE__, :photo, name}
+
+    with nil <- :persistent_term.get(key, nil) do
+      {:ok, image} = Hakushi.Images.store(Path.join(@photos, name), opts)
+      :persistent_term.put(key, image)
+      image
+    end
+  end
 
   @tables [
     {"clients", 0, 40, "#b5643c", 48,
@@ -206,9 +245,67 @@ defmodule HakushiDev.Seeds do
     )
   end
 
+  # A whiteboard of plain shapes (Hakushi.Kits.Shapes): a little flow of
+  # how a feature ships, with a note in text and a line of its own.
+  def whiteboard do
+    alias Hakushi.Kits.Shapes
+
+    shape = fn id, kind, box, style -> Map.put(Shapes.shape(kind, box, style), :id, id) end
+    {:ok, aside} = Shapes.line({700, 330}, {600, 260}, %{"stroke" => "gray", "dash" => true})
+
+    Graph.new(
+      nodes: [
+        shape.("title", "text", [0, -110, 420, 48], %{
+          "text" => "How a feature ships",
+          "size" => "l"
+        }),
+        shape.("idea", "ellipse", [0, 0, 150, 96], %{
+          "text" => "Idea",
+          "fill" => "yellow",
+          "stroke" => "yellow"
+        }),
+        shape.("sketch", "rect", [230, 0, 170, 96], %{"text" => "Sketch it on the board"}),
+        shape.("good", "diamond", [480, 0, 160, 120], %{
+          "text" => "Good enough?",
+          "fill" => "violet",
+          "stroke" => "violet"
+        }),
+        shape.("ship", "rect", [720, 12, 150, 72], %{
+          "text" => "Ship",
+          "fill" => "green",
+          "stroke" => "green",
+          "radius" => 0
+        }),
+        shape.("again", "triangle", [495, 200, 130, 104], %{
+          "text" => "Again",
+          "fill" => "red",
+          "stroke" => "red",
+          "dash" => true
+        }),
+        shape.("aside", "text", [700, 330, 200, 48], %{
+          "text" => "Ask the team first",
+          "size" => "s",
+          "align" => "left"
+        }),
+        Map.put(aside, :id, "aside-line")
+      ],
+      edges: [
+        %{source: "idea", target: "sketch", path: "smooth"},
+        %{source: "sketch", target: "good", path: "smooth"},
+        %{source: "good", target: "ship", path: "smooth", label: "Yes"},
+        %{source: "good", target: "again", path: "smooth", label: "No"}
+      ]
+    )
+  end
+
   def board do
     note = fn id, x, y, w, h, tone, text ->
       %{id: id, type: "note", x: x, y: y, width: w, height: h, data: %{tone: tone, text: text}}
+    end
+
+    ink = fn id, points, opts ->
+      {:ok, stroke} = Ink.stroke(points, opts)
+      Map.put(stroke, :id, id)
     end
 
     Graph.new(
@@ -282,7 +379,41 @@ defmodule HakushiDev.Seeds do
         |> Map.put(:parent, "signage"),
         "question"
         |> note.(820, 220, 220, 110, "yellow", "Can the logo work stamped in brass?")
-        |> Map.put(:parent, "signage")
+        |> Map.put(:parent, "signage"),
+        # Images: a photo of the quay (with a smaller copy, for small
+        # zooms), a texture, and a facade cropped to its top.
+        "harbour.jpg"
+        |> photo(thumbnail: fn _image, _path -> photo("harbour-small.jpg").url end)
+        |> Images.image_node([1120, -20, 360, 0],
+          alt: "The quay at dusk: piers against an orange sky",
+          caption: "The quay at dusk"
+        )
+        |> Map.put(:id, "quay"),
+        "rope.png"
+        |> photo()
+        |> Images.image_node([1120, 280, 170, 0], alt: "Waves of brass and green, like rope")
+        |> Map.put(:id, "texture"),
+        "facade.jpg"
+        |> photo()
+        |> Images.image_node([1310, 280, 170, 0], alt: "A facade of coloured windows")
+        |> Map.put(:id, "facade")
+        |> then(fn node ->
+          %{node | height: 142, data: Map.put(node.data, "crop", [0.05, 0.05, 0.9, 0.6])}
+        end),
+        # Ink: a line drawn by hand under the title.
+        ink.(
+          "underline",
+          for(
+            i <- 0..40,
+            do: [
+              4 + i * 7.5,
+              -30 + :math.sin(i / 6) * 2.5 + i * 0.08,
+              0.35 + 0.4 * :math.sin(i / 40 * :math.pi())
+            ]
+          ),
+          color: "blue",
+          size: 3
+        )
       ],
       edges: [
         %{source: "tide", target: "palette", label: "sets", path: "bezier"},
@@ -490,7 +621,8 @@ defmodule HakushiDev.Store do
         %{
           "schema" => HakushiDev.Seeds.schema(),
           "workflow" => HakushiDev.Seeds.workflow(),
-          "board" => HakushiDev.Seeds.board()
+          "board" => HakushiDev.Seeds.board(),
+          "whiteboard" => HakushiDev.Seeds.whiteboard()
         }
       end,
       name: __MODULE__
@@ -527,6 +659,8 @@ defmodule HakushiDev.Icons do
       ~s(<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><path d="M10 6.5h4a3 3 0 0 1 3 3V14"/>),
     "board" =>
       ~s(<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/>),
+    "whiteboard" =>
+      ~s(<rect x="3" y="3" width="8" height="7" rx="1.5"/><circle cx="17" cy="7" r="3.5"/><path d="M3 20h8M13 14l4 6 4-6z"/>),
     "spec" =>
       ~s(<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/>),
     "scale" =>
@@ -592,6 +726,8 @@ defmodule HakushiDev.Layouts do
           rel="icon"
           href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0a0b'/%3E%3Crect x='17' y='17' width='8' height='8' rx='1' fill='%23e84a1c'/%3E%3Crect x='7.5' y='7.5' width='7' height='7' rx='1' fill='none' stroke='white' stroke-width='1.6'/%3E%3C/svg%3E"
         />
+        <link rel="stylesheet" href="/vendor/issho/issho.css" />
+        <link :if={@sumi} rel="stylesheet" href="/vendor/issho/issho-sumi.css" />
         <link rel="stylesheet" href="/css/hakushi.css" />
         <link :if={@sumi} rel="stylesheet" href="/css/hakushi-sumi.css" />
         <style>
@@ -676,6 +812,17 @@ defmodule HakushiDev.Layouts do
           .step .way { position: relative; display: flex; justify-content: space-between; padding: 0.35rem 0.875rem; font-size: 0.75rem; color: var(--atelier-muted); }
           .step .way + .way { border-top: 1px dashed var(--atelier-line); }
 
+          /* A paper of the app's own, for the moodboard's picker: isometric,
+             a triangle of lines at each square (see Hakushi.Paper). */
+          .hakushi[data-background="iso"] .hakushi-background,
+          .hakushi-paper-swatch[data-background="iso"] {
+            background: var(--hakushi-pattern-strong);
+            -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 34.64 20'%3E%3Cpath d='M0 0L34.64 20M34.64 0L0 20M0 0V20M17.32 0V20' fill='none' stroke='black' stroke-width='0.7'/%3E%3C/svg%3E");
+            mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 34.64 20'%3E%3Cpath d='M0 0L34.64 20M34.64 0L0 20M0 0V20M17.32 0V20' fill='none' stroke='black' stroke-width='0.7'/%3E%3C/svg%3E");
+            -webkit-mask-size: calc(var(--hakushi-grid-size) * 1.732) var(--hakushi-grid-size);
+            mask-size: calc(var(--hakushi-grid-size) * 1.732) var(--hakushi-grid-size);
+          }
+
           /* Moodboard: notes, swatches, a specimen. */
           .note { position: relative; width: 100%; height: 100%; padding: 0.875rem 1rem; border-radius: 4px; background: var(--tone); color: #2b2620; font-family: "Segoe Print", "Bradley Hand", "Marker Felt", cursive; font-size: 0.9375rem; line-height: 1.35; box-shadow: 0 1px 1px rgba(0,0,0,0.06), 0 10px 18px -12px rgba(0,0,0,0.35); }
           .note[data-tone="yellow"] { --tone: #fdf0a6; }
@@ -698,6 +845,9 @@ defmodule HakushiDev.Layouts do
           .note .hakushi-handle, .swatches .hakushi-handle, .specimen .hakushi-handle { opacity: 0; }
           .hakushi-node:hover .hakushi-handle, .hakushi[data-ui-connecting] .hakushi-handle { opacity: 1; }
 
+          /* Schema with comments=1: Issho's comments beside the canvas. */
+          .comments-panel { width: 21rem; flex: none; overflow: auto; padding: 0.75rem; border-left: 1px solid var(--atelier-line); background: var(--atelier-bg); }
+
           .people-strip { display: flex; align-items: center; }
           .people-strip span { display: grid; place-items: center; width: 1.75rem; height: 1.75rem; margin-left: -6px; border: 2px solid var(--atelier-bg); border-radius: 99px; color: #fff; font-size: 0.625rem; font-weight: 600; }
           .scale-node { padding: 0.5rem 0.75rem; border: 1px solid var(--atelier-line); border-radius: 8px; background: var(--atelier-card); font-size: 0.8125rem; width: 9rem; position: relative; }
@@ -709,6 +859,7 @@ defmodule HakushiDev.Layouts do
             "imports": {
               "phoenix": "/vendor/phoenix/phoenix.mjs",
               "phoenix_live_view": "/vendor/phoenix_live_view/phoenix_live_view.esm.js",
+              "issho": "/vendor/issho/issho.esm.js",
               "hakushi": "/assets/hakushi.esm.js"
             }
           }
@@ -716,11 +867,12 @@ defmodule HakushiDev.Layouts do
         <script type="module">
           import { Socket } from "phoenix"
           import { LiveSocket } from "phoenix_live_view"
+          import { Hooks as Issho } from "issho"
           import { Hakushi, canvasOf } from "hakushi"
 
           const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
           const liveSocket = new LiveSocket("/live", Socket, {
-            hooks: { Hakushi },
+            hooks: { ...Issho, Hakushi },
             params: { _csrf_token: csrfToken }
           })
           liveSocket.connect()
@@ -792,6 +944,7 @@ defmodule HakushiDev.Layouts do
       {:schema, "/", "Schema", "schema"},
       {:workflow, "/workflow", "Workflow", "workflow"},
       {:board, "/board", "Moodboard", "board"},
+      {:whiteboard, "/whiteboard", "Whiteboard", "whiteboard"},
       {:spec, "/spec", "Design spec", "spec"},
       {:scale, "/scale", "Two thousand nodes", "scale"}
     ]
@@ -833,15 +986,22 @@ defmodule HakushiDev.Page do
      |> assign(:readonly, params["as"] == "viewer")
      |> assign(:follow, params["follow"] != "false")
      |> assign(:room, params["room"])
+     |> assign(:comments, params["comments"] == "1")
      |> assign(:query, Map.take(params, ["as", "theme", "dark", "room"]))}
   end
 end
 
 defmodule HakushiDev.SchemaLive do
-  @moduledoc "The database of Atelier: tables, and foreign keys between columns of one type."
+  @moduledoc """
+  The database of Atelier: tables, and foreign keys between columns of one
+  type. With `?comments=1`, Issho's comments beside it: a thread on what
+  you selected, its place said by name ("The node “clients”"), with the
+  graph as it is now, which the canvas's events keep.
+  """
   use Phoenix.LiveView
 
   import Hakushi.Components
+  import Issho.Components, only: [comments: 1]
   import HakushiDev.Icons
   import HakushiDev.Layouts, only: [app: 1]
   import HakushiDev.Page, only: [topic: 2]
@@ -850,8 +1010,29 @@ defmodule HakushiDev.SchemaLive do
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok, assign(socket, graph: HakushiDev.Store.get("schema", socket.assigns.room))}
+    graph = HakushiDev.Store.get("schema", socket.assigns.room)
+    doc = topic("schema", socket.assigns.room)
+
+    # The comments are the room's, in a LiveView that is in it: it joins
+    # (the canvas then has the same session), and hears the canvas's
+    # changes, as the room's events: the graph of the comments' places, as
+    # it is now.
+    if connected?(socket) and socket.assigns.comments do
+      can = if socket.assigns.readonly, do: :read, else: :write
+      {:ok, _session} = Issho.Live.join(HakushiDev.Issho, socket.assigns.me, doc, can: can)
+      Issho.Live.subscribe(doc, :self, events: ["canvas.*"])
+    end
+
+    {:ok, assign(socket, graph: graph, now: graph, doc: doc)}
   end
+
+  @impl true
+  def handle_info({Issho.Live, "event", _room, %Issho.Event{}}, socket) do
+    {:noreply, assign(socket, :now, Hakushi.Issho.graph(HakushiDev.Issho, socket.assigns.doc))}
+  end
+
+  # The room's other news (its people, their cursors): the canvas's own.
+  def handle_info({Issho.Live, _event, _room, _payload}, socket), do: {:noreply, socket}
 
   @impl true
   def handle_event("add_column", %{"table" => table}, socket) do
@@ -922,6 +1103,12 @@ defmodule HakushiDev.SchemaLive do
     <.app page={:schema} me={@me} query={@query} title="Schema" crumb="atelier_prod · 6 tables">
       <:actions>
         <span class="hint">Drag from a column's dot to a column of another table.</span>
+        <.link
+          class="button"
+          href={"/" <> HakushiDev.Layouts.qs(@query, if(@comments, do: %{}, else: %{"comments" => "1"}))}
+        >
+          {if @comments, do: "Hide comments", else: "Comments"}
+        </.link>
         <.canvas_item :if={!@readonly} for="schema" item="table" class="button primary">
           <.icon name="plus" /> New table
         </.canvas_item>
@@ -931,7 +1118,7 @@ defmodule HakushiDev.SchemaLive do
         graph={@graph}
         on_change={&on_change(&1, &2, @room)}
         new_node={&new_node/2}
-        issho={[instance: HakushiDev.Issho, document: topic("schema", @room), follow: @follow]}
+        issho={[instance: HakushiDev.Issho, document: @doc, follow: @follow]}
         user={@me}
         readonly={@readonly}
         background={:lines}
@@ -961,6 +1148,11 @@ defmodule HakushiDev.SchemaLive do
           </div>
         </:node>
       </.canvas>
+      <.comments :if={@comments} id="comments" room={@doc} class="comments-panel">
+        <:place :let={%{place: place, default: default}}>
+          {Hakushi.Issho.Place.label(place, @now, document: @doc) || default}
+        </:place>
+      </.comments>
     </.app>
     """
   end
@@ -1082,12 +1274,18 @@ defmodule HakushiDev.WorkflowLive do
 end
 
 defmodule HakushiDev.BoardLive do
-  @moduledoc "A moodboard: notes that resize, swatches, a specimen, labelled arrows."
+  @moduledoc """
+  A moodboard: notes that resize, swatches, a specimen, labelled arrows,
+  ink (Hakushi.Kits.Ink): people draw on it with a pen, and an agent
+  circles a node; and images (Hakushi.Kits.Images), dropped, pasted or
+  picked.
+  """
   use Phoenix.LiveView
 
   import Hakushi.Components
   import HakushiDev.Icons
   import HakushiDev.Layouts, only: [app: 1]
+  import HakushiDev.Page, only: [topic: 2]
 
   @impl true
   def mount(_params, _session, socket) do
@@ -1117,7 +1315,7 @@ defmodule HakushiDev.BoardLive do
     ~H"""
     <.app page={:board} me={@me} query={@query} title="Moodboard" crumb="Harbour Museum rebrand">
       <:actions>
-        <span class="hint">Double-click the paper for a note. Drop notes in a frame; move a frame by its name.</span>
+        <span class="hint">Double-click the paper for a note. Draw with P, lasso with L; drop, paste or pick (I) images.</span>
         <.canvas_item :if={!@readonly} for="board" item="frame" class="button"><.icon name="frame" /> Frame</.canvas_item>
         <.canvas_item :if={!@readonly} for="board" item="note" class="button"><.icon name="note" /> Note</.canvas_item>
       </:actions>
@@ -1126,10 +1324,14 @@ defmodule HakushiDev.BoardLive do
         graph={@graph}
         on_change={&on_change(&1, &2, @room)}
         new_node={&new_node/2}
+        kits={[Hakushi.Kits.Ink, Hakushi.Kits.Images]}
+        issho={[instance: HakushiDev.Issho, document: topic("board", @room), follow: @follow]}
+        user={@me}
         readonly={@readonly}
         background={:cross}
         grid={20}
         snap
+        papers={[:dots, :lines, :cross, :none, %{name: "iso", label: "Isometric"}]}
         rules={[loops: false]}
         label="The moodboard"
       >
@@ -1163,6 +1365,55 @@ defmodule HakushiDev.BoardLive do
           </div>
         </:node>
       </.canvas>
+    </.app>
+    """
+  end
+end
+
+defmodule HakushiDev.WhiteboardLive do
+  @moduledoc """
+  A whiteboard of plain shapes (Hakushi.Kits.Shapes) and ink
+  (Hakushi.Kits.Ink): drawn with the tools of the bar, styled from the
+  panel beside the selection, shared.
+  """
+  use Phoenix.LiveView
+
+  import Hakushi.Components
+  import HakushiDev.Layouts, only: [app: 1]
+  import HakushiDev.Page, only: [topic: 2]
+
+  @kits [Hakushi.Kits.Shapes, Hakushi.Kits.Ink]
+
+  @impl true
+  def mount(_params, _session, socket) do
+    {:ok, assign(socket, graph: HakushiDev.Store.get("whiteboard", socket.assigns.room))}
+  end
+
+  def on_change(_change, %{result: result}, room) do
+    HakushiDev.Store.put("whiteboard", room, result)
+    :ok
+  end
+
+  @impl true
+  def render(assigns) do
+    assigns = assign(assigns, :kits, @kits)
+
+    ~H"""
+    <.app page={:whiteboard} me={@me} query={@query} title="Whiteboard" crumb="Release process">
+      <:actions>
+        <span class="hint">R, O, D and T draw shapes, A an arrow (between two shapes, an edge); double-click a shape to write in it.</span>
+      </:actions>
+      <.canvas
+        id="whiteboard"
+        graph={@graph}
+        on_change={&on_change(&1, &2, @room)}
+        kits={@kits}
+        issho={[instance: HakushiDev.Issho, document: topic("whiteboard", @room), follow: @follow]}
+        user={@me}
+        readonly={@readonly}
+        papers={true}
+        label="The whiteboard"
+      />
     </.app>
     """
   end
@@ -1385,6 +1636,7 @@ defmodule HakushiDev.Router do
       live("/", HakushiDev.SchemaLive)
       live("/workflow", HakushiDev.WorkflowLive)
       live("/board", HakushiDev.BoardLive)
+      live("/whiteboard", HakushiDev.WhiteboardLive)
       live("/spec", HakushiDev.SpecLive)
       live("/scale", HakushiDev.ScaleLive)
     end
@@ -1412,6 +1664,11 @@ defmodule HakushiDev.Endpoint do
   plug(Plug.Static, at: "/css", from: Path.expand("assets/css", __DIR__))
   plug(Plug.Static, at: "/vendor/phoenix", from: {:phoenix, "priv/static"})
   plug(Plug.Static, at: "/vendor/phoenix_live_view", from: {:phoenix_live_view, "priv/static"})
+  # Issho's script and theme, from its Hex package: its hooks (comments).
+  plug(Plug.Static, at: "/vendor/issho", from: {:issho, "priv/static"})
+  # The images people add (Storehouse.Local), and the photos of the tests, by their address.
+  plug(Storehouse.Local.Plug)
+  plug(Plug.Static, at: "/fixtures", from: Path.expand("test/fixtures/images", __DIR__))
 
   plug(Plug.Parsers, parsers: [:urlencoded, :json], pass: ["*/*"], json_decoder: JSON)
   plug(Plug.MethodOverride)
@@ -1429,12 +1686,16 @@ Task.async(fn ->
       [
         {Phoenix.PubSub, name: HakushiDev.PubSub},
         HakushiDev.Store,
-        # The room of each shared canvas, its people and their cursors.
+        # The room of each shared canvas, its people and their cursors. The
+        # canvases last as their rooms do (`store: :none`); the comments are
+        # kept in the store, in memory while the server runs.
+        {Issho.Store.Memory, name: HakushiDev.CollabStore},
         {Issho,
          name: HakushiDev.Issho,
          pubsub: HakushiDev.PubSub,
          endpoint: HakushiDev.Endpoint,
-         policy: HakushiDev.Collaboration},
+         policy: HakushiDev.Collaboration,
+         store: {Issho.Store.Memory, HakushiDev.CollabStore}},
         HakushiDev.Endpoint
       ],
       strategy: :one_for_one

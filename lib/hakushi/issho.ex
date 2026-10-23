@@ -12,8 +12,12 @@ if Code.ensure_loaded?(Issho.Engine) do
 
     In the room, it is the `"at"` of a place of the canvas's document:
     `%{"doc" => "board:42", "at" => %{"point" => [120, 80]}}`.
+
+    `label/3` says a place in words, for a thread of comments on it.
     """
     @behaviour Issho.Place
+
+    alias Hakushi.{Canvas, Graph, Kit, Messages}
 
     @max_ids 5_000
 
@@ -30,6 +34,79 @@ if Code.ensure_loaded?(Issho.Engine) do
     end
 
     def validate(_other), do: {:error, :invalid_place}
+
+    @doc ~S"""
+    A place of the canvas in words, from its graph: for a thread of
+    comments on the canvas (`Issho.Components.comments/1`'s `:place`
+    slot), or wherever your app says where something is.
+
+        <.comments id="comments" room="schema:42">
+          <:place :let={%{place: place, default: default}}>
+            {Hakushi.Issho.Place.label(place, @graph, document: "schema:42") || default}
+          </:place>
+        </.comments>
+
+    It gives `The node “customers”` (the node's name, as the canvas says
+    it to a screen reader), `The node “customers” and 2 more`, or `A point
+    on the canvas`; and `nil` for a place of another document, or of nodes
+    that are gone, for your own words.
+
+    `place` is a place of the room (`%{"doc" => doc, "at" => at}`), or
+    its `at`. Options: `:document`, the canvas's (a place of another
+    document is `nil`); `:locale` and `:messages`, as the canvas's; and
+    `:kits` and `:node_label`, as the canvas's, for the names of its nodes.
+
+    `@graph` is the graph as it is now: a LiveView keeps it with the
+    canvas's events (see "Events" in `Hakushi.Issho`), or reads it with
+    `Hakushi.Issho.graph/2`.
+    """
+    @spec label(map() | nil, Graph.t() | nil, keyword()) :: String.t() | nil
+    def label(place, graph, opts \\ [])
+
+    def label(%{"doc" => doc, "at" => at}, graph, opts) do
+      if opts[:document] in [nil, doc], do: label(at, graph, opts)
+    end
+
+    def label(%{"point" => [x, y]}, _graph, opts) when is_number(x) and is_number(y),
+      do: words(opts)["placePoint"]
+
+    def label(%{"node" => id}, graph, opts), do: label(%{"nodes" => [id]}, graph, opts)
+
+    def label(%{"nodes" => ids}, %Graph{} = graph, opts) when is_list(ids) do
+      case Enum.filter(Enum.map(ids, &Graph.node(graph, &1)), & &1) do
+        [] ->
+          nil
+
+        [node | rest] ->
+          words = words(opts)
+          key = if rest == [], do: "placeNode", else: "placeNodes"
+
+          words[key]
+          |> String.replace("{name}", name(node, words, opts))
+          |> String.replace("{n}", Integer.to_string(length(rest)))
+      end
+    end
+
+    def label(_place, _graph, _opts), do: nil
+
+    defp words(opts),
+      do:
+        Messages.for_locale(
+          opts[:locale] || Application.get_env(:hakushi, :locale, "en"),
+          opts[:messages] || %{}
+        )
+
+    # The node's name as the canvas says it: the app's node_label, else
+    # its kit's, else its data's label or name, else its id.
+    defp name(node, words, opts) do
+      name =
+        case opts[:node_label] do
+          nil -> Kit.label(opts[:kits] || [], node, words) || Canvas.label(node)
+          fun -> fun.(node)
+        end
+
+      to_string(name)
+    end
   end
 
   defmodule Hakushi.Issho do
@@ -58,6 +135,32 @@ if Code.ensure_loaded?(Issho.Engine) do
     `change/4` makes your app's own change, from anywhere (a job, another
     LiveView), on a canvas someone has open. A place on the canvas is
     `Hakushi.Issho.Place`.
+
+    ## Events
+
+    Each change of a shared canvas is an event of its room (`Issho.Event`),
+    once the room has it: an agent waits for what people do on the canvas
+    (`wait_for_events` with `"canvas.*"`), a component of the page hears
+    it (`Issho.Live.subscribe/3`'s `:events`), and your app acts on it
+    (`Issho.Events.subscribe/2`). The event's `document` is the canvas's,
+    its `by` who made the change, and its name is the change's op:
+
+      * `"canvas.added"`: nodes added (dropped, pasted, an undone delete),
+        `%{nodes: [%{id: id, type: type}], edges: [%{id: id, source: id, target: id}]}`.
+      * `"canvas.connected"`: edges drawn, `%{edges: [%{id: id, source: id, target: id}]}`.
+      * `"canvas.reconnected"`: an edge's end moved to another node, the
+        same, with its new ends.
+      * `"canvas.moved"`: nodes moved or resized, `%{nodes: [%{id: id, x: x, y: y}]}`
+        (with `width` and `height` for a resize, `parent` for a node put in
+        a group or out), the nodes inside a moved node too.
+      * `"canvas.updated"`: nodes or edges changed (a node's data, an
+        edge's label), `%{nodes: [id], edges: [id]}`.
+      * `"canvas.deleted"`: nodes and edges deleted, `%{nodes: [id], edges: [id]}`,
+        with the nodes inside the nodes deleted and the edges that went
+        with them.
+
+    A change of the paper makes none: Issho's `"document.changed"` says it,
+    as it says every change.
     """
 
     alias Hakushi.{Change, Commit, Graph, Rules}
@@ -129,9 +232,59 @@ if Code.ensure_loaded?(Issho.Engine) do
         initial: graph,
         opts: [rules: rules],
         store: :none,
-        on_transaction: hook(rules, on_change, canvas)
+        on_transaction: hook(rules, on_change, canvas),
+        events: &__MODULE__.events/2
       }
     end
+
+    @doc false
+    # The events of a transaction, once the room has it (see "Events"):
+    # one for each change, as it applied (a delete lists its edges, a move
+    # the nodes that went with it).
+    @spec events([Change.t()], map()) :: [{String.t(), map()}]
+    def events(changes, %{before: %Graph{} = graph}) do
+      {events, _graph} =
+        Enum.flat_map_reduce(changes, graph, fn change, graph ->
+          case Graph.apply(graph, change) do
+            {:ok, result, applied, _inverse} -> {event(applied, result), result}
+            {:error, _reason, _id} -> {[], graph}
+          end
+        end)
+
+      events
+    end
+
+    defp event(%Change{op: :add, nodes: nodes, edges: edges}, _graph),
+      do: [
+        {"canvas.added",
+         %{nodes: Enum.map(nodes, &%{id: &1.id, type: &1.type}), edges: Enum.map(edges, &ends/1)}}
+      ]
+
+    defp event(%Change{op: :connect, edges: edges}, _graph),
+      do: [{"canvas.connected", %{edges: Enum.map(edges, &ends/1)}}]
+
+    defp event(%Change{op: :reconnect, edges: edges}, graph),
+      do: [
+        {"canvas.reconnected", %{edges: Enum.map(edges, &ends(Graph.edge(graph, &1.id)))}}
+      ]
+
+    defp event(%Change{op: :move, nodes: places}, _graph),
+      do: [
+        {"canvas.moved",
+         %{nodes: Enum.map(places, &Map.take(&1, [:id, :x, :y, :width, :height, :parent]))}}
+      ]
+
+    defp event(%Change{op: :update} = change, _graph), do: [{"canvas.updated", ids(change)}]
+    defp event(%Change{op: :delete} = change, _graph), do: [{"canvas.deleted", ids(change)}]
+
+    defp event(%Change{}, _graph), do: []
+
+    defp ids(change) do
+      {nodes, edges} = Change.ids(change)
+      %{nodes: nodes, edges: edges}
+    end
+
+    defp ends(edge), do: %{id: edge.id, source: edge.source, target: edge.target}
 
     # on_change, once for each change, with the change as it applied (a
     # delete lists its edges) and the graph before and after it.
@@ -221,21 +374,52 @@ if Code.ensure_loaded?(Issho.Engine) do
     an agent works on a canvas someone has open, or on one your policy's
     `document/2` describes with `document/2`.
 
+    A person may pause or stop an agent at work (`Issho.Work`): then its
+    tools read the canvas and change nothing on it, not even where its
+    pointer is, and say why, as Issho's room tools do.
+
     Its pointer travels to where it works, and drags, as a hand does: only
     where it goes is sent, and each browser draws the way. For changes that
     land at once: `config :hakushi, Hakushi.Issho, travel: false`.
+
+    On a canvas with ink (`Hakushi.Kits.Ink`), `draw_on_canvas` draws
+    strokes, or a ring around a node: the people see its pen draw each
+    stroke as they see a person's, and each stroke lands as a node when
+    the pen lifts. How it draws is the app's to set, and the agent's for
+    a drawing (its `live` argument):
+
+        config :hakushi, Hakushi.Issho,
+          ink: [
+            live: true,    # false: the strokes land at once, unseen as drawn
+            speed: 900,    # how fast the pen goes, in pixels of the canvas a second
+            max: 8_000     # the most a drawing takes, in milliseconds
+          ]
+
+    It draws only for someone who sees it: when no one in the room shows
+    the canvas, or each of them prefers reduced motion, or with `travel:
+    false` (Hakushi's or Issho's), the strokes land at once.
     """
     @spec tools() :: [module()]
     def tools,
-      do: [
-        Hakushi.Issho.Tools.Read,
-        Hakushi.Issho.Tools.Point,
-        Hakushi.Issho.Tools.Add,
-        Hakushi.Issho.Tools.Move,
-        Hakushi.Issho.Tools.Connect,
-        Hakushi.Issho.Tools.Update,
-        Hakushi.Issho.Tools.Delete
-      ]
+      do:
+        [
+          Hakushi.Issho.Tools.Read,
+          Hakushi.Issho.Tools.Point,
+          Hakushi.Issho.Tools.Add,
+          Hakushi.Issho.Tools.Move,
+          Hakushi.Issho.Tools.Connect,
+          Hakushi.Issho.Tools.Update,
+          Hakushi.Issho.Tools.Delete,
+          Hakushi.Issho.Tools.Draw,
+          Hakushi.Issho.Tools.Shape
+        ] ++ image_tools()
+
+    # add_image, when the app has Storehouse for the images' files.
+    if Code.ensure_loaded?(Storehouse) do
+      defp image_tools, do: [Hakushi.Issho.Tools.Image]
+    else
+      defp image_tools, do: []
+    end
 
     @doc "The graph of a shared canvas as its room has it, or `nil` when no canvas has it open."
     @spec graph(atom(), String.t()) :: Graph.t() | nil

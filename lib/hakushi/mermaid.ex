@@ -242,9 +242,10 @@ defmodule Hakushi.Mermaid do
   @doc """
   The nodes and edges of a Mermaid flowchart: `{:ok, nodes, edges}`, with
   each node a map of its Mermaid id (`m`), `shape` (`:stadium` for
-  `([...])`, `:rhombus` for `{...}`, `:round` for `(...)`, `:box` for the
-  others), `text` and `class` (`:::name`), in the order they come; and each
-  edge a map of `from`, `to` and `label`. `:error` for a text that is not a
+  `([...])`, `:circle` for `((...))`, `:rhombus` for `{...}`, `:round` for
+  `(...)`, `:trapezoid` for `[/...\\]`, `:box` for the others), `text` and
+  `class` (`:::name`), in the order they come; and each edge a map of
+  `from`, `to` and `label`. `:error` for a text that is not a
   flowchart.
 
   It reads what kits write and what people commonly write (`a --> b`,
@@ -337,9 +338,16 @@ defmodule Hakushi.Mermaid do
 
   defp shape(""), do: {nil, nil}
   defp shape("([" <> rest), do: {:stadium, String.slice(rest, 0..-3//1)}
-  defp shape("((" <> rest), do: {:round, String.slice(rest, 0..-3//1)}
+  defp shape("((" <> rest), do: {:circle, String.slice(rest, 0..-3//1)}
   defp shape("[[" <> rest), do: {:box, String.slice(rest, 0..-3//1)}
   defp shape("{" <> rest), do: {:rhombus, String.slice(rest, 0..-2//1)}
+
+  defp shape("[/" <> rest) do
+    if String.ends_with?(rest, "\\]"),
+      do: {:trapezoid, String.slice(rest, 0..-3//1)},
+      else: {:box, "/" <> String.slice(rest, 0..-2//1)}
+  end
+
   defp shape("[" <> rest), do: {:box, String.slice(rest, 0..-2//1)}
   defp shape("(" <> rest), do: {:round, String.slice(rest, 0..-2//1)}
 

@@ -222,19 +222,92 @@ defmodule Hakushi.Test do
 
   @doc """
   Edits a kit's node, as its controls do (`Hakushi.Kit`): the `action`,
-  with the event's `params` (`"value"`, a column's index, ...).
+  with the event's `params` (`"value"`, a column's index, ...). A list of
+  nodes is edited in one change, as the style panel of a kit does
+  (`c:Hakushi.Kit.styles/1`).
 
       edit(view, "model", "orders", "add")
+      edit(view, "board", ["a", "b"], "style", %{"style" => %{"fill" => "red"}})
       edit(view, "model", "orders", "column", %{"column" => 1, "value" => "customer_id"})
   """
-  @spec edit(struct(), String.t(), String.t(), String.t(), map()) :: :ok | {:error, String.t()}
+  @spec edit(struct(), String.t(), String.t() | [String.t()], String.t(), map()) ::
+          :ok | {:error, String.t()}
   def edit(view, id, node, action, params \\ %{}) do
+    target = if is_list(node), do: %{"nodes" => node}, else: %{"node" => node}
+
     payload =
       params
       |> Map.new(fn {k, v} -> {to_string(k), v} end)
-      |> Map.merge(%{"node" => node, "action" => action})
+      |> Map.merge(target)
+      |> Map.put("action", action)
 
     result(event(view, id, "hakushi:edit", payload))
+  end
+
+  @doc """
+  Draws a line with a kit's tool (`"ink:pen"`), as a pen does on the
+  canvas when it lifts: its `points` on the canvas (`[x, y]` or `[x, y,
+  pressure]`). Gives `{:ok, id}` of the node the kit made of it.
+  Options: `:color`, `:size`, and `:parent`, the group it is drawn over.
+
+      {:ok, id} = draw(view, "board", "ink:pen", [[0, 0], [40, 12], [80, 0]], color: "red")
+  """
+  @spec draw(struct(), String.t(), String.t(), [[number()]], keyword()) ::
+          {:ok, String.t()} | {:error, String.t() | nil}
+  def draw(view, id, tool, points, opts \\ []) do
+    payload = %{
+      "tool" => tool,
+      "points" => points,
+      "color" => opts[:color],
+      "size" => opts[:size],
+      "parent" => opts[:parent]
+    }
+
+    case event(view, id, "hakushi:draw", payload) do
+      %{"ok" => true, "drawn" => node} -> {:ok, node}
+      reply -> result(reply)
+    end
+  end
+
+  @doc """
+  The paper the canvas shows: `%{background: name, grid: size}`, its
+  graph's when people chose one, else its own (`Hakushi.Paper`).
+  """
+  @spec paper(struct(), String.t()) :: %{background: String.t(), grid: pos_integer()}
+  def paper(view, id) do
+    config = view |> query(id, "##{id}-hook") |> attribute("data-config") |> JSON.decode!()
+    %{background: config["background"], grid: config["grid"]}
+  end
+
+  @doc """
+  Chooses the canvas's paper with its picker (`papers`), as a person does:
+  a paper it offers, by name, and the size of its squares (one of
+  `Hakushi.Paper.grids/0`).
+
+      :ok = paper(view, "board", "lines", 40)
+  """
+  @spec paper(struct(), String.t(), String.t(), pos_integer()) :: :ok | {:error, String.t()}
+  def paper(view, id, background, grid) do
+    payload = %{"op" => "paper", "paper" => %{"background" => background, "grid" => grid}}
+    result(event(view, id, "hakushi:change", payload))
+  end
+
+  @doc """
+  Draws a box with a kit's tool of the mode `"box"` (`"shapes:rect"`), as
+  a drag on the paper does: `[x, y, width, height]` of the canvas (a box
+  of no size, as a click). Gives `{:ok, id}` of the node the kit made.
+  """
+  @spec draw_box(struct(), String.t(), String.t(), [number()], keyword()) ::
+          {:ok, String.t()} | {:error, String.t() | nil}
+  def draw_box(view, id, tool, box, opts \\ []) do
+    case event(view, id, "hakushi:draw", %{
+           "tool" => tool,
+           "box" => box,
+           "parent" => opts[:parent]
+         }) do
+      %{"ok" => true, "drawn" => node} -> {:ok, node}
+      reply -> result(reply)
+    end
   end
 
   @doc "Undoes the last change of this LiveView's person, as ⌘Z does."

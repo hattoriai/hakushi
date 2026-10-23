@@ -15,6 +15,8 @@ export interface Rules {
 export interface Config {
   rules: Rules;
   grid: number;
+  /** The paper's pattern (the canvas's `data-background`). */
+  background?: string;
   snap: boolean;
   minimap: boolean;
   controls: boolean;
@@ -31,8 +33,51 @@ export interface Config {
   exportable: boolean;
   live: boolean;
   user: string | null;
+  /** The tools of the kits, for the bar of tools (Hakushi.Kit's `tools/1`). */
+  tools?: Tool[];
+  /** The style panels of the kits (Hakushi.Kit's `styles/1`), each for the node types of its kit. */
+  styles?: { kit: string; types: string[]; groups: StyleGroup[] }[];
+  /** The files the canvas takes (a kit's upload, Hakushi.Kit's `upload/0`): their extensions, and whether an address pasted is one. */
+  files?: { kit: string; accept: string[]; urls: boolean } | null;
+  /** The papers people choose from (the canvas's `papers`), and the sizes of their squares. */
+  papers?: { name: string; label: string }[];
+  paperGrids?: number[];
   messages: Record<string, string>;
   locale: string;
+}
+
+/**
+ * A group of a kit's style panel: choices of a key of the nodes' data
+ * (`color`, `width`, `choice`), a field for a text (`text`), or a button
+ * that starts something of the canvas's own (`action`, by its key: `crop`).
+ */
+export interface StyleGroup {
+  key: string;
+  label: string;
+  kind: "color" | "width" | "choice" | "text" | "action";
+  options: { value: unknown; label: string }[];
+  placeholder?: string;
+  icon?: string;
+}
+
+/** A tool of a kit: what the pointer does on the canvas while it is chosen. */
+export interface Tool {
+  kit: string;
+  tool: string;
+  /** `pick` opens a file picker, and is never the tool chosen. */
+  mode: "draw" | "erase" | "lasso" | "box" | "line" | "pick";
+  label: string;
+  icon: string;
+  key: string | null;
+  /** A drawing tool's colours and widths, and the ones it starts with. */
+  colors?: string[];
+  color?: string;
+  sizes?: number[];
+  size?: number;
+  /** One width, whatever the pressure (a highlighter). */
+  flat?: boolean;
+  /** The node types an eraser takes. */
+  types?: string[];
 }
 
 /** The view: the place of the canvas's origin on the screen, and its zoom. */

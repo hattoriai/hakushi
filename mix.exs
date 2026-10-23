@@ -1,7 +1,7 @@
 defmodule Hakushi.MixProject do
   use Mix.Project
 
-  @version "0.3.2"
+  @version "0.3.1"
   @source_url "https://github.com/hattoriai/hakushi"
 
   # HAKUSHI_OLDEST=1 resolves the oldest Phoenix and LiveView that Hakushi
@@ -36,7 +36,10 @@ defmodule Hakushi.MixProject do
   end
 
   def application do
-    [mod: {Hakushi.Application, []}, extra_applications: [:logger]]
+    [
+      mod: {Hakushi.Application, []},
+      extra_applications: [:logger]
+    ]
   end
 
   def cli do
@@ -60,7 +63,7 @@ defmodule Hakushi.MixProject do
       {:igniter, "~> 0.6", optional: true},
       # Shared canvases (`live`): Issho is the room, its people and their
       # cursors. A canvas without `live` never needs it.
-      {:issho, "~> 0.3", optional: true},
+      {:issho, "~> 0.4.2", optional: true},
       # MCP for the development app's agents.
       {:sake, "~> 0.4", only: [:dev, :test]},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
@@ -69,7 +72,10 @@ defmodule Hakushi.MixProject do
       {:phoenix_html, "~> 4.1"},
       {:phoenix_live_reload, "~> 1.6", only: :dev},
       {:phoenix_live_view, if(@oldest, do: "~> 1.1.0", else: "~> 1.1")},
-      {:stream_data, "~> 1.1", only: :test}
+      {:stream_data, "~> 1.1", only: :test},
+      # The files of the Images kit: checked, stored and served. A canvas
+      # without images never needs it.
+      {:storehouse, "~> 0.1", optional: true}
     ]
   end
 
@@ -161,12 +167,26 @@ defmodule Hakushi.MixProject do
           Hakushi.Kits.Schema,
           Hakushi.Kits.Flow,
           Hakushi.Kits.Notes,
+          Hakushi.Kits.Ink,
+          Hakushi.Kits.Shapes,
+          Hakushi.Kits.Images,
+          Hakushi.Images,
+          Hakushi.Ink,
           Hakushi.Mermaid,
           Hakushi.Icons
         ],
-        Graph: [Hakushi.Graph, Hakushi.Node, Hakushi.Edge, Hakushi.Change, Hakushi.Rules],
+        Graph: [
+          Hakushi.Graph,
+          Hakushi.Node,
+          Hakushi.Edge,
+          Hakushi.Change,
+          Hakushi.Rules,
+          Hakushi.Paper
+        ],
         Collaboration: [Hakushi.Room],
-        Storage: [Hakushi.Graph.Type],
+        Storage: [
+          Hakushi.Graph.Type
+        ],
         Testing: [Hakushi.Test]
       ]
     ]

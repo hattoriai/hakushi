@@ -26,13 +26,17 @@ defmodule Hakushi.Canvas do
     * `"hakushi:drop"` with `item`, `x` and `y`: a new node, made by the
       canvas's `new_node` function, or by a kit for a kit's item
       (`"schema:table"`).
+    * `"hakushi:draw"` with `tool` (`"ink:pen"`), `points`, `color`,
+      `size` and `parent`: a line drawn with a kit's tool, which the kit
+      makes a node of (`c:Hakushi.Kit.drawn/3`).
     * `"hakushi:edit"` with `node`, `action` and the action's params: a
       change of a kit's node by its controls (`Hakushi.Kit`), whose data
       the kit gives.
     * `"hakushi:undo"` and `"hakushi:redo"`: the person's own changes,
       undone and done again as new changes, which the server checks again.
     * `"hakushi:peer"`, on a shared canvas: the person's cursor, the nodes
-      they selected and the nodes they drag, for the others.
+      they selected, the nodes they drag and the line they draw (`ink`),
+      for the others.
 
   On a shared canvas (`issho`), the component is a session of an Issho
   room (`Hakushi.Issho`): its changes go to the room's document, and the
@@ -41,9 +45,11 @@ defmodule Hakushi.Canvas do
 
   use Phoenix.LiveComponent
 
+  require Logger
+
   alias Phoenix.LiveView.{JS, TagEngine}
 
-  alias Hakushi.{Change, Commit, Graph, Kit, Messages, Node, Rules}
+  alias Hakushi.{Change, Commit, Graph, Kit, Messages, Node, Paper, Rules}
 
   # Issho is optional: a canvas without `issho` never calls it.
   @compile {:no_warn_undefined,
@@ -53,6 +59,10 @@ defmodule Hakushi.Canvas do
   @undo_limit 100
   # The most nodes one paste, duplicate or selection may name.
   @max_items 5_000
+  # The most points of a line being drawn that go to the others.
+  @max_ink_points 1_500
+  # The most files on their way at once (uploads and addresses pasted).
+  @max_files 50
   # The colours of the people of a shared canvas with none of their own.
   @palette ~w(#e84a1c #2563eb #059669 #9333ea #d97706 #db2777 #0891b2 #65a30d)
 
@@ -63,6 +73,7 @@ defmodule Hakushi.Canvas do
        graph: nil,
        given: nil,
        version: 0,
+       epoch: nil,
        shared: nil,
        room: nil,
        join: nil,
@@ -74,7 +85,8 @@ defmodule Hakushi.Canvas do
        follow: true,
        notice: nil,
        notice_seq: 0,
-       configured: false
+       configured: false,
+       places: %{}
      )}
   end
 
@@ -128,6 +140,7 @@ defmodule Hakushi.Canvas do
       |> assign(configured: true, given: graph)
       |> stream_configure(:nodes, dom_id: &node_dom_id(id, &1.id))
       |> stream_configure(:edges, dom_id: &edge_dom_id(id, &1.id))
+      |> allow_files()
 
     case {socket.assigns.join, connected?(socket)} do
       {%{} = join, true} ->
@@ -145,6 +158,26 @@ defmodule Hakushi.Canvas do
 
   defp start(_socket, other) do
     raise ArgumentError, "a canvas's graph must be a Hakushi.Graph, got: #{inspect(other)}"
+  end
+
+  # The files of a kit that takes them (Hakushi.Kits.Images): an upload of
+  # the canvas's own, which the browser sends as the person drops, pastes
+  # or picks them.
+  defp allow_files(socket) do
+    Enum.each(socket.assigns.kits, &Kit.check!/1)
+
+    case Kit.uploader(socket.assigns.kits) do
+      nil ->
+        assign(socket, :uploader, nil)
+
+      kit ->
+        socket
+        |> assign(:uploader, kit)
+        |> allow_upload(
+          :hakushi_files,
+          Keyword.merge(kit.upload(), auto_upload: true, progress: &file_progress/3)
+        )
+    end
   end
 
   # A shared canvas: a session of the document's room, and the document
@@ -168,7 +201,8 @@ defmodule Hakushi.Canvas do
              notify: {__MODULE__, socket.assigns.id}
            ) do
       socket
-      |> assign(shared: join.document, room: room, version: snapshot["revision"])
+      |> assign(shared: join.document, room: room)
+      |> assign(version: snapshot["revision"], epoch: snapshot["epoch"])
       |> assign(readonly: readonly)
       |> assign_people(people(room))
       |> reset(snapshot["state"])
@@ -261,10 +295,18 @@ defmodule Hakushi.Canvas do
   # -- Events of the room -------------------------------------------------
 
   # A transaction of the room's document: its changes, in revision order.
-  defp receive_event(socket, {"tx", _document, %{"revision" => revision, "ops" => changes}}) do
-    if revision == socket.assigns.version + 1,
-      do: socket |> apply_changes(changes) |> assign(:version, revision),
-      else: resync(socket)
+  # The canvas hears them before it reads the graph it starts from, so one
+  # it has already is skipped; after one it missed, or of a document that
+  # started again (another epoch), the room's graph.
+  defp receive_event(socket, {"tx", _document, %{"revision" => revision, "ops" => changes} = tx}) do
+    %{version: version, epoch: epoch} = socket.assigns
+
+    cond do
+      tx["epoch"] != epoch -> resync(socket)
+      revision <= version -> socket
+      revision == version + 1 -> socket |> apply_changes(changes) |> assign(:version, revision)
+      true -> resync(socket)
+    end
   end
 
   defp receive_event(socket, {"presence_diff", topic, _diff}),
@@ -343,8 +385,8 @@ defmodule Hakushi.Canvas do
   # the room's graph, whole.
   defp resync(%{assigns: %{shared: doc, room: room}} = socket) when is_binary(doc) do
     case Issho.Live.read(room, doc) do
-      {:ok, %{"state" => graph, "revision" => revision}} ->
-        socket |> assign(:version, revision) |> reset(graph)
+      {:ok, %{"state" => graph, "revision" => revision} = snapshot} ->
+        socket |> assign(version: revision, epoch: snapshot["epoch"]) |> reset(graph)
 
       {:error, _reason} ->
         socket
@@ -407,6 +449,14 @@ defmodule Hakushi.Canvas do
     {:reply, %{"error" => Messages.reason(socket.assigns.messages, :readonly)}, socket}
   end
 
+  # A paper of the picker: one the canvas offers, a change as any other.
+  def handle_event("hakushi:change", %{"op" => "paper", "paper" => paper}, socket) do
+    case Paper.from_client(paper, Paper.offered(socket.assigns.papers)) do
+      {:ok, paper} -> reply(commit(socket, Change.paper(paper), true))
+      :error -> {:reply, %{"error" => Messages.reason(socket.assigns.messages, :failed)}, socket}
+    end
+  end
+
   def handle_event("hakushi:change", params, socket) when is_map(params) do
     case Change.from_client(params) do
       {:ok, change} -> reply(commit(socket, change, true))
@@ -451,18 +501,104 @@ defmodule Hakushi.Canvas do
     end
   end
 
+  def handle_event("hakushi:draw", %{"tool" => tool} = params, socket) when is_binary(tool) do
+    with [name, kit_tool] <- String.split(tool, ":", parts: 2),
+         kit when kit != nil <- Kit.by_name(socket.assigns.kits, name),
+         %{} = node <- Kit.drawn(kit, kit_tool, params, socket.assigns.messages) do
+      node = node |> with_id() |> Node.new() |> in_group(socket.assigns.graph, params["parent"])
+      socket |> commit(Change.add([node]), true) |> reply(%{"drawn" => node.id})
+    else
+      _refused -> {:reply, %{"ok" => false}, socket}
+    end
+  end
+
+  # An action on several nodes at once (a style of the panel over the
+  # selection): one change, of those a kit takes.
+  def handle_event(
+        "hakushi:edit",
+        %{"nodes" => [_ | _] = ids, "action" => action} = params,
+        socket
+      )
+      when is_binary(action) and length(ids) <= @max_items do
+    graph = socket.assigns.graph
+
+    updates =
+      for id <- Enum.uniq(ids),
+          is_binary(id),
+          %Node{} = node <- [Graph.node(graph, id)],
+          kit = Kit.for_type(socket.assigns.kits, node.type),
+          kit != nil,
+          {:ok, data} <- [kit.edit(action, params, Kit.stringify(node.data))],
+          data != node.data,
+          do: %{id: id, data: data}
+
+    case updates do
+      [] -> {:reply, %{"ok" => true}, socket}
+      updates -> socket |> commit(Change.update(nodes: updates), true) |> reply()
+    end
+  end
+
   def handle_event("hakushi:edit", %{"node" => id, "action" => action} = params, socket)
       when is_binary(id) and is_binary(action) do
     with %Node{} = node <- Graph.node(socket.assigns.graph, id),
          kit when kit != nil <- Kit.for_type(socket.assigns.kits, node.type),
          {:ok, data} <- kit.edit(action, params, Kit.stringify(node.data)) do
-      if data == node.data,
+      # An edit that moves and resizes its node too (a crop): one change.
+      box =
+        case numbers(params["box"], 4) do
+          [x, y, w, h] when w > 0 and h > 0 -> %{x: x, y: y, width: w, height: h}
+          _none -> %{}
+        end
+
+      if data == node.data and box == %{},
         do: {:reply, %{"ok" => true}, socket},
-        else: socket |> commit(Change.update(nodes: [%{id: id, data: data}]), true) |> reply()
+        else:
+          socket
+          |> commit(Change.update(nodes: [Map.merge(%{id: id, data: data}, box)]), true)
+          |> reply()
     else
       _refused -> {:reply, %{"ok" => false}, socket}
     end
   end
+
+  # The files of the canvas's upload: those the LiveView refuses (too
+  # large, not of a type it takes) go, and the browser takes their
+  # placeholders away.
+  def handle_event("hakushi:files", _params, socket) do
+    {:noreply, drop_refused(socket)}
+  end
+
+  # Where the person put a file that uploads: its place, then its node.
+  def handle_event("hakushi:place", %{"ref" => ref} = params, socket)
+      when is_binary(ref) and byte_size(ref) <= 64 and
+             map_size(socket.assigns.places) < @max_files do
+    place = %{box: numbers(params["box"], 4), parent: params["parent"]}
+    {:reply, %{"ok" => true}, update(socket, :places, &Map.put(&1, ref, place))}
+  end
+
+  # An image's address, pasted: the kit makes a node of it, away from the
+  # LiveView, and the browser shows a placeholder until it is done.
+  def handle_event("hakushi:paste-url", %{"url" => url, "ref" => ref} = params, socket)
+      when is_binary(url) and byte_size(url) <= 2_048 and is_binary(ref) and byte_size(ref) <= 64 and
+             map_size(socket.assigns.places) < @max_files do
+    case socket.assigns[:uploader] do
+      nil ->
+        {:reply, %{"ok" => false}, socket}
+
+      kit ->
+        box = numbers(params["box"], 4)
+        messages = socket.assigns.messages
+        place = %{box: box, parent: params["parent"]}
+
+        {:reply, %{"ok" => true},
+         socket
+         |> update(:places, &Map.put(&1, ref, place))
+         |> start_async({:hakushi_pasted, ref}, fn -> kit.pasted(url, box, messages) end)}
+    end
+  end
+
+  def handle_event(event, _params, socket) when event in ["hakushi:place", "hakushi:paste-url"],
+    do: {:reply, %{"ok" => false}, socket}
 
   def handle_event("hakushi:undo", _params, socket),
     do: step(socket, :undo, :redo, "nothingToUndo")
@@ -475,8 +611,18 @@ defmodule Hakushi.Canvas do
   def handle_event("hakushi:peer", params, %{assigns: %{shared: doc, room: room}} = socket)
       when is_binary(doc) and is_map(params) do
     # Under the canvas's document: the LiveView's other components in the
-    # room keep their keys, and Issho its own.
-    Issho.Live.merge_block(room, doc, peer_state(params))
+    # room keep their keys, and Issho its own. What the person selected is
+    # also their place in the room, Issho's own key.
+    state = peer_state(params)
+    aware = Issho.Live.awareness(room)
+
+    Issho.Live.aware(
+      room,
+      aware
+      |> Issho.Awareness.put_block(doc, state)
+      |> selection_place(doc, state["selected"])
+    )
+
     {:noreply, socket}
   end
 
@@ -491,6 +637,100 @@ defmodule Hakushi.Canvas do
   end
 
   def handle_event("hakushi:seen", _params, socket), do: {:noreply, socket}
+
+  @impl true
+  def handle_async({:hakushi_pasted, ref}, result, socket) do
+    result =
+      case result do
+        {:ok, {:ok, %{} = node}} -> {:ok, node}
+        {:ok, {:error, reason}} -> {:error, reason}
+        _exit -> {:error, :failed}
+      end
+
+    {:noreply, add_file_node(socket, ref, result)}
+  end
+
+  # A file's progress, for its placeholder (and the others'); a file done
+  # becomes a node.
+  defp file_progress(:hakushi_files, %{done?: false} = entry, socket) do
+    {:noreply, push_file(socket, entry.ref, %{"progress" => entry.progress})}
+  end
+
+  defp file_progress(:hakushi_files, entry, socket) do
+    %{uploader: kit, messages: messages} = socket.assigns
+    box = get_in(socket.assigns.places, [entry.ref, :box])
+    meta = %{name: entry.client_name, content_type: entry.client_type}
+
+    result =
+      consume_uploaded_entry(socket, entry, fn %{path: path} ->
+        {:ok, kit.uploaded(path, meta, box, messages)}
+      end)
+
+    {:noreply, add_file_node(socket, entry.ref, result)}
+  end
+
+  defp add_file_node(socket, ref, result) do
+    {place, places} = Map.pop(socket.assigns.places, ref, %{})
+    socket = assign(socket, :places, places)
+
+    with {:ok, %{} = node} <- result,
+         node = node |> with_id() |> Node.new() |> in_group(socket.assigns.graph, place[:parent]),
+         {socket, {:ok, _inverse}} <- commit(socket, Change.add([node]), true) do
+      push_file(socket, ref, %{"id" => node.id})
+    else
+      {socket, {:error, message}} ->
+        push_file(socket, ref, %{"error" => message})
+
+      {:error, reason} ->
+        Logger.warning("Hakushi: a file was not added to the canvas: #{inspect(reason)}")
+        file_failed(socket, ref, file_error(socket.assigns.messages, reason))
+    end
+  end
+
+  # A file that did not become a node: its placeholder goes, and the canvas
+  # says why.
+  defp file_failed(socket, ref, message) do
+    socket
+    |> assign(notice: message, notice_seq: socket.assigns.notice_seq + 1)
+    |> push_file(ref, %{"error" => message})
+  end
+
+  defp drop_refused(socket) do
+    case socket.assigns[:uploads] do
+      %{hakushi_files: %{entries: entries}} ->
+        entries |> Enum.reject(& &1.valid?) |> Enum.reduce(socket, &refuse_entry(&2, &1))
+
+      _none ->
+        socket
+    end
+  end
+
+  defp refuse_entry(socket, entry) do
+    reason =
+      case upload_errors(socket.assigns.uploads.hakushi_files, entry) do
+        [reason | _rest] -> reason
+        [] -> :failed
+      end
+
+    socket
+    |> cancel_upload(:hakushi_files, entry.ref)
+    |> update(:places, &Map.delete(&1, entry.ref))
+    |> file_failed(entry.ref, file_error(socket.assigns.messages, reason))
+  end
+
+  defp file_error(messages, reason)
+       when reason in [:too_large, :not_accepted, :not_an_image, :not_allowed, :too_many_files],
+       do: Messages.reason(messages, reason)
+
+  defp file_error(messages, _reason), do: Messages.reason(messages, :file_failed)
+
+  defp push_file(socket, ref, payload) do
+    push_event(
+      socket,
+      "hakushi:file",
+      Map.merge(payload, %{"canvas" => socket.assigns.id, "ref" => ref})
+    )
+  end
 
   # The nodes of the ids, and the nodes in them, with the edges between
   # them.
@@ -647,6 +887,23 @@ defmodule Hakushi.Canvas do
 
   # What the others see of a person: numbers and ids, and no more of them
   # than a canvas has.
+  # The nodes selected are the person's place (`Hakushi.Issho.Place`): where
+  # a comment of the room goes, what Issho's pointers show when their
+  # pointer is off the canvas. With none, a place of this canvas goes; one
+  # of another component (a text the person types in) stays.
+  defp selection_place(aware, doc, []) do
+    case aware["place"] do
+      %{"doc" => ^doc} -> Map.delete(aware, "place")
+      _other -> aware
+    end
+  end
+
+  defp selection_place(aware, doc, [id]),
+    do: Map.put(aware, "place", %{"doc" => doc, "at" => %{"node" => id}})
+
+  defp selection_place(aware, doc, ids),
+    do: Map.put(aware, "place", %{"doc" => doc, "at" => %{"nodes" => ids}})
+
   defp peer_state(params) do
     %{
       "cursor" => numbers(params["cursor"], 2),
@@ -662,9 +919,36 @@ defmodule Hakushi.Canvas do
         |> Enum.take(@max_items)
         |> Enum.filter(
           &match?([id, x, y] when is_binary(id) and is_number(x) and is_number(y), &1)
-        )
+        ),
+      "ink" => ink(params["ink"]),
+      # The placeholders of the files the person uploads: a box and a
+      # progress each.
+      "files" =>
+        params
+        |> Map.get("files", [])
+        |> List.wrap()
+        |> Enum.take(20)
+        |> Enum.map(&numbers(&1, 5))
+        |> Enum.reject(&is_nil/1)
     }
   end
+
+  # A line being drawn: a tool's and a colour's names, a width, and its
+  # points (numbers), no more of them than a stroke has.
+  @doc false
+  def ink(%{"tool" => tool, "color" => color, "size" => size, "points" => points})
+      when is_binary(tool) and byte_size(tool) <= 40 and is_binary(color) and is_number(size) and
+             size > 0 and is_list(points) do
+    points = points |> Enum.take(@max_ink_points) |> Enum.filter(&ink_point?/1)
+
+    if Regex.match?(~r/\A[a-z0-9-]{1,24}\z/, color) and points != [],
+      do: %{"tool" => tool, "color" => color, "size" => min(size, 64), "points" => points}
+  end
+
+  def ink(_other), do: nil
+
+  defp ink_point?([x, y, p]), do: is_number(x) and is_number(y) and is_number(p)
+  defp ink_point?(_other), do: false
 
   # What a person sees, checked: a node's box is four numbers, an edge's
   # `under` the ids of nodes; at most 200 of each.
@@ -712,14 +996,14 @@ defmodule Hakushi.Canvas do
 
   @impl true
   def render(assigns) do
-    assigns = assign(assigns, :config, JSON.encode!(config(assigns)))
+    assigns = assigns |> with_paper() |> then(&assign(&1, :config, JSON.encode!(config(&1))))
 
     ~H"""
     <div
       id={@id}
       class={["hakushi", @class]}
       phx-mounted={JS.ignore_attributes(["style", "data-ui-*"])}
-      data-background={@background}
+      data-background={@paper_background}
       role="application"
       tabindex="0"
       aria-roledescription={@messages["canvas"]}
@@ -765,7 +1049,7 @@ defmodule Hakushi.Canvas do
             tabindex="-1"
             role="group"
             aria-roledescription={@messages["node"]}
-            aria-label={@node_label.(node)}
+            aria-label={node_label(@node_label, @kits, @messages, node)}
           >
             <.node_content
               slots={@node_slots}
@@ -826,6 +1110,17 @@ defmodule Hakushi.Canvas do
         {render_slot(@empty_slot)}
       </div>
       <div id={@id <> "-ui"} class="hakushi-ui" phx-update="ignore"></div>
+      <form
+        :if={@uploader && !@readonly}
+        id={@id <> "-files"}
+        class="hakushi-files"
+        phx-change="hakushi:files"
+        phx-submit="hakushi:files"
+        phx-target={@myself}
+        hidden
+      >
+        <.live_file_input upload={@uploads.hakushi_files} tabindex="-1" data-hakushi-files />
+      </form>
       <div
         class="hakushi-notice"
         role="status"
@@ -852,6 +1147,31 @@ defmodule Hakushi.Canvas do
           true -> nil
         end
     end
+  end
+
+  # The paper the canvas shows: its graph's, else its own attributes'.
+  defp with_paper(%{graph: graph} = assigns) do
+    paper = (graph && graph.paper) || %{}
+
+    assign(assigns,
+      paper_background: paper[:background] || to_string(assigns.background),
+      paper_grid: paper[:grid] || assigns.grid
+    )
+  end
+
+  # The papers of the picker, for a person who may change the paper, in
+  # the canvas's words.
+  defp papers(%{readonly: true}), do: []
+
+  defp papers(assigns) do
+    for %{name: name, label: label} <- Paper.offered(assigns.papers) do
+      %{"name" => name, "label" => label || paper_label(assigns.messages, name)}
+    end
+  end
+
+  defp paper_label(messages, name) do
+    key = "paper" <> String.capitalize(name)
+    messages[key] || name |> String.replace("-", " ") |> String.capitalize()
   end
 
   defp node_style(node) do
@@ -932,6 +1252,14 @@ defmodule Hakushi.Canvas do
     """
   end
 
+  # The app's name of a node, else its kit's (a stroke is "Drawing"), else
+  # the default's.
+  defp node_label(fun, kits, messages, node) do
+    if fun == (&__MODULE__.label/1),
+      do: Kit.label(kits, node, messages) || fun.(node),
+      else: fun.(node)
+  end
+
   @doc false
   def label(%Node{data: data, id: id}) when is_map(data) do
     Map.get(data, :label) || Map.get(data, "label") || Map.get(data, :name) ||
@@ -949,10 +1277,23 @@ defmodule Hakushi.Canvas do
     |> String.upcase()
   end
 
+  # What the browser takes as files: the kit's upload, and whether an
+  # address pasted is one.
+  defp files_config(%{uploader: kit, readonly: false}) when kit != nil do
+    %{
+      "kit" => kit.name(),
+      "accept" => Keyword.get(kit.upload(), :accept, []),
+      "urls" => Kit.exports?(kit, :pasted, 3)
+    }
+  end
+
+  defp files_config(_assigns), do: nil
+
   defp config(assigns) do
     %{
       "rules" => Rules.to_client(assigns.rules),
-      "grid" => assigns.grid,
+      "grid" => assigns.paper_grid,
+      "background" => assigns.paper_background,
       "snap" => assigns.snap,
       "minimap" => assigns.minimap,
       "controls" => assigns.controls,
@@ -968,6 +1309,11 @@ defmodule Hakushi.Canvas do
       "exportable" => assigns.export,
       "live" => assigns.join != nil,
       "user" => own_id(%{assigns: assigns}),
+      "tools" => Kit.tools(assigns.kits, assigns.messages),
+      "styles" => if(assigns.readonly, do: [], else: Kit.styles(assigns.kits, assigns.messages)),
+      "papers" => papers(assigns),
+      "files" => files_config(assigns),
+      "paperGrids" => Paper.grids(),
       "messages" => assigns.messages,
       "locale" => assigns.locale
     }
