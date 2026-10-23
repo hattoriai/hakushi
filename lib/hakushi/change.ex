@@ -30,24 +30,28 @@ defmodule Hakushi.Change do
     * `:delete` - `nodes` and `edges` are lists of ids. Deleting a node
       deletes the nodes in it and the edges of all of them: the change
       that `Hakushi.Graph.apply/2` gives back lists them.
+    * `:paper` - `paper` is the canvas's paper (`Hakushi.Paper`), chosen
+      with the canvas's picker, or `nil` for the canvas's own
+      `background` and `grid`.
 
   `by` is the `user` of the canvas that made it (a map with an `:id`), or
   `nil` for the app's own.
   """
 
-  alias Hakushi.{Edge, Node}
+  alias Hakushi.{Edge, Node, Paper}
 
-  @ops [:add, :connect, :move, :reconnect, :update, :delete]
+  @ops [:add, :connect, :move, :reconnect, :update, :delete, :paper]
 
   @enforce_keys [:op]
-  defstruct op: nil, nodes: [], edges: [], by: nil
+  defstruct op: nil, nodes: [], edges: [], paper: nil, by: nil
 
-  @type op :: :add | :connect | :move | :reconnect | :update | :delete
+  @type op :: :add | :connect | :move | :reconnect | :update | :delete | :paper
 
   @type t :: %__MODULE__{
           op: op(),
           nodes: [Node.t() | map() | Node.id()],
           edges: [Edge.t() | map() | Edge.id()],
+          paper: Paper.t() | nil,
           by: map() | nil
         }
 
@@ -99,6 +103,15 @@ defmodule Hakushi.Change do
       nodes: Keyword.get(opts, :nodes, []),
       edges: Keyword.get(opts, :edges, [])
     }
+
+  @doc """
+  Changes the canvas's paper: its pattern and the size of its squares
+  (`Hakushi.Paper.new/1`), or `nil` for the canvas's own.
+
+      Hakushi.Change.paper(background: :lines, grid: 24)
+  """
+  @spec paper(map() | keyword() | nil) :: t()
+  def paper(paper), do: %__MODULE__{op: :paper, paper: Paper.new(paper)}
 
   defp place({id, x, y}), do: %{id: id, x: x, y: y}
   defp place(%{} = place), do: place

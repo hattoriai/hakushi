@@ -47,7 +47,7 @@ defmodule Hakushi.Canvas do
 
   alias Phoenix.LiveView.{JS, TagEngine}
 
-  alias Hakushi.{Change, Commit, Graph, Kit, Messages, Node, Rules}
+  alias Hakushi.{Change, Commit, Graph, Kit, Messages, Node, Paper, Rules}
 
   # Issho is optional: a canvas without `issho` never calls it.
   @compile {:no_warn_undefined,
@@ -413,6 +413,14 @@ defmodule Hakushi.Canvas do
     {:reply, %{"error" => Messages.reason(socket.assigns.messages, :readonly)}, socket}
   end
 
+  # A paper of the picker: one the canvas offers, a change as any other.
+  def handle_event("hakushi:change", %{"op" => "paper", "paper" => paper}, socket) do
+    case Paper.from_client(paper, Paper.offered(socket.assigns.papers)) do
+      {:ok, paper} -> reply(commit(socket, Change.paper(paper), true))
+      :error -> {:reply, %{"error" => Messages.reason(socket.assigns.messages, :failed)}, socket}
+    end
+  end
+
   def handle_event("hakushi:change", params, socket) when is_map(params) do
     case Change.from_client(params) do
       {:ok, change} -> reply(commit(socket, change, true))
@@ -747,14 +755,14 @@ defmodule Hakushi.Canvas do
 
   @impl true
   def render(assigns) do
-    assigns = assign(assigns, :config, JSON.encode!(config(assigns)))
+    assigns = assigns |> with_paper() |> then(&assign(&1, :config, JSON.encode!(config(&1))))
 
     ~H"""
     <div
       id={@id}
       class={["hakushi", @class]}
       phx-mounted={JS.ignore_attributes(["style", "data-ui-*"])}
-      data-background={@background}
+      data-background={@paper_background}
       role="application"
       tabindex="0"
       aria-roledescription={@messages["canvas"]}
@@ -889,6 +897,31 @@ defmodule Hakushi.Canvas do
     end
   end
 
+  # The paper the canvas shows: its graph's, else its own attributes'.
+  defp with_paper(%{graph: graph} = assigns) do
+    paper = (graph && graph.paper) || %{}
+
+    assign(assigns,
+      paper_background: paper[:background] || to_string(assigns.background),
+      paper_grid: paper[:grid] || assigns.grid
+    )
+  end
+
+  # The papers of the picker, for a person who may change the paper, in
+  # the canvas's words.
+  defp papers(%{readonly: true}), do: []
+
+  defp papers(assigns) do
+    for %{name: name, label: label} <- Paper.offered(assigns.papers) do
+      %{"name" => name, "label" => label || paper_label(assigns.messages, name)}
+    end
+  end
+
+  defp paper_label(messages, name) do
+    key = "paper" <> String.capitalize(name)
+    messages[key] || name |> String.replace("-", " ") |> String.capitalize()
+  end
+
   defp node_style(node) do
     size =
       if node.width,
@@ -995,7 +1028,8 @@ defmodule Hakushi.Canvas do
   defp config(assigns) do
     %{
       "rules" => Rules.to_client(assigns.rules),
-      "grid" => assigns.grid,
+      "grid" => assigns.paper_grid,
+      "background" => assigns.paper_background,
       "snap" => assigns.snap,
       "minimap" => assigns.minimap,
       "controls" => assigns.controls,
@@ -1012,6 +1046,8 @@ defmodule Hakushi.Canvas do
       "live" => assigns.join != nil,
       "user" => own_id(%{assigns: assigns}),
       "tools" => Kit.tools(assigns.kits, assigns.messages),
+      "papers" => papers(assigns),
+      "paperGrids" => Paper.grids(),
       "messages" => assigns.messages,
       "locale" => assigns.locale
     }

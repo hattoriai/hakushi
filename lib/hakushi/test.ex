@@ -262,6 +262,29 @@ defmodule Hakushi.Test do
     end
   end
 
+  @doc """
+  The paper the canvas shows: `%{background: name, grid: size}`, its
+  graph's when people chose one, else its own (`Hakushi.Paper`).
+  """
+  @spec paper(struct(), String.t()) :: %{background: String.t(), grid: pos_integer()}
+  def paper(view, id) do
+    config = view |> query(id, "##{id}-hook") |> attribute("data-config") |> JSON.decode!()
+    %{background: config["background"], grid: config["grid"]}
+  end
+
+  @doc """
+  Chooses the canvas's paper with its picker (`papers`), as a person does:
+  a paper it offers, by name, and the size of its squares (one of
+  `Hakushi.Paper.grids/0`).
+
+      :ok = paper(view, "board", "lines", 40)
+  """
+  @spec paper(struct(), String.t(), String.t(), pos_integer()) :: :ok | {:error, String.t()}
+  def paper(view, id, background, grid) do
+    payload = %{"op" => "paper", "paper" => %{"background" => background, "grid" => grid}}
+    result(event(view, id, "hakushi:change", payload))
+  end
+
   @doc "Undoes the last change of this LiveView's person, as ⌘Z does."
   @spec undo(struct(), String.t()) :: :ok | {:error, String.t()}
   def undo(view, id), do: result(event(view, id, "hakushi:undo", %{}))

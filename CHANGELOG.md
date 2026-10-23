@@ -9,6 +9,19 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- People choose the paper: `papers` (off unless given) puts a picker in
+  the controls, with the papers people choose from (`true` for dots,
+  graph paper, crosses and none, or a list, with papers of the app's own)
+  and the size of their squares. The paper chosen is the graph's
+  (`Hakushi.Graph`'s `paper`, kept by `dump/1` and `load/1`), and choosing
+  it is a change, `:paper` (`Hakushi.Change.paper/1`): it goes through
+  `on_change`, ⌘Z takes it back, and on a shared canvas everyone sees it.
+  `Hakushi.Test.paper/4` chooses one, `paper/2` reads it.
+- Papers of the app's own (`Hakushi.Paper`): a pattern of CSS, named in
+  `background` or `papers`, drawn with the canvas's properties.
+- An exported image may have the paper: `Hakushi.Live.export/2` with
+  `paper: true`.
+
 - Ink (`Hakushi.Kits.Ink`): drawing on the paper with a pen, over anything
   on the canvas. A bar of tools at the top of the canvas has the pointer,
   a pen and a highlighter (in seven colours and three widths), an eraser
