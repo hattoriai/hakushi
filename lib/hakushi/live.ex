@@ -55,14 +55,31 @@ defmodule Hakushi.Live do
 
   @doc """
   Tidies up the canvas `canvas` of this LiveView, as its tidy up button
-  does: its nodes in layers along their edges (`direction: :right` or
-  `:down`, the canvas's `layout` unless given). The person's browser lays
-  them out, and the new places are a change as any: checked, shared, and
-  undone with ⌘Z.
+  does: `algorithm: :layered` (in layers along the edges, `direction:
+  :right` or `:down`), `:force` (by forces) or `:grid`; the canvas's
+  `layout` (or the way the person chose in its menu) unless given. The
+  person's browser lays the nodes out, and the new places are a change as
+  any: checked, shared, and undone with ⌘Z.
+
+      Hakushi.Live.layout("schema", algorithm: :force)
   """
   @spec layout(String.t(), keyword()) :: :ok
   def layout(canvas, opts \\ []) when is_binary(canvas) do
-    payload = if dir = opts[:direction], do: %{"direction" => Atom.to_string(dir)}, else: %{}
+    payload =
+      for {key, values} <- [direction: [:right, :down], algorithm: [:layered, :force, :grid]],
+          value = opts[key],
+          value != nil,
+          into: %{} do
+        unless value in values,
+          do:
+            raise(
+              ArgumentError,
+              "a layout's #{key} is one of #{inspect(values)}, got: #{inspect(value)}"
+            )
+
+        {Atom.to_string(key), Atom.to_string(value)}
+      end
+
     send_update(Hakushi.Canvas, id: canvas, hakushi_push: {"hakushi:layout", payload})
     :ok
   end

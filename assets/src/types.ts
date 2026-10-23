@@ -31,7 +31,10 @@ export interface Config {
   newNode: boolean;
   wheel: "pan" | "zoom" | "scroll";
   refit: boolean;
+  /** The way of the layers of a tidy up. */
   layout: "right" | "down";
+  /** How a tidy up places the nodes: in layers, by forces, or in a grid. */
+  algorithm?: "layered" | "force" | "grid";
   exportable: boolean;
   live: boolean;
   user: string | null;

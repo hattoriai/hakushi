@@ -155,12 +155,13 @@ defmodule Hakushi.Components do
     default: true,
     doc: "when `true`, buttons to zoom, fit, tidy up, undo and redo, and to download the canvas"
 
-  attr :layout, :atom,
+  attr :layout, :any,
     default: nil,
-    values: [nil, :right, :down],
     doc: """
-    the way the tidy up (⇧L, the controls) lays the nodes out: in layers from left to right, \
-    or from top to bottom (the default is a kit's, else `:right`); see \
+    the way the tidy up (⇧L, the controls) lays the nodes out: in layers from left to right \
+    (`:right`) or from top to bottom (`:down`), by forces (`:force`), or in a grid (`:grid`); \
+    `:layered` is `:right`, and `{:layered, :down}` is `:down`. The default is a kit's, else \
+    `:right`. People choose another in the menu by the tidy up button; see \
     [Layout and export](layout.md)\
     """
 
@@ -304,7 +305,7 @@ defmodule Hakushi.Components do
       background: pick(assigns.background, prefs[:background], :dots),
       grid: pick(assigns.grid, prefs[:grid], 20),
       snap: pick(assigns.snap, prefs[:snap], false),
-      layout: pick(assigns.layout, prefs[:layout], :right),
+      layout: Hakushi.Canvas.layout!(pick(assigns.layout, prefs[:layout], :right)),
       rules: rules
     )
   end

@@ -15,7 +15,7 @@ import { exportImage, type ExportOptions } from "./export";
 import { icons } from "./icons";
 import { aspectResize, cropOf, dragCrop, fitImage, fullOf, imageAddress, rowAt, type Crop } from "./images";
 import { FLAT, inkBox, inside, outline, simplify, streamline, type InkPoint, type InkStroke } from "./ink";
-import { layered } from "./layout";
+import { layout as place, type Algorithm } from "./layout";
 import { Messages } from "./messages";
 import { Minimap } from "./minimap";
 import { check } from "./rules";
@@ -472,10 +472,12 @@ export class Canvas {
     if (grid !== this.config.grid) this.drawnView = null;
     if (minimap !== this.config.minimap || controls !== this.config.controls || papers !== JSON.stringify(this.config.papers ?? [])) {
       this.togglePaperMenu(false);
+      this.toggleLayoutMenu(false);
       this.buildControls();
     }
     if (tools !== JSON.stringify(this.config.tools ?? []) + this.config.readonly + this.arranges) {
       this.buildTools();
+      this.toggleLayoutMenu(false);
       this.buildControls();
     }
     this.drawPaperMenu();
@@ -1355,6 +1357,7 @@ export class Canvas {
       if (this.arranges) {
         group.append(
           button("layout", t("layout"), icons.layout, () => this.layout()),
+          this.layoutsButton(button),
           button("undo", t("undo"), icons.undo, () => this.undo()),
           button("redo", t("redo"), icons.redo, () => this.redo()),
         );
@@ -1381,6 +1384,93 @@ export class Canvas {
     }
   }
 
+  // -- The layouts ---------------------------------------------------------------
+  //
+  // A menu by the tidy up button of the ways to lay the nodes out. The way
+  // chosen is the person's, for this page: the next tidy up (⇧L, the
+  // button) lays out that way too.
+
+  private chosenLayout: { algorithm: Algorithm; direction: "right" | "down" } | null = null;
+  private layoutMenu: HTMLElement | null = null;
+
+  private static layouts: { key: string; algorithm: Algorithm; direction: "right" | "down" }[] = [
+    { key: "layoutRight", algorithm: "layered", direction: "right" },
+    { key: "layoutDown", algorithm: "layered", direction: "down" },
+    { key: "layoutForce", algorithm: "force", direction: "right" },
+    { key: "layoutGrid", algorithm: "grid", direction: "right" },
+  ];
+
+  /** The way the next tidy up lays the nodes out: the person's choice, else the canvas's. */
+  layoutChoice(): { algorithm: Algorithm; direction: "right" | "down" } {
+    return this.chosenLayout ?? { algorithm: this.config.algorithm ?? "layered", direction: this.config.layout ?? "right" };
+  }
+
+  private layoutsButton(button: (action: string, label: string, content: string, run: () => void) => HTMLElement) {
+    const b = button("layouts", this.messages.t("layouts"), icons.chevron, () => this.toggleLayoutMenu());
+    b.classList.add("hakushi-control-more");
+    b.setAttribute("aria-haspopup", "menu");
+    b.setAttribute("aria-expanded", "false");
+    return b;
+  }
+
+  private toggleLayoutMenu(open = !this.layoutMenu) {
+    const button = this.controlsEl?.querySelector<HTMLElement>('[data-action="layouts"]');
+    if (!open) {
+      this.layoutMenu?.remove();
+      this.layoutMenu = null;
+      document.removeEventListener("pointerdown", this.closeLayoutMenu, true);
+      button?.setAttribute("aria-expanded", "false");
+      return;
+    }
+    this.togglePaperMenu(false);
+    const choice = this.layoutChoice();
+    const menu = el("div", { class: "hakushi-paper-menu hakushi-layout-menu", role: "menu", "aria-label": this.messages.t("layouts") });
+    for (const way of Canvas.layouts) {
+      const checked = way.algorithm === choice.algorithm && (way.algorithm !== "layered" || way.direction === choice.direction);
+      const item = el("button", { type: "button", role: "menuitemradio", class: "hakushi-paper-item", "aria-checked": String(checked), tabindex: "-1", "data-layout": way.key }, [
+        el("span", {}, [this.messages.t(way.key)]),
+      ]);
+      item.addEventListener("click", () => {
+        this.chosenLayout = { algorithm: way.algorithm, direction: way.direction };
+        this.toggleLayoutMenu(false);
+        button?.focus();
+        void this.layout();
+      });
+      menu.append(item);
+    }
+    menu.addEventListener("pointerdown", (event) => event.stopPropagation());
+    menu.addEventListener("keydown", (event) => this.menuKey(event, menu, () => this.toggleLayoutMenu(false), button));
+    this.layoutMenu = menu;
+    this.ui.append(menu);
+    button?.setAttribute("aria-expanded", "true");
+    document.addEventListener("pointerdown", this.closeLayoutMenu, true);
+    menu.querySelector<HTMLElement>('[aria-checked="true"]')?.focus();
+  }
+
+  private closeLayoutMenu = (event: Event) => {
+    const target = event.target as Element | null;
+    if (target?.closest?.(".hakushi-layout-menu") || target?.closest?.('[data-action="layouts"]')) return;
+    this.toggleLayoutMenu(false);
+  };
+
+  // The keys of a menu: up and down, Home and End, Escape and Tab to close.
+  private menuKey(event: KeyboardEvent, menu: HTMLElement, close: () => void, button: HTMLElement | null | undefined) {
+    const items = [...menu.querySelectorAll<HTMLElement>(".hakushi-paper-item")];
+    const index = items.indexOf(document.activeElement as HTMLElement);
+    if (event.key === "Escape" || event.key === "Tab") {
+      if (event.key === "Escape") event.preventDefault();
+      close();
+      if (event.key === "Escape") button?.focus();
+    } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      items[(index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
+    } else if (event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      items[event.key === "Home" ? 0 : items.length - 1]?.focus();
+    }
+    event.stopPropagation();
+  }
+
   // -- The paper -----------------------------------------------------------------
   //
   // A menu of the papers the canvas offers, and of the sizes of their
@@ -1398,6 +1488,7 @@ export class Canvas {
       button?.setAttribute("aria-expanded", "false");
       return;
     }
+    this.toggleLayoutMenu(false);
     const menu = el("div", { class: "hakushi-paper-menu", role: "menu", "aria-label": this.messages.t("paper") });
     menu.addEventListener("pointerdown", (event) => event.stopPropagation());
     menu.addEventListener("keydown", (event) => this.paperKey(event));
@@ -1443,20 +1534,7 @@ export class Canvas {
   }
 
   private paperKey(event: KeyboardEvent) {
-    const items = [...(this.paperMenu?.querySelectorAll<HTMLElement>(".hakushi-paper-item") ?? [])];
-    const index = items.indexOf(document.activeElement as HTMLElement);
-    if (event.key === "Escape" || event.key === "Tab") {
-      if (event.key === "Escape") event.preventDefault();
-      this.togglePaperMenu(false);
-      if (event.key === "Escape") this.controlsEl?.querySelector<HTMLElement>('[data-action="paper"]')?.focus();
-    } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      items[(index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
-    } else if (event.key === "Home" || event.key === "End") {
-      event.preventDefault();
-      items[event.key === "Home" ? 0 : items.length - 1]?.focus();
-    }
-    event.stopPropagation();
+    if (this.paperMenu) this.menuKey(event, this.paperMenu, () => this.togglePaperMenu(false), this.controlsEl?.querySelector<HTMLElement>('[data-action="paper"]'));
   }
 
   /** Chooses a paper the canvas offers (its name) and the size of its squares: a change, which undoes. */
@@ -3757,7 +3835,7 @@ export class Canvas {
    * it; locked nodes stay. The nodes glide to their places, and the change
    * is one move, which undoes at once.
    */
-  async layout(options: { direction?: "right" | "down" } = {}): Promise<void> {
+  async layout(options: { direction?: "right" | "down"; algorithm?: Algorithm } = {}): Promise<void> {
     if (!this.arranges || this.gesture) return;
     const chosen = this.selected.size >= 2 ? [...this.selected] : [...this.order];
     // The nodes laid out: those of no group among the chosen ones, so that a
@@ -3778,7 +3856,12 @@ export class Canvas {
       .map((e) => ({ source: top(e.source), target: top(e.target) }))
       .filter((e) => laid.has(e.source) && laid.has(e.target));
 
-    const places = layered(boxes, edges, { direction: options.direction ?? this.config.layout ?? "right" });
+    const choice = this.layoutChoice();
+    const places = place(boxes, edges, {
+      algorithm: options.algorithm ?? choice.algorithm,
+      direction: options.direction ?? choice.direction,
+      aspect: this.size.width > 0 && this.size.height > 0 ? this.size.width / this.size.height : 1.6,
+    });
     // In place: the laid out nodes keep the top left corner they had.
     const before = union(boxes.map((b) => this.rect(this.nodes.get(b.id)!)))!;
     const after = union(boxes.map((b) => ({ ...places.get(b.id)!, width: b.width, height: b.height })))!;
@@ -3875,6 +3958,7 @@ export class Canvas {
 
   destroy() {
     this.togglePaperMenu(false);
+    this.toggleLayoutMenu(false);
     clearTimeout(this.panTimer);
     for (const o of this.observers) o.disconnect();
     for (const cleanup of this.cleanups) cleanup();

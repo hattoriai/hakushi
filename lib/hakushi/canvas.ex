@@ -66,6 +66,23 @@ defmodule Hakushi.Canvas do
   # The colours of the people of a shared canvas with none of their own.
   @palette ~w(#e84a1c #2563eb #059669 #9333ea #d97706 #db2777 #0891b2 #65a30d)
 
+  @algorithms [:layered, :force, :grid]
+
+  @doc false
+  # A canvas's `layout`, as `{algorithm, direction}`.
+  @spec layout!(term()) :: {:layered | :force | :grid, :right | :down}
+  def layout!(direction) when direction in [:right, :down], do: {:layered, direction}
+  def layout!(algorithm) when algorithm in @algorithms, do: {algorithm, :right}
+
+  def layout!({algorithm, direction} = layout)
+      when algorithm in @algorithms and direction in [:right, :down],
+      do: layout
+
+  def layout!(other) do
+    raise ArgumentError,
+          "a canvas's layout is :right, :down, :layered, :force, :grid or {:layered, :down}, got: #{inspect(other)}"
+  end
+
   @impl true
   def mount(socket) do
     {:ok,
@@ -1347,7 +1364,8 @@ defmodule Hakushi.Canvas do
       "newNode" => assigns.new_node != nil or assigns.kits != [],
       "wheel" => Atom.to_string(assigns.wheel),
       "refit" => assigns.refit,
-      "layout" => Atom.to_string(assigns.layout),
+      "layout" => Atom.to_string(elem(assigns.layout, 1)),
+      "algorithm" => Atom.to_string(elem(assigns.layout, 0)),
       "exportable" => assigns.export,
       "live" => assigns.join != nil,
       "user" => own_id(%{assigns: assigns}),

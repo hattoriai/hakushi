@@ -745,6 +745,18 @@
   background: color-mix(in oklab, var(--hakushi-text) 7%, transparent);
 }
 
+/* The arrow by the tidy up that opens the ways to lay out: narrow, next to it. */
+.hakushi-control-more {
+  min-width: 16px;
+  margin-left: -4px;
+  padding: 0;
+}
+
+.hakushi-control-more svg {
+  width: 12px;
+  height: 12px;
+}
+
 .hakushi-control:focus-visible {
   outline: 2px solid var(--hakushi-accent);
   outline-offset: -2px;

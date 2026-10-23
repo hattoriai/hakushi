@@ -45,7 +45,8 @@ export const Hakushi = {
       if (payload.canvas === canvas.id) canvas.fileEvent(payload);
     });
     hook.handleEvent("hakushi:layout", (payload) => {
-      if (payload.canvas === canvas.id) void canvas.layout({ direction: payload.direction as "right" | "down" | undefined });
+      if (payload.canvas === canvas.id)
+        void canvas.layout({ direction: payload.direction as "right" | "down" | undefined, algorithm: payload.algorithm as "layered" | "force" | "grid" | undefined });
     });
     hook.handleEvent("hakushi:export", (payload) => {
       if (payload.canvas === canvas.id) void canvas.download({ format: payload.format as "png" | "svg" | undefined, filename: payload.filename as string | undefined, paper: payload.paper === true });

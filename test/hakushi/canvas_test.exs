@@ -207,6 +207,40 @@ defmodule Hakushi.CanvasTest do
     end
   end
 
+  describe "layout" do
+    test "the canvas's way to lay out goes to the browser, as an algorithm and a direction" do
+      {_view, html} = open()
+      assert html =~ "&quot;layout&quot;:&quot;right&quot;"
+      assert html =~ "&quot;algorithm&quot;:&quot;layered&quot;"
+
+      {_view, html} = open("?layout=force")
+      assert html =~ "&quot;algorithm&quot;:&quot;force&quot;"
+
+      {_view, html} = open("?layout=down")
+      assert html =~ "&quot;layout&quot;:&quot;down&quot;"
+      assert html =~ "&quot;algorithm&quot;:&quot;layered&quot;"
+    end
+
+    test "layout!/1 takes the forms of the attribute, and refuses others" do
+      assert Hakushi.Canvas.layout!(:right) == {:layered, :right}
+      assert Hakushi.Canvas.layout!(:down) == {:layered, :down}
+      assert Hakushi.Canvas.layout!(:grid) == {:grid, :right}
+      assert Hakushi.Canvas.layout!({:layered, :down}) == {:layered, :down}
+      assert_raise ArgumentError, fn -> Hakushi.Canvas.layout!(:spiral) end
+      assert_raise ArgumentError, fn -> Hakushi.Canvas.layout!({:force, :up}) end
+    end
+
+    test "the app tidies up with an algorithm" do
+      {view, _html} = open()
+      render_click(view, "app_layout", %{"algorithm" => "force"})
+      assert_push_event(view, "hakushi:layout", %{"canvas" => "schema", "algorithm" => "force"})
+
+      render_click(view, "app_layout", %{"direction" => "down"})
+      assert_push_event(view, "hakushi:layout", %{"direction" => "down"} = payload)
+      refute Map.has_key?(payload, "algorithm")
+    end
+  end
+
   test "refuses what a browser should not send" do
     {view, _html} = open()
     assert {:error, _} = Hakushi.Test.move(view, "schema", [{"note", "x", 1}])
