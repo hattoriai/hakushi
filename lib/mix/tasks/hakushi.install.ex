@@ -1,189 +1,186 @@
-defmodule Mix.Tasks.Hakushi.Install do
-  @shortdoc "Adds the Hakushi hook and style sheet to a Phoenix app"
+# The task with Igniter when the app has it, else the plain one: the choice
+# is made as the file compiles, since `use Igniter.Mix.Task` does not expand
+# in an app without Igniter.
+if Code.ensure_loaded?(Igniter) do
+  defmodule Mix.Tasks.Hakushi.Install do
+    @shortdoc "Adds Hakushi to a Phoenix app"
 
-  @moduledoc """
-  Sets up Hakushi in a Phoenix application.
+    @moduledoc """
+    Sets up Hakushi in a Phoenix application.
 
-      $ mix hakushi.install
-      $ mix hakushi.install --dry-run
+        $ mix igniter.install hakushi
 
-  The task edits two files:
+    or, with Hakushi already in the deps, `mix hakushi.install`.
+    [Igniter](https://hexdocs.pm/igniter) shows each change as a diff and
+    asks before it writes (`--dry-run` only shows them, `--yes` does not
+    ask). Running the task again changes nothing.
 
-    * `assets/js/app.js` - adds `import { Hakushi } from "hakushi"` and puts
-      `Hakushi` in the `hooks` of the `LiveSocket`. When it cannot find the
-      `new LiveSocket(...)` call, or its hooks are not an object or a
-      variable, it changes nothing and prints the lines to add.
-    * `assets/css/app.css` - adds
-      `@import "../../deps/hakushi/priv/static/hakushi.css";`, and the Sumi
-      theme import as a comment. The imports follow the deps directory of
-      the project (`Mix.Project.deps_path/0`) when it is not `deps/`, as in
-      an umbrella child or with `MIX_DEPS_PATH`. For a path dependency
-      (`{:hakushi, path: "../hakushi"}`), which Mix does not copy into
-      `deps/`, the imports point at the dependency's directory instead.
+      * `assets/js/app.js` imports the `Hakushi` hook and adds it to the
+        hooks of the `LiveSocket`;
+      * `assets/css/app.css` imports the canvas style sheet, and the Sumi
+        theme as a comment;
+      * the `html_helpers` of your web module import `Hakushi.Components`.
 
-  Then it prints the esbuild note (the app's esbuild must resolve `hakushi`
-  through `NODE_PATH`: from `deps/`, or, for a path dependency, from the
-  directory that holds it).
+    When a file is not there, or the task cannot edit it safely, it changes
+    nothing in that file and tells you the lines to add. It does not edit
+    `config/config.exs`: when the esbuild profile does not resolve `hakushi`
+    through `NODE_PATH`, it tells you what to add.
 
-  The task is idempotent: it does not add what a file already has, and when
-  there is nothing to add it says so.
+    Without Igniter in the app, `mix hakushi.install` makes the edits of
+    the two asset files and prints each change as a diff.
+    """
 
-  ## Options
+    use Igniter.Mix.Task
 
-    * `--dry-run` - prints the changes as a diff and writes nothing.
-  """
+    alias Hakushi.Install.Edits
+    alias Igniter.Code.Common
+    alias Igniter.Code.Function
+    alias Igniter.Libs.Phoenix, as: Phx
+    alias Igniter.Project.Module, as: Mod
+    alias Sourceror.Zipper
 
-  use Mix.Task
+    @js "assets/js/app.js"
+    @css "assets/css/app.css"
+    @config "config/config.exs"
 
-  alias Hakushi.Install.Edits
+    @impl Igniter.Mix.Task
+    def info(_argv, _composing_task), do: %Igniter.Mix.Task.Info{group: :hakushi}
 
-  @js "assets/js/app.js"
-  @css "assets/css/app.css"
-  @config "config/config.exs"
+    @impl Igniter.Mix.Task
+    def igniter(igniter) do
+      deps_path = Mix.Project.deps_path()
+      package = Hakushi.Install.package_path(Mix.Project.deps_paths(), deps_path)
+      css_dir = Edits.relative(package, Path.dirname(@css))
 
-  @impl Mix.Task
-  def run(argv) do
-    deps_path = Mix.Project.deps_path()
-    install(argv, package_path(Mix.Project.deps_paths(), deps_path), deps_path)
-  end
-
-  @doc false
-  # The task, with the directory of the Hakushi package and the deps
-  # directory of the project given.
-  @spec install([String.t()], Path.t(), Path.t()) :: :ok
-  def install(argv, package, deps_path \\ "deps") do
-    {opts, _args} = OptionParser.parse!(argv, strict: [dry_run: :boolean])
-    dry_run? = Keyword.get(opts, :dry_run, false)
-
-    css_dir = Edits.relative(package, Path.dirname(@css))
-
-    results = [
-      edit(@js, &Edits.app_js/1, Edits.app_js_manual(), dry_run?),
-      edit(@css, &Edits.app_css(&1, css_dir), Edits.app_css_manual(css_dir), dry_run?)
-    ]
-
-    if Enum.all?(results, &(&1 == :unchanged)) do
-      Mix.shell().info("Hakushi is already installed. Nothing changed.")
-    else
-      notes(package, deps_path)
+      igniter
+      |> edit(@js, &Edits.app_js/1, Edits.app_js_manual())
+      |> edit(@css, &Edits.app_css(&1, css_dir), Edits.app_css_manual(css_dir))
+      |> import_components()
+      |> esbuild_notice(package, deps_path)
+      |> Igniter.add_notice(Hakushi.Install.sumi_note())
     end
-  end
 
-  @doc false
-  # Where the Hakushi package is, from `Mix.Project.deps_paths/0`: hakushi in
-  # the deps directory (`Mix.Project.deps_path/0`, which an umbrella child or
-  # MIX_DEPS_PATH moves away from deps/), or the directory of a path
-  # dependency (`{:hakushi, path: "../hakushi"}`), which Mix does not copy there.
-  @spec package_path(%{optional(atom()) => Path.t()}, Path.t()) :: Path.t()
-  def package_path(deps_paths, deps_path \\ "deps") do
-    case deps_paths[:hakushi] do
-      nil -> Path.expand(Path.join(deps_path, "hakushi"))
-      path -> Path.expand(path)
-    end
-  end
-
-  defp edit(path, fun, manual, dry_run?) do
-    case File.read(path) do
-      {:ok, source} ->
-        apply_edit(path, source, fun.(source), dry_run?)
-
-      {:error, _reason} ->
-        Mix.shell().info([:yellow, "* skipping ", :reset, path, " (not found)"])
-        Mix.shell().info(indent(manual))
-        :manual
-    end
-  end
-
-  defp apply_edit(path, _source, :unchanged, _dry_run?) do
-    Mix.shell().info([:green, "* unchanged ", :reset, path, " (Hakushi is already there)"])
-    :unchanged
-  end
-
-  defp apply_edit(path, _source, {:manual, text}, _dry_run?) do
-    Mix.shell().info([:yellow, "* skipping ", :reset, path, " (add the lines below by hand)"])
-    Mix.shell().info(indent(text))
-    :manual
-  end
-
-  defp apply_edit(path, source, {:changed, new}, true) do
-    Mix.shell().info([:cyan, "* would update ", :reset, path])
-    Mix.shell().info(Edits.diff(path, source, new))
-    :changed
-  end
-
-  defp apply_edit(path, source, {:changed, new}, false) do
-    File.write!(path, new)
-    Mix.shell().info([:green, "* updating ", :reset, path])
-    Mix.shell().info(Edits.diff(path, source, new))
-    :changed
-  end
-
-  defp notes(package, deps_path) do
-    config_source =
-      case File.read(@config) do
-        {:ok, source} -> source
-        {:error, _reason} -> ""
-      end
-
-    Mix.shell().info("""
-
-    #{esbuild_note(config_source, package, deps_path)}
-
-    For the Sumi theme, remove the comment marks around the hakushi-sumi.css
-    import in assets/css/app.css.
-    """)
-  end
-
-  defp esbuild_note(config_source, package, deps_path) do
-    if Path.dirname(package) == Path.expand(deps_path) do
-      deps = Edits.relative(deps_path, ".")
-      from_config = Edits.relative(deps_path, "config")
-
-      resolves? =
-        if deps == "deps",
-          do: Edits.node_path?(config_source),
-          else: Edits.node_path?(config_source, from_config)
-
-      if resolves? do
-        "Your esbuild config sets NODE_PATH to #{deps}/, so `import { Hakushi } from \"hakushi\"` resolves."
+    defp edit(igniter, path, fun, manual) do
+      if Igniter.exists?(igniter, path) do
+        Igniter.update_file(igniter, path, &update_source(&1, fun))
       else
-        """
-        The esbuild profile of your app must resolve `hakushi` from #{deps}/. Give it
-        NODE_PATH=#{deps} in config/config.exs:
-
-            env: %{"NODE_PATH" => [Path.expand("#{from_config}", __DIR__), Mix.Project.build_path()]}\
-        """
+        Igniter.add_warning(igniter, "#{path} not found. " <> manual)
       end
-    else
-      parent = Edits.relative(Path.dirname(package), "config")
+    end
 
-      if Edits.node_path?(config_source, parent) do
-        "Your esbuild config has the directory of the Hakushi path dependency in NODE_PATH, so `import { Hakushi } from \"hakushi\"` resolves."
+    defp update_source(source, fun) do
+      case fun.(Rewrite.Source.get(source, :content)) do
+        {:changed, new} -> Rewrite.Source.update(source, :content, new)
+        :unchanged -> source
+        {:manual, text} -> {:warning, text}
+      end
+    end
+
+    # `import Hakushi.Components` in the `quote` of `html_helpers/0`, after
+    # its last import.
+    defp import_components(igniter) do
+      web = Phx.web_module(igniter)
+
+      manual = """
+      Import the components in the html_helpers of #{inspect(web)}:
+
+          import Hakushi.Components
+      """
+
+      case Mod.find_and_update_module(igniter, web, &add_import(&1, manual)) do
+        {:ok, igniter} -> igniter
+        {:error, igniter} -> Igniter.add_warning(igniter, manual)
+      end
+    end
+
+    defp add_import(zipper, manual) do
+      with {:ok, zipper} <- Function.move_to_defp(zipper, :html_helpers, 0),
+           {:ok, zipper} <- Function.move_to_function_call(zipper, :quote, 1),
+           {:ok, zipper} <- Common.move_to_do_block(zipper) do
+        if imports_components?(Zipper.node(zipper)),
+          do: {:ok, zipper},
+          else: {:ok, Common.add_code(last_import(zipper), "import Hakushi.Components")}
       else
-        """
-        Hakushi is a path dependency (#{Edits.relative(package, ".")}), so it is not in deps/.
-        The esbuild profile of your app finds `hakushi` through NODE_PATH: add the
-        directory that holds it to the NODE_PATH in config/config.exs:
+        _error -> {:warning, manual}
+      end
+    end
 
-            env: %{
-              "NODE_PATH" => [
-                Path.expand("../deps", __DIR__),
-                Path.expand("#{parent}", __DIR__),
-                Mix.Project.build_path()
-              ]
-            }\
-        """
+    defp imports_components?(ast) do
+      ast
+      |> Macro.prewalker()
+      |> Enum.any?(&match?({:import, _, [{:__aliases__, _, [:Hakushi, :Components]} | _]}, &1))
+    end
+
+    # The last import of the block, else its last expression.
+    defp last_import(zipper) do
+      case Zipper.node(zipper) do
+        {:__block__, _, [_ | _]} ->
+          children = zipper |> Zipper.down() |> siblings()
+
+          Enum.find(Enum.reverse(children), List.last(children), fn child ->
+            match?({:import, _, _}, Zipper.node(child))
+          end)
+
+        _expression ->
+          zipper
+      end
+    end
+
+    defp siblings(nil), do: []
+    defp siblings(zipper), do: [zipper | siblings(Zipper.right(zipper))]
+
+    defp esbuild_notice(igniter, package, deps_path) do
+      {igniter, config} =
+        if Igniter.exists?(igniter, @config) do
+          igniter = Igniter.include_existing_file(igniter, @config)
+          source = Rewrite.source!(igniter.rewrite, @config)
+          {igniter, Rewrite.Source.get(source, :content)}
+        else
+          {igniter, ""}
+        end
+
+      case Hakushi.Install.esbuild_note(config, package, deps_path) do
+        {:ok, _note} -> igniter
+        {:add, note} -> Igniter.add_notice(igniter, note)
       end
     end
   end
+else
+  defmodule Mix.Tasks.Hakushi.Install do
+    @shortdoc "Adds the Hakushi hook and style sheet to a Phoenix app"
 
-  defp indent(text) do
-    text
-    |> String.trim_trailing()
-    |> String.split("\n")
-    |> Enum.map_join("\n", fn
-      "" -> ""
-      line -> "    " <> line
-    end)
+    @moduledoc """
+    Sets up Hakushi in a Phoenix application.
+
+        $ mix hakushi.install
+        $ mix hakushi.install --dry-run
+
+    The task edits two files:
+
+      * `assets/js/app.js` - adds `import { Hakushi } from "hakushi"` and puts
+        `Hakushi` in the `hooks` of the `LiveSocket`. When it cannot find the
+        `new LiveSocket(...)` call, or its hooks are not an object or a
+        variable, it changes nothing and prints the lines to add.
+      * `assets/css/app.css` - adds the canvas style sheet, and the Sumi
+        theme import as a comment.
+
+    Then it prints the esbuild note: the app's esbuild must resolve
+    `hakushi` through `NODE_PATH`. Import `Hakushi.Components` in the
+    `html_helpers` of your web module yourself.
+
+    The task is idempotent: it does not add what a file already has, and
+    when there is nothing to add it says so. With
+    [Igniter](https://hexdocs.pm/igniter) in the app, the task also imports
+    the components: `mix igniter.install hakushi`.
+
+    ## Options
+
+      * `--dry-run` - prints the changes as a diff and writes nothing.
+    """
+
+    use Mix.Task
+
+    @impl Mix.Task
+    def run(argv), do: Hakushi.Install.run(argv)
   end
 end

@@ -14,6 +14,13 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `mix hakushi.install` runs on [Igniter](https://hexdocs.pm/igniter)
+  when the app has it, so `mix igniter.install hakushi` adds the
+  dependency and sets up the app in one command. Igniter shows each
+  change and asks before it writes. With Igniter, the task also imports
+  `Hakushi.Components` in the `html_helpers` of the web module. Without
+  Igniter, the task works as before. Igniter is an optional dependency.
+- A Features guide: everything the canvas does, in one table.
 - The events of a shared canvas: each change is an event of its room,
   named for what it did (`"canvas.added"`, `"canvas.connected"`,
   `"canvas.reconnected"`, `"canvas.moved"`, `"canvas.updated"`,
@@ -120,6 +127,11 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   canvas, which draw, erase or lasso), `c:Hakushi.Kit.drawn/3` (the node
   of a line drawn with one) and `c:Hakushi.Kit.label/2` (a node's name
   for screen readers). `Hakushi.Test.draw/5` draws as a pen does.
+
+### Changed
+
+- A shorter README: what Hakushi is, the install, a first canvas, and
+  links to the guides.
 
 ### Fixed
 
