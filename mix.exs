@@ -36,7 +36,10 @@ defmodule Hakushi.MixProject do
   end
 
   def application do
-    [mod: {Hakushi.Application, []}, extra_applications: [:logger]]
+    [
+      mod: {Hakushi.Application, []},
+      extra_applications: [:logger]
+    ]
   end
 
   def cli do
@@ -66,7 +69,10 @@ defmodule Hakushi.MixProject do
       {:phoenix_html, "~> 4.1"},
       {:phoenix_live_reload, "~> 1.6", only: :dev},
       {:phoenix_live_view, if(@oldest, do: "~> 1.1.0", else: "~> 1.1")},
-      {:stream_data, "~> 1.1", only: :test}
+      {:stream_data, "~> 1.1", only: :test},
+      # The files of the Images kit: checked, stored and served. A canvas
+      # without images never needs it.
+      {:storehouse, "~> 0.1", optional: true}
     ]
   end
 
@@ -158,6 +164,8 @@ defmodule Hakushi.MixProject do
           Hakushi.Kits.Notes,
           Hakushi.Kits.Ink,
           Hakushi.Kits.Shapes,
+          Hakushi.Kits.Images,
+          Hakushi.Images,
           Hakushi.Ink,
           Hakushi.Mermaid,
           Hakushi.Icons
@@ -171,7 +179,9 @@ defmodule Hakushi.MixProject do
           Hakushi.Paper
         ],
         Collaboration: [Hakushi.Room],
-        Storage: [Hakushi.Graph.Type],
+        Storage: [
+          Hakushi.Graph.Type
+        ],
         Testing: [Hakushi.Test]
       ]
     ]

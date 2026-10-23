@@ -41,6 +41,9 @@ export const Hakushi = {
     hook.handleEvent("hakushi:peer", (payload) => {
       if (payload.canvas === canvas.id) canvas.receivePeer(payload);
     });
+    hook.handleEvent("hakushi:file", (payload) => {
+      if (payload.canvas === canvas.id) canvas.fileEvent(payload);
+    });
     hook.handleEvent("hakushi:layout", (payload) => {
       if (payload.canvas === canvas.id) void canvas.layout({ direction: payload.direction as "right" | "down" | undefined });
     });

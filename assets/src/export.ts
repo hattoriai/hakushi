@@ -64,7 +64,8 @@ async function serialize(root: HTMLElement, world: HTMLElement, box: Rect, paddi
   for (const el of clone.querySelectorAll("[data-ui-culled], [data-ui-selected], [data-ui-peer], [data-ui-drop-target], [data-ui-valid], [data-ui-target]")) {
     for (const name of ["data-ui-culled", "data-ui-selected", "data-ui-peer", "data-ui-drop-target", "data-ui-valid", "data-ui-target"]) el.removeAttribute(name);
   }
-  clone.querySelectorAll(".hakushi-resizer, .hakushi-rotator, .hakushi-overlay, .hakushi-ink-live, .hakushi-edge-input, .hakushi-text-editor").forEach((el) => el.remove());
+  clone.querySelectorAll(".hakushi-resizer, .hakushi-rotator, .hakushi-overlay, .hakushi-ink-live, .hakushi-edge-input, .hakushi-text-editor, .hakushi-file, .hakushi-crop").forEach((el) => el.remove());
+  await inlineImages(clone);
   clone.querySelectorAll<SVGGElement>(".hakushi-edge").forEach((g) => (g.style.display = ""));
   // The edges raised above the nodes (of a selection) go back under them, as they are drawn.
   const lines = clone.querySelector(".hakushi-edges:not(.hakushi-edges-raised) .hakushi-edge-lines");
@@ -114,6 +115,35 @@ async function serialize(root: HTMLElement, world: HTMLElement, box: Rect, paddi
     html +
     `</foreignObject></svg>`
   );
+}
+
+// The images of the nodes, as data: an SVG drawn as an image loads nothing.
+// An image the page cannot read (another origin, with no CORS) is left out.
+async function inlineImages(clone: HTMLElement): Promise<void> {
+  const images = [...clone.querySelectorAll<HTMLImageElement>("img")];
+  await Promise.all(
+    images.map(async (image) => {
+      const src = image.dataset.src ?? image.getAttribute("src");
+      image.removeAttribute("loading");
+      image.removeAttribute("srcset");
+      if (!src || src.startsWith("data:")) return;
+      try {
+        const response = await fetch(new URL(src, location.href), { credentials: "same-origin" });
+        if (!response.ok) throw new Error(String(response.status));
+        image.setAttribute("src", await dataUrl(await response.blob()));
+      } catch {
+        image.remove();
+      }
+    }),
+  );
+}
+
+function dataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.readAsDataURL(blob);
+  });
 }
 
 // The rules of the page's style sheets that it can read (not those of

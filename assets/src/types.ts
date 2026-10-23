@@ -36,7 +36,9 @@ export interface Config {
   /** The tools of the kits, for the bar of tools (Hakushi.Kit's `tools/1`). */
   tools?: Tool[];
   /** The style panels of the kits (Hakushi.Kit's `styles/1`), each for the node types of its kit. */
-  styles?: { kit: string; types: string[]; groups: { key: string; label: string; kind: "color" | "width" | "choice"; options: { value: unknown; label: string }[] }[] }[];
+  styles?: { kit: string; types: string[]; groups: StyleGroup[] }[];
+  /** The files the canvas takes (a kit's upload, Hakushi.Kit's `upload/0`): their extensions, and whether an address pasted is one. */
+  files?: { kit: string; accept: string[]; urls: boolean } | null;
   /** The papers people choose from (the canvas's `papers`), and the sizes of their squares. */
   papers?: { name: string; label: string }[];
   paperGrids?: number[];
@@ -44,11 +46,26 @@ export interface Config {
   locale: string;
 }
 
+/**
+ * A group of a kit's style panel: choices of a key of the nodes' data
+ * (`color`, `width`, `choice`), a field for a text (`text`), or a button
+ * that starts something of the canvas's own (`action`, by its key: `crop`).
+ */
+export interface StyleGroup {
+  key: string;
+  label: string;
+  kind: "color" | "width" | "choice" | "text" | "action";
+  options: { value: unknown; label: string }[];
+  placeholder?: string;
+  icon?: string;
+}
+
 /** A tool of a kit: what the pointer does on the canvas while it is chosen. */
 export interface Tool {
   kit: string;
   tool: string;
-  mode: "draw" | "erase" | "lasso" | "box" | "line";
+  /** `pick` opens a file picker, and is never the tool chosen. */
+  mode: "draw" | "erase" | "lasso" | "box" | "line" | "pick";
   label: string;
   icon: string;
   key: string | null;

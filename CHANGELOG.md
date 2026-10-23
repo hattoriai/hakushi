@@ -9,6 +9,31 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Images (`Hakushi.Kits.Images`): image files dropped on the paper,
+  pasted, or picked with the kit's tool (I), each a node where it lands,
+  at its aspect ratio, sized to fit the view. A placeholder shows the
+  file and its progress while it uploads, to the others too; the node is
+  made once the server has the file and has checked it (PNG, JPEG, GIF or
+  WebP, by its bytes; `Hakushi.Images`). An image's address pasted is
+  fetched from the hosts the app allows (`fetch`). Images resize with
+  their aspect ratio (Shift frees it), are cropped in place, take a
+  caption on a double click and alt text from the panel, show a smaller
+  copy at small zooms (`thumbnail`) and load as they come near; the
+  export draws them.
+- The images are checked, stored and served with
+  [Storehouse](https://hexdocs.pm/storehouse), as Kotoba's attachments
+  are: the local disk, S3, or a store of the app's
+  (`config :storehouse, adapter: ...`); `Storehouse.Local.Plug` serves
+  them. Storehouse is an optional dependency: add `{:storehouse, "~> 0.1"}`
+  for images.
+- An agent adds an image: `add_image`, from an address or a file of the
+  app's, with its placeholder for the others while it comes.
+- Kits take files (`c:Hakushi.Kit.upload/0`, `uploaded/4`, `pasted/3`),
+  a style panel has a field for a text (`"text"`) and a button
+  (`"action"`), a tool may open a picker (`"pick"`), and an edit may move
+  and resize its node in the same change (`box`; `:update` takes `:x`,
+  `:y`, `:width` and `:height`). A text with `data-hakushi-text-own` is
+  written in place where it is.
 - Shapes (`Hakushi.Kits.Shapes`): rectangles, ellipses, diamonds,
   triangles, text and lines, for diagrams, wireframes and whiteboards
   with no `:node` slot. They are drawn by dragging with their tools (R,

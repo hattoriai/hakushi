@@ -713,6 +713,104 @@ if Code.ensure_loaded?(Issho.Tool) do
     end
   end
 
+  if Code.ensure_loaded?(Storehouse) do
+    defmodule Hakushi.Issho.Tools.Image do
+      @moduledoc false
+      use Issho.Tool,
+        name: "add_image",
+        description: """
+        Adds an image to a shared canvas with images (nodes of type "image"),
+        from an address (`url`, of a host the app allows) or a file of the
+        app's (`file`, a name the app knows), at a point of the canvas, as
+        wide as `width` (its own aspect ratio, and at most 480 unless given),
+        with alt text that says what it shows and a caption. The others see
+        its placeholder while it comes, then the image.
+        """,
+        annotations: []
+
+      arg :canvas, :string, required: true
+      arg :url, :string, description: "The image's address (https)"
+      arg :file, :string, description: "A file of the app's, by the name the app gives it"
+      arg :x, :number, required: true, description: "The image's left"
+      arg :y, :number, required: true, description: "The image's top"
+      arg :width, :number, description: "The image's width on the canvas"
+      arg :alt, :string, description: "What the image shows, for those who do not see it"
+      arg :caption, :string, description: "A caption under the image"
+
+      alias Hakushi.{Change, Images}
+      alias Hakushi.Issho.Tools.Canvas
+      alias Hakushi.Kits.Images, as: Kit
+
+      @impl true
+      def call(args, ctx) do
+        with {:ok, source} <- source(args),
+             {:ok, canvas} <- Canvas.open(ctx, args.canvas) do
+          add(canvas, source, args)
+        end
+      end
+
+      defp source(%{url: url}) when is_binary(url) and url != "", do: {:ok, {:url, url}}
+      defp source(%{file: file}) when is_binary(file) and file != "", do: {:ok, {:file, file}}
+      defp source(_args), do: {:error, "Say which image: a url, or a file of the app's."}
+
+      # The pointer goes there, and the image's placeholder shows while it
+      # comes; then the image is there, selected.
+      defp add(canvas, source, %{x: x, y: y} = args) do
+        w = if is_number(args[:width]) and args[:width] >= 16, do: args.width, else: 320
+        placeholder = %{"files" => [[x, y, w, round(w * 0.75), 0]]}
+
+        with :ok <- Canvas.glide(canvas, {x, y}, placeholder),
+             {:ok, image} <- fetch(source),
+             node =
+               image
+               |> Kit.image_node([x, y, args[:width] || 0, 0],
+                 alt: args[:alt],
+                 caption: args[:caption]
+               )
+               |> Map.put(:id, Hakushi.Canvas.new_id()),
+             :ok <- Canvas.change(canvas, Change.add([node])),
+             :ok <- Canvas.aware(canvas, %{"files" => [], "selected" => [node.id]}) do
+          {:ok, %{"id" => node.id, "width" => node.width, "height" => node.height}}
+        else
+          {:error, reason} = error ->
+            _ = Canvas.aware(canvas, %{"files" => []})
+            if is_binary(reason), do: error, else: {:error, message(reason)}
+        end
+      end
+
+      defp fetch({:url, url}) do
+        config = Kit.config()
+
+        case config[:fetch] do
+          [_ | _] = hosts -> Images.fetch(url, Kit.store_opts(config, hosts: hosts))
+          _none -> {:error, :not_allowed}
+        end
+      end
+
+      defp fetch({:file, name}) do
+        config = Kit.config()
+
+        with fun when is_function(fun, 1) <- config[:files] || {:error, :no_files},
+             {:ok, path} when is_binary(path) <- fun.(name) do
+          Images.store(path, Kit.store_opts(config, name: Path.basename(path)))
+        else
+          {:error, _reason} = error -> error
+          _other -> {:error, :no_file}
+        end
+      end
+
+      defp message(:not_allowed), do: "The app does not take images from that address."
+      defp message(:no_files), do: "The app gives no files by name."
+      defp message(:no_file), do: "The app has no file of that name."
+
+      defp message(:not_an_image),
+        do: "That is not an image the canvas takes (PNG, JPEG, GIF or WebP)."
+
+      defp message(:too_large), do: "That image is too large."
+      defp message(reason), do: "The image could not be added: #{inspect(reason)}."
+    end
+  end
+
   defmodule Hakushi.Issho.Tools.Shape do
     @moduledoc false
     use Issho.Tool,

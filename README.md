@@ -66,6 +66,8 @@ the schema and the workflow are shared.
 
 ![The moodboard: sticky notes on crossed paper, a palette of swatches, a type specimen and labelled arrows, and a frame holding two notes, with a note being dropped into it](https://raw.githubusercontent.com/hattoriai/hakushi/main/media/frame.png)
 
+![Images on the moodboard, as Kenji sees them: a photo of the quay that Ada selected, with its caption, a texture and a cropped facade, and the placeholder of an image an agent is adding, in its colour](https://raw.githubusercontent.com/hattoriai/hakushi/main/media/images.png)
+
 ![The schema after a tidy up: the tables in layers along their foreign keys, from time entries on the left to clients on the right](https://raw.githubusercontent.com/hattoriai/hakushi/main/media/layout.png)
 
 ## What the canvas does
@@ -79,7 +81,7 @@ the schema and the workflow are shared.
 | Edges | bezier, smooth, step, straight; an arrow, a dot or no end; a label, set with a double click; animated; selected and deleted |
 | Drawing | from a handle to a handle, the handles it may end on shown; from a target backwards; dropped on a node, to its nearest valid handle; the end of a selected edge dragged to another handle |
 | Groups | nodes of a `group` slot hold others (`parent`): a drop on one puts a node in it, a drag off takes it out; its nodes move, are copied and go with it; groups in groups; a box drawn inside a group selects in it |
-| Kits | optional kinds of canvas in one line (`kits={[Hakushi.Kits.Schema]}`): Schema (tables, typed columns, keys, foreign keys), Flow (triggers, steps, conditions), Notes (sticky notes), Ink (a pen, a highlighter, an eraser and a lasso, over anything on the canvas), Shapes (rectangles, ellipses, diamonds, triangles, text and lines, styled, turned, written in), or your own (`Hakushi.Kit`); the canvas draws, makes and edits their nodes; their paper and rules; Markdown (Mermaid) and back |
+| Kits | optional kinds of canvas in one line (`kits={[Hakushi.Kits.Schema]}`): Schema (tables, typed columns, keys, foreign keys), Flow (triggers, steps, conditions), Notes (sticky notes), Ink (a pen, a highlighter, an eraser and a lasso, over anything on the canvas), Shapes (rectangles, ellipses, diamonds, triangles, text and lines, styled, turned, written in), Images (dropped, pasted or picked, uploaded through your app's store, cropped and captioned), or your own (`Hakushi.Kit`); the canvas draws, makes and edits their nodes; their paper and rules; Markdown (Mermaid) and back |
 | In a page | an embed frame (`canvas_embed/1`) with a title, the kits' items and full screen; `wheel={:scroll}` for a page that scrolls, `refit` for a box that changes size; a canvas in a Kotoba document |
 | Layout | a tidy up (⇧L, the controls, `Hakushi.Live.layout/2`): layers from left to right or top to bottom, fewer crossings, each node level with its neighbours, the parts of a graph apart; of the selection or of every node; animated; one change |
 | Export | the whole canvas as a PNG or an SVG, the nodes as the page draws them (the controls, `Hakushi.Live.export/2`, `exportImage()`) |

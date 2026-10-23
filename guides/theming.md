@@ -41,7 +41,8 @@ handles, the controls), and the default node.
 The kits have their own: Ink's `--hakushi-ink-<colour>` and
 `--hakushi-highlighter-opacity`; Shapes' `--hakushi-shape-<colour>` (ink,
 gray, blue, green, yellow, red, violet, and your own), whose fills are a
-tint of them on the surface (`--hakushi-shape-tint`, 16%).
+tint of them on the surface (`--hakushi-shape-tint`, 16%); Images'
+`--hakushi-image-radius` (the corners of an image, 4px).
 
 `--hakushi-person` is a person's colour, on their avatar, their cursor
 and the ring of the nodes they selected or drag.

@@ -45,6 +45,8 @@ defmodule Hakushi.Canvas do
 
   use Phoenix.LiveComponent
 
+  require Logger
+
   alias Phoenix.LiveView.{JS, TagEngine}
 
   alias Hakushi.{Change, Commit, Graph, Kit, Messages, Node, Paper, Rules}
@@ -59,6 +61,8 @@ defmodule Hakushi.Canvas do
   @max_items 5_000
   # The most points of a line being drawn that go to the others.
   @max_ink_points 1_500
+  # The most files on their way at once (uploads and addresses pasted).
+  @max_files 50
   # The colours of the people of a shared canvas with none of their own.
   @palette ~w(#e84a1c #2563eb #059669 #9333ea #d97706 #db2777 #0891b2 #65a30d)
 
@@ -80,7 +84,8 @@ defmodule Hakushi.Canvas do
        follow: true,
        notice: nil,
        notice_seq: 0,
-       configured: false
+       configured: false,
+       places: %{}
      )}
   end
 
@@ -134,6 +139,7 @@ defmodule Hakushi.Canvas do
       |> assign(configured: true, given: graph)
       |> stream_configure(:nodes, dom_id: &node_dom_id(id, &1.id))
       |> stream_configure(:edges, dom_id: &edge_dom_id(id, &1.id))
+      |> allow_files()
 
     case {socket.assigns.join, connected?(socket)} do
       {%{} = join, true} ->
@@ -151,6 +157,26 @@ defmodule Hakushi.Canvas do
 
   defp start(_socket, other) do
     raise ArgumentError, "a canvas's graph must be a Hakushi.Graph, got: #{inspect(other)}"
+  end
+
+  # The files of a kit that takes them (Hakushi.Kits.Images): an upload of
+  # the canvas's own, which the browser sends as the person drops, pastes
+  # or picks them.
+  defp allow_files(socket) do
+    Enum.each(socket.assigns.kits, &Kit.check!/1)
+
+    case Kit.uploader(socket.assigns.kits) do
+      nil ->
+        assign(socket, :uploader, nil)
+
+      kit ->
+        socket
+        |> assign(:uploader, kit)
+        |> allow_upload(
+          :hakushi_files,
+          Keyword.merge(kit.upload(), auto_upload: true, progress: &file_progress/3)
+        )
+    end
   end
 
   # A shared canvas: a session of the document's room, and the document
@@ -507,13 +533,62 @@ defmodule Hakushi.Canvas do
     with %Node{} = node <- Graph.node(socket.assigns.graph, id),
          kit when kit != nil <- Kit.for_type(socket.assigns.kits, node.type),
          {:ok, data} <- kit.edit(action, params, Kit.stringify(node.data)) do
-      if data == node.data,
+      # An edit that moves and resizes its node too (a crop): one change.
+      box =
+        case numbers(params["box"], 4) do
+          [x, y, w, h] when w > 0 and h > 0 -> %{x: x, y: y, width: w, height: h}
+          _none -> %{}
+        end
+
+      if data == node.data and box == %{},
         do: {:reply, %{"ok" => true}, socket},
-        else: socket |> commit(Change.update(nodes: [%{id: id, data: data}]), true) |> reply()
+        else:
+          socket
+          |> commit(Change.update(nodes: [Map.merge(%{id: id, data: data}, box)]), true)
+          |> reply()
     else
       _refused -> {:reply, %{"ok" => false}, socket}
     end
   end
+
+  # The files of the canvas's upload: those the LiveView refuses (too
+  # large, not of a type it takes) go, and the browser takes their
+  # placeholders away.
+  def handle_event("hakushi:files", _params, socket) do
+    {:noreply, drop_refused(socket)}
+  end
+
+  # Where the person put a file that uploads: its place, then its node.
+  def handle_event("hakushi:place", %{"ref" => ref} = params, socket)
+      when is_binary(ref) and byte_size(ref) <= 64 and
+             map_size(socket.assigns.places) < @max_files do
+    place = %{box: numbers(params["box"], 4), parent: params["parent"]}
+    {:reply, %{"ok" => true}, update(socket, :places, &Map.put(&1, ref, place))}
+  end
+
+  # An image's address, pasted: the kit makes a node of it, away from the
+  # LiveView, and the browser shows a placeholder until it is done.
+  def handle_event("hakushi:paste-url", %{"url" => url, "ref" => ref} = params, socket)
+      when is_binary(url) and byte_size(url) <= 2_048 and is_binary(ref) and byte_size(ref) <= 64 and
+             map_size(socket.assigns.places) < @max_files do
+    case socket.assigns[:uploader] do
+      nil ->
+        {:reply, %{"ok" => false}, socket}
+
+      kit ->
+        box = numbers(params["box"], 4)
+        messages = socket.assigns.messages
+        place = %{box: box, parent: params["parent"]}
+
+        {:reply, %{"ok" => true},
+         socket
+         |> update(:places, &Map.put(&1, ref, place))
+         |> start_async({:hakushi_pasted, ref}, fn -> kit.pasted(url, box, messages) end)}
+    end
+  end
+
+  def handle_event(event, _params, socket) when event in ["hakushi:place", "hakushi:paste-url"],
+    do: {:reply, %{"ok" => false}, socket}
 
   def handle_event("hakushi:undo", _params, socket),
     do: step(socket, :undo, :redo, "nothingToUndo")
@@ -552,6 +627,100 @@ defmodule Hakushi.Canvas do
   end
 
   def handle_event("hakushi:seen", _params, socket), do: {:noreply, socket}
+
+  @impl true
+  def handle_async({:hakushi_pasted, ref}, result, socket) do
+    result =
+      case result do
+        {:ok, {:ok, %{} = node}} -> {:ok, node}
+        {:ok, {:error, reason}} -> {:error, reason}
+        _exit -> {:error, :failed}
+      end
+
+    {:noreply, add_file_node(socket, ref, result)}
+  end
+
+  # A file's progress, for its placeholder (and the others'); a file done
+  # becomes a node.
+  defp file_progress(:hakushi_files, %{done?: false} = entry, socket) do
+    {:noreply, push_file(socket, entry.ref, %{"progress" => entry.progress})}
+  end
+
+  defp file_progress(:hakushi_files, entry, socket) do
+    %{uploader: kit, messages: messages} = socket.assigns
+    box = get_in(socket.assigns.places, [entry.ref, :box])
+    meta = %{name: entry.client_name, content_type: entry.client_type}
+
+    result =
+      consume_uploaded_entry(socket, entry, fn %{path: path} ->
+        {:ok, kit.uploaded(path, meta, box, messages)}
+      end)
+
+    {:noreply, add_file_node(socket, entry.ref, result)}
+  end
+
+  defp add_file_node(socket, ref, result) do
+    {place, places} = Map.pop(socket.assigns.places, ref, %{})
+    socket = assign(socket, :places, places)
+
+    with {:ok, %{} = node} <- result,
+         node = node |> with_id() |> Node.new() |> in_group(socket.assigns.graph, place[:parent]),
+         {socket, {:ok, _inverse}} <- commit(socket, Change.add([node]), true) do
+      push_file(socket, ref, %{"id" => node.id})
+    else
+      {socket, {:error, message}} ->
+        push_file(socket, ref, %{"error" => message})
+
+      {:error, reason} ->
+        Logger.warning("Hakushi: a file was not added to the canvas: #{inspect(reason)}")
+        file_failed(socket, ref, file_error(socket.assigns.messages, reason))
+    end
+  end
+
+  # A file that did not become a node: its placeholder goes, and the canvas
+  # says why.
+  defp file_failed(socket, ref, message) do
+    socket
+    |> assign(notice: message, notice_seq: socket.assigns.notice_seq + 1)
+    |> push_file(ref, %{"error" => message})
+  end
+
+  defp drop_refused(socket) do
+    case socket.assigns[:uploads] do
+      %{hakushi_files: %{entries: entries}} ->
+        entries |> Enum.reject(& &1.valid?) |> Enum.reduce(socket, &refuse_entry(&2, &1))
+
+      _none ->
+        socket
+    end
+  end
+
+  defp refuse_entry(socket, entry) do
+    reason =
+      case upload_errors(socket.assigns.uploads.hakushi_files, entry) do
+        [reason | _rest] -> reason
+        [] -> :failed
+      end
+
+    socket
+    |> cancel_upload(:hakushi_files, entry.ref)
+    |> update(:places, &Map.delete(&1, entry.ref))
+    |> file_failed(entry.ref, file_error(socket.assigns.messages, reason))
+  end
+
+  defp file_error(messages, reason)
+       when reason in [:too_large, :not_accepted, :not_an_image, :not_allowed, :too_many_files],
+       do: Messages.reason(messages, reason)
+
+  defp file_error(messages, _reason), do: Messages.reason(messages, :file_failed)
+
+  defp push_file(socket, ref, payload) do
+    push_event(
+      socket,
+      "hakushi:file",
+      Map.merge(payload, %{"canvas" => socket.assigns.id, "ref" => ref})
+    )
+  end
 
   # The nodes of the ids, and the nodes in them, with the edges between
   # them.
@@ -741,7 +910,16 @@ defmodule Hakushi.Canvas do
         |> Enum.filter(
           &match?([id, x, y] when is_binary(id) and is_number(x) and is_number(y), &1)
         ),
-      "ink" => ink(params["ink"])
+      "ink" => ink(params["ink"]),
+      # The placeholders of the files the person uploads: a box and a
+      # progress each.
+      "files" =>
+        params
+        |> Map.get("files", [])
+        |> List.wrap()
+        |> Enum.take(20)
+        |> Enum.map(&numbers(&1, 5))
+        |> Enum.reject(&is_nil/1)
     }
   end
 
@@ -922,6 +1100,17 @@ defmodule Hakushi.Canvas do
         {render_slot(@empty_slot)}
       </div>
       <div id={@id <> "-ui"} class="hakushi-ui" phx-update="ignore"></div>
+      <form
+        :if={@uploader && !@readonly}
+        id={@id <> "-files"}
+        class="hakushi-files"
+        phx-change="hakushi:files"
+        phx-submit="hakushi:files"
+        phx-target={@myself}
+        hidden
+      >
+        <.live_file_input upload={@uploads.hakushi_files} tabindex="-1" data-hakushi-files />
+      </form>
       <div
         class="hakushi-notice"
         role="status"
@@ -1078,6 +1267,18 @@ defmodule Hakushi.Canvas do
     |> String.upcase()
   end
 
+  # What the browser takes as files: the kit's upload, and whether an
+  # address pasted is one.
+  defp files_config(%{uploader: kit, readonly: false}) when kit != nil do
+    %{
+      "kit" => kit.name(),
+      "accept" => Keyword.get(kit.upload(), :accept, []),
+      "urls" => Kit.exports?(kit, :pasted, 3)
+    }
+  end
+
+  defp files_config(_assigns), do: nil
+
   defp config(assigns) do
     %{
       "rules" => Rules.to_client(assigns.rules),
@@ -1101,6 +1302,7 @@ defmodule Hakushi.Canvas do
       "tools" => Kit.tools(assigns.kits, assigns.messages),
       "styles" => if(assigns.readonly, do: [], else: Kit.styles(assigns.kits, assigns.messages)),
       "papers" => papers(assigns),
+      "files" => files_config(assigns),
       "paperGrids" => Paper.grids(),
       "messages" => assigns.messages,
       "locale" => assigns.locale

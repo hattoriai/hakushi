@@ -185,7 +185,15 @@ defmodule Hakushi.Graph do
 
   def apply(%__MODULE__{} = graph, %Change{op: :update} = change) do
     with {:ok, graph, node_undo} <-
-           update_all(graph, :nodes, change.nodes, [:data, :type, :locked]),
+           update_all(graph, :nodes, change.nodes, [
+             :data,
+             :type,
+             :locked,
+             :x,
+             :y,
+             :width,
+             :height
+           ]),
          {:ok, graph, edge_undo} <-
            update_all(graph, :edges, change.edges, [:label, :path, :marker, :animated, :data]) do
       {:ok, graph, change,
