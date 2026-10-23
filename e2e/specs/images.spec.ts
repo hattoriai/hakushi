@@ -100,9 +100,24 @@ test("an image resizes with its aspect ratio, and Shift frees it", async ({ page
   // depends on the fonts of the browser.
   const corner = middle((await node(page, "quay").locator('.hakushi-resizer[data-corner="se"]').boundingBox())!);
   await page.mouse.move(corner.x, corner.y);
+  const probe = (label: string) =>
+    page.evaluate(({ label, x, y }) => {
+      const hit = document.elementFromPoint(x, y) as HTMLElement | null;
+      const canvas = (window as any).canvasOf("board");
+      const g = canvas?.gesture;
+      const quay = document.querySelector('.hakushi-node[data-id="quay"]') as HTMLElement;
+      console.log(`DEBUG ${label}: hit=${hit?.tagName}.${hit?.className} gesture=${g?.kind}/${g?.corner} aspect=${g?.aspect} width=${quay.dataset.width} style=${quay.style.width}`);
+    }, { label, x: corner.x, y: corner.y });
+  page.on("console", (m) => m.text().startsWith("DEBUG") && console.log(m.text()));
+  page.on("pointercancel" as any, () => {});
+  await page.evaluate(() => ["pointerdown", "pointermove", "pointerup", "pointercancel", "lostpointercapture", "dragstart"].forEach((t) => document.addEventListener(t, (e: any) => t !== "pointermove" && console.log(`DEBUG event ${t} target=${(e.target as HTMLElement)?.className} prevented=${e.defaultPrevented}`), true)));
+  await probe("before down");
   await page.mouse.down();
+  await probe("after down");
   await page.mouse.move(corner.x + 80, corner.y + 10, { steps: 5 });
+  await probe("after move");
   await page.mouse.up();
+  await probe("after up");
   await expect.poll(() => node(page, "quay").getAttribute("data-width").then(Number)).toBeGreaterThan(400);
   expect(await ratio()).toBeCloseTo(before, 1);
 
