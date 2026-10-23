@@ -134,6 +134,30 @@ defmodule Hakushi.SharedCanvasTest do
     refute Map.has_key?(state, "selected")
   end
 
+  test "what a person selects is their place in the room, and goes with the selection" do
+    topic = topic()
+    ada = open(topic, "ada")
+    doc = "canvas:" <> topic
+    {:ok, watcher} = Issho.join_as(HakushiTest.Issho, %{id: "watcher"}, doc)
+
+    place_of_ada = fn ->
+      assert_receive {Issho.Participant, ^watcher, "aware", %{"states" => states}}, 1_000
+      [state] = for {_session, %{"key" => "ada", "state" => state}} <- states, do: state
+      state["place"]
+    end
+
+    hook = element(ada, "#schema-hook")
+
+    render_hook(hook, "hakushi:peer", %{"selected" => ["note"]})
+    assert place_of_ada.() == %{"doc" => doc, "at" => %{"node" => "note"}}
+
+    render_hook(hook, "hakushi:peer", %{"selected" => ["note", "frame"]})
+    assert place_of_ada.() == %{"doc" => doc, "at" => %{"nodes" => ["note", "frame"]}}
+
+    render_hook(hook, "hakushi:peer", %{"selected" => []})
+    assert place_of_ada.() == nil
+  end
+
   test "the app changes a canvas as someone: on_change gets them as :by" do
     topic = topic()
     _ada = open(topic, "ada", self())
