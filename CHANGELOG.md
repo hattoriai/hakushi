@@ -49,6 +49,13 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   of a line drawn with one) and `c:Hakushi.Kit.label/2` (a node's name
   for screen readers). `Hakushi.Test.draw/5` draws as a pen does.
 
+### Fixed
+
+- What a person selects on a shared canvas is their place in the room
+  (Issho's `"place"`, `%{"node" => id}` or `%{"nodes" => ids}`): Issho's
+  comments go on it, and Issho's pointers show it when their pointer is
+  off the canvas, as a text's selection and a grid's cell already are.
+
 ## [0.3.1] - 2026-10-22
 
 Agents read what a person sees of a shared canvas, and a selected node's

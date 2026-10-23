@@ -500,8 +500,18 @@ defmodule Hakushi.Canvas do
   def handle_event("hakushi:peer", params, %{assigns: %{shared: doc, room: room}} = socket)
       when is_binary(doc) and is_map(params) do
     # Under the canvas's document: the LiveView's other components in the
-    # room keep their keys, and Issho its own.
-    Issho.Live.merge_block(room, doc, peer_state(params))
+    # room keep their keys, and Issho its own. What the person selected is
+    # also their place in the room, Issho's own key.
+    state = peer_state(params)
+    aware = Issho.Live.awareness(room)
+
+    Issho.Live.aware(
+      room,
+      aware
+      |> Issho.Awareness.put_block(doc, state)
+      |> selection_place(doc, state["selected"])
+    )
+
     {:noreply, socket}
   end
 
@@ -672,6 +682,23 @@ defmodule Hakushi.Canvas do
 
   # What the others see of a person: numbers and ids, and no more of them
   # than a canvas has.
+  # The nodes selected are the person's place (`Hakushi.Issho.Place`): where
+  # a comment of the room goes, what Issho's pointers show when their
+  # pointer is off the canvas. With none, a place of this canvas goes; one
+  # of another component (a text the person types in) stays.
+  defp selection_place(aware, doc, []) do
+    case aware["place"] do
+      %{"doc" => ^doc} -> Map.delete(aware, "place")
+      _other -> aware
+    end
+  end
+
+  defp selection_place(aware, doc, [id]),
+    do: Map.put(aware, "place", %{"doc" => doc, "at" => %{"node" => id}})
+
+  defp selection_place(aware, doc, ids),
+    do: Map.put(aware, "place", %{"doc" => doc, "at" => %{"nodes" => ids}})
+
   defp peer_state(params) do
     %{
       "cursor" => numbers(params["cursor"], 2),
