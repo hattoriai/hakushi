@@ -451,41 +451,7 @@ defmodule HakushiDev.Seeds do
       names
       |> Enum.with_index()
       |> Enum.map_reduce([], fn {name, i}, keys ->
-        refs =
-          cond do
-            i < length(hubs) -> []
-            :rand.uniform() < 0.12 -> []
-            true -> Enum.uniq(for _ <- 1..Enum.random([1, 1, 2, 3]), do: pick_ref(names, hubs, i))
-          end
-
-        fks =
-          for to <- refs,
-              do: %{"name" => singular(to) <> "_id", "type" => "bigint", "key" => "fk"}
-
-        stub =
-          if rem(i, 9) == 4,
-            do: [%{"name" => "invoice_id", "type" => "uuid", "key" => "fk"}],
-            else: []
-
-        plain =
-          for k <- 1..Enum.random(2..9) do
-            %{"name" => "field_#{k}", "type" => Enum.random(types), "key" => nil}
-          end
-
-        columns = [%{"name" => "id", "type" => "bigint", "key" => "pk"}] ++ fks ++ stub ++ plain
-
-        node = %{
-          id: name,
-          type: "schema-table",
-          x: 0,
-          y: 0,
-          data: %{"name" => name, "columns" => columns}
-        }
-
-        edges =
-          for(to <- refs, do: {name, singular(to) <> "_id", to, "id"}) ++
-            for(_ <- stub, do: {name, "invoice_id", "billing.invoices", "id"})
-
+        {node, edges} = database_table(name, i, refs(names, hubs, i), types)
         {node, edges ++ keys}
       end)
 
@@ -520,6 +486,48 @@ defmodule HakushiDev.Seeds do
           }
         end
     )
+  end
+
+  # A table: its id, the foreign keys of its refs, one to billing.invoices
+  # now and then, and fields of the types.
+  defp database_table(name, i, refs, types) do
+    fks =
+      for to <- refs, do: %{"name" => singular(to) <> "_id", "type" => "bigint", "key" => "fk"}
+
+    stub =
+      if rem(i, 9) == 4,
+        do: [%{"name" => "invoice_id", "type" => "uuid", "key" => "fk"}],
+        else: []
+
+    plain =
+      for k <- 1..Enum.random(2..9) do
+        %{"name" => "field_#{k}", "type" => Enum.random(types), "key" => nil}
+      end
+
+    columns = [%{"name" => "id", "type" => "bigint", "key" => "pk"}] ++ fks ++ stub ++ plain
+
+    node = %{
+      id: name,
+      type: "schema-table",
+      x: 0,
+      y: 0,
+      data: %{"name" => name, "columns" => columns}
+    }
+
+    edges =
+      for(to <- refs, do: {name, singular(to) <> "_id", to, "id"}) ++
+        for(_ <- stub, do: {name, "invoice_id", "billing.invoices", "id"})
+
+    {node, edges}
+  end
+
+  # The tables a table refers to: none for a hub, nor for one in eight.
+  defp refs(names, hubs, i) do
+    cond do
+      i < length(hubs) -> []
+      :rand.uniform() < 0.12 -> []
+      true -> Enum.uniq(for _ <- 1..Enum.random([1, 1, 2, 3]), do: pick_ref(names, hubs, i))
+    end
   end
 
   defp pick_ref(names, hubs, i) do

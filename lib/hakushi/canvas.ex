@@ -876,8 +876,9 @@ defmodule Hakushi.Canvas do
 
   # A change, here or through the room of a shared canvas: the one place
   # where the two differ. A person's own change (`record`) goes on their
-  # undo list (but a `:quiet` one, which is theirs, does not). On a shared canvas, its inverse is of the graph this canvas
-  # has; the change itself shows when the room sends it back.
+  # undo list (but a `:quiet` one, which is theirs, does not). On a shared
+  # canvas, its inverse is of the graph this canvas has; the change itself
+  # shows when the room sends it back.
   defp commit(socket, %Change{} = change, record) do
     change = if record, do: %{change | by: person(socket)}, else: change
 

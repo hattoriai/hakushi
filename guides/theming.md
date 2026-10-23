@@ -110,7 +110,12 @@ The canvas marks its states with attributes, for your own CSS:
 * `.hakushi[data-ui-dragging]`, nodes being dragged;
 * `.hakushi[data-ui-zoom="far"]`, a zoom under 50%, where the handles
   hide;
-* `.hakushi[data-ui-readonly]`.
+* `.hakushi[data-ui-readonly]`, and `.hakushi[data-ui-arrange]` when
+  people still move the nodes (`readonly={:arrange}`);
+* `.hakushi[data-tidy]:not([data-ui-tidied])`, a canvas laying its nodes
+  out as it opens (`tidy`), whose nodes hide behind a spinner;
+* `.hakushi-edge[data-ui-faint]`, an edge of a node whose content has
+  `data-hakushi-faint` (a Schema stub), dashed and fainter.
 
 The handles of a node can show only on hover:
 
