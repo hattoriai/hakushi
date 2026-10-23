@@ -69,7 +69,8 @@ defmodule HakushiTest.CanvasLive do
          ),
        user: user(params),
        readonly: readonly(params["readonly"]),
-       way: params["layout"] && String.to_existing_atom(params["layout"])
+       way: params["layout"] && String.to_existing_atom(params["layout"]),
+       tidy: params["tidy"] == "true"
      )}
   end
 
@@ -121,6 +122,7 @@ defmodule HakushiTest.CanvasLive do
       user={@user}
       readonly={@readonly}
       layout={@way}
+      tidy={@tidy}
       rules={[cycles: false]}
       papers={[:dots, :lines, %{name: "iso", label: "Isometric"}]}
       label="Schema"

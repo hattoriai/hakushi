@@ -33,6 +33,8 @@ export interface Config {
   refit: boolean;
   /** The way of the layers of a tidy up. */
   layout: "right" | "down";
+  /** Whether the canvas lays its nodes out as it opens, before they show (the canvas's `tidy`). */
+  tidy?: boolean;
   /** How a tidy up places the nodes: in layers, by forces, or in a grid. */
   algorithm?: "layered" | "force" | "grid";
   exportable: boolean;

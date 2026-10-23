@@ -104,6 +104,7 @@ defmodule Hakushi.Canvas do
        notice_seq: 0,
        configured: false,
        arrange: false,
+       tidy: false,
        places: %{}
      )}
   end
@@ -801,9 +802,17 @@ defmodule Hakushi.Canvas do
   end
 
   defp client_change(params, socket) do
-    case Change.from_client(params) do
-      {:ok, change} -> reply(commit(socket, change, true))
-      :error -> {:reply, %{"error" => Messages.reason(socket.assigns.messages, :failed)}, socket}
+    case {Change.from_client(params), params["opened"]} do
+      # The places of a canvas that tidies as it opens: the person's, which
+      # no undo takes back to the pile it opened as.
+      {{:ok, %Change{op: :move} = change}, true} ->
+        reply(commit(socket, change, :quiet))
+
+      {{:ok, change}, _opened} ->
+        reply(commit(socket, change, true))
+
+      {:error, _opened} ->
+        {:reply, %{"error" => Messages.reason(socket.assigns.messages, :failed)}, socket}
     end
   end
 
@@ -867,7 +876,7 @@ defmodule Hakushi.Canvas do
 
   # A change, here or through the room of a shared canvas: the one place
   # where the two differ. A person's own change (`record`) goes on their
-  # undo list. On a shared canvas, its inverse is of the graph this canvas
+  # undo list (but a `:quiet` one, which is theirs, does not). On a shared canvas, its inverse is of the graph this canvas
   # has; the change itself shows when the room sends it back.
   defp commit(socket, %Change{} = change, record) do
     change = if record, do: %{change | by: person(socket)}, else: change
@@ -906,7 +915,7 @@ defmodule Hakushi.Canvas do
     end
   end
 
-  defp remember(socket, false, _inverse), do: socket
+  defp remember(socket, record, _inverse) when record in [false, :quiet], do: socket
 
   defp remember(socket, true, inverse) do
     assign(socket, undo: Enum.take([inverse | socket.assigns.undo], @undo_limit), redo: [])
@@ -1062,6 +1071,7 @@ defmodule Hakushi.Canvas do
       class={["hakushi", @class]}
       phx-mounted={JS.ignore_attributes(["style", "data-ui-*"])}
       data-background={@paper_background}
+      data-tidy={@tidy && "true"}
       role="application"
       tabindex="0"
       aria-roledescription={@messages["canvas"]}
@@ -1364,6 +1374,7 @@ defmodule Hakushi.Canvas do
       "newNode" => assigns.new_node != nil or assigns.kits != [],
       "wheel" => Atom.to_string(assigns.wheel),
       "refit" => assigns.refit,
+      "tidy" => assigns.tidy,
       "layout" => Atom.to_string(elem(assigns.layout, 1)),
       "algorithm" => Atom.to_string(elem(assigns.layout, 0)),
       "exportable" => assigns.export,

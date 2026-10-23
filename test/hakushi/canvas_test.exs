@@ -241,6 +241,46 @@ defmodule Hakushi.CanvasTest do
     end
   end
 
+  describe "tidy as it opens" do
+    test "the canvas says so, and hides its nodes until the browser has laid them out" do
+      {_view, html} = open("?tidy=true")
+      assert html =~ ~s(data-tidy="true")
+      assert html =~ "&quot;tidy&quot;:true"
+
+      {_view, html} = open()
+      refute html =~ "data-tidy"
+      assert html =~ "&quot;tidy&quot;:false"
+    end
+
+    test "the places it opens with are kept, and no undo takes them back" do
+      {view, _html} = open("?tidy=true&readonly=arrange")
+
+      view
+      |> element("#schema-hook")
+      |> render_hook("hakushi:change", %{
+        "op" => "move",
+        "opened" => true,
+        "nodes" => [%{"id" => "note", "x" => 40, "y" => 50}]
+      })
+
+      assert_reply(view, %{"ok" => true})
+      assert %{x: 40, y: 50} = Enum.find(nodes(view, "schema"), &(&1.id == "note"))
+      assert {:error, "Nothing to undo."} = undo(view, "schema")
+    end
+
+    test "only a move goes without an undo" do
+      {view, _html} = open()
+
+      view
+      |> element("#schema-hook")
+      |> render_hook("hakushi:change", %{"op" => "delete", "opened" => true, "nodes" => ["note"]})
+
+      assert_reply(view, %{"ok" => true})
+      refute Enum.find(nodes(view, "schema"), &(&1.id == "note"))
+      assert :ok = undo(view, "schema")
+    end
+  end
+
   test "refuses what a browser should not send" do
     {view, _html} = open()
     assert {:error, _} = Hakushi.Test.move(view, "schema", [{"note", "x", 1}])

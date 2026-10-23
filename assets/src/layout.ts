@@ -496,8 +496,8 @@ function forcePart(nodes: LayoutNode[], edges: LayoutEdge[], opts: LayoutOptions
     heat *= cool;
   }
 
-  // Room for the nodes: the middles spread out until the nodes would fill
-  // no more than a third of their box; then no two overlap.
+  // The middles spread out or drawn in until the nodes would fill about a
+  // third of their box (not more than twice nearer), then no two overlap.
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
@@ -509,7 +509,7 @@ function forcePart(nodes: LayoutNode[], edges: LayoutEdge[], opts: LayoutOptions
     maxY = Math.max(maxY, bodies[i].y + node.height / 2);
   });
   const area = nodes.reduce((sum, node) => sum + (node.width + opts.gap) * (node.height + opts.gap), 0);
-  const scale = Math.max(1, Math.sqrt(area / 0.33 / Math.max(1, (maxX - minX) * (maxY - minY))));
+  const scale = Math.max(0.5, Math.sqrt(area / 0.33 / Math.max(1, (maxX - minX) * (maxY - minY))));
   const boxes = nodes.map((node, i) => ({ x: bodies[i].x * scale - node.width / 2, y: bodies[i].y * scale - node.height / 2, width: node.width, height: node.height }));
   separate(boxes, opts.gap);
   return new Map(nodes.map((node, i) => [node.id, { x: boxes[i].x, y: boxes[i].y }]));

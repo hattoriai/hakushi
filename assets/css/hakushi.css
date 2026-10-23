@@ -450,6 +450,37 @@
   cursor: default;
 }
 
+/* A canvas that tidies as it opens: its nodes hidden, and a spinner, until
+   they are in their places. */
+.hakushi[data-tidy]:not([data-ui-tidied]) :is(.hakushi-world, .hakushi-minimap) {
+  visibility: hidden;
+}
+
+.hakushi[data-tidy]:not([data-ui-tidied])::after {
+  content: "";
+  position: absolute;
+  top: calc(50% - 14px);
+  left: calc(50% - 14px);
+  width: 28px;
+  height: 28px;
+  border: 3px solid color-mix(in oklab, var(--hakushi-text) 15%, transparent);
+  border-top-color: var(--hakushi-accent);
+  border-radius: 50%;
+  animation: hakushi-spin 0.8s linear infinite;
+}
+
+@keyframes hakushi-spin {
+  to {
+    rotate: 1turn;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hakushi[data-tidy]:not([data-ui-tidied])::after {
+    animation-duration: 2.4s;
+  }
+}
+
 /* Arranged only: the nodes move, and nothing else changes. */
 .hakushi[data-ui-arrange][data-ui-readonly] .hakushi-node:not([data-locked]) {
   cursor: grab;

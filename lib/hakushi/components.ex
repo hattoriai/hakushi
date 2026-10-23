@@ -165,6 +165,14 @@ defmodule Hakushi.Components do
     [Layout and export](layout.md)\
     """
 
+  attr :tidy, :boolean,
+    default: false,
+    doc: """
+    when `true`, the canvas lays its nodes out (its `layout`) as it opens, before people see \
+    them, for a graph whose nodes have no places of their own (a schema read from a database); \
+    not on a shared canvas, whose places are the room's. See [Layout and export](layout.md)\
+    """
+
   attr :export, :boolean,
     default: true,
     doc: "when `true`, a button of the controls downloads the canvas as an image"
@@ -241,6 +249,7 @@ defmodule Hakushi.Components do
       max_zoom={@max_zoom}
       minimap={@minimap}
       layout={@layout}
+      tidy={@tidy}
       export={@export}
       controls={@controls}
       readonly={@readonly != false}

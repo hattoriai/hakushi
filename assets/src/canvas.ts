@@ -256,6 +256,8 @@ export class Canvas {
 
     this.readNodes();
     this.readEdges();
+    this.tidying = this.config.tidy === true && !this.config.live;
+    if (!this.tidying) this.root.setAttribute("data-ui-tidied", "");
     this.observe();
     this.listen();
     this.measureRoot();
@@ -894,6 +896,7 @@ export class Canvas {
 
   private render() {
     if (!this.fitted && this.size.width > 0) {
+      if (this.tidying) return this.startTidy();
       this.fitted = true;
       this.view = this.config.fit && this.nodes.size ? this.fitView() : { x: 40, y: 40, zoom: 1 };
     }
@@ -3829,17 +3832,26 @@ export class Canvas {
   // -- Layout ------------------------------------------------------------------
 
   /**
-   * Arranges the nodes in layers along their edges (`direction`, the
-   * canvas's `layout` unless given): the selected nodes when two or more
-   * are, else every node. A group is laid out as one box, with what is in
+   * Lays the nodes out (`algorithm` and `direction`, the way the person
+   * chose in the menu, else the canvas's `layout`, unless given): the
+   * selected nodes when two or more are, else every node. A group is laid out as one box, with what is in
    * it; locked nodes stay. The nodes glide to their places, and the change
    * is one move, which undoes at once.
    */
   async layout(options: { direction?: "right" | "down"; algorithm?: Algorithm } = {}): Promise<void> {
     if (!this.arranges || this.gesture) return;
-    const chosen = this.selected.size >= 2 ? [...this.selected] : [...this.order];
-    // The nodes laid out: those of no group among the chosen ones, so that a
-    // group moves with what is in it.
+    const plan = this.planLayout(this.selected.size >= 2 ? [...this.selected] : [...this.order], options);
+    if (!plan) return;
+    await this.glide(plan.origin, plan.target);
+    this.commitMove(plan.origin, new Map(), this.messages.t("laidOut", { n: plan.count }));
+  }
+
+  // Where a layout puts the chosen nodes: those of no group among them (a
+  // group moves with what is in it), and not the locked ones.
+  private planLayout(
+    chosen: string[],
+    options: { direction?: "right" | "down"; algorithm?: Algorithm },
+  ): { origin: Map<string, Point>; target: Map<string, Point>; count: number } | null {
     const set = new Set(chosen);
     const top = (id: string): string => {
       let node = this.nodes.get(id);
@@ -3850,7 +3862,7 @@ export class Canvas {
       .map((id) => this.nodes.get(id)!)
       .filter((n) => n && top(n.id) === n.id && !n.locked && !this.gone.has(n.id))
       .map((n) => ({ id: n.id, width: n.width, height: n.height }));
-    if (boxes.length < 2) return;
+    if (boxes.length < 2) return null;
     const laid = new Set(boxes.map((b) => b.id));
     const edges = [...this.edges.values()]
       .map((e) => ({ source: top(e.source), target: top(e.target) }))
@@ -3882,9 +3894,62 @@ export class Canvas {
         target.set(id, { x: round(n.x + dx), y: round(n.y + dy) });
       }
     }
+    return { origin, target, count: boxes.length };
+  }
 
-    await this.glide(origin, target);
-    this.commitMove(origin, new Map(), this.messages.t("laidOut", { n: boxes.length }));
+  // -- Tidy as it opens -----------------------------------------------------------
+  //
+  // A canvas with `tidy` lays its nodes out before anyone sees them: the
+  // server draws it with its nodes hidden (data-tidy) and a spinner, and
+  // the first frame with a size measures the nodes, lays them out at once,
+  // and shows them, fitted. The places are a move, as a tidy up's, on a
+  // canvas whose nodes people move; on a read-only one they are this
+  // page's only. A shared canvas keeps the room's places.
+
+  private tidying = false;
+  private tidyStarted = false;
+
+  private startTidy() {
+    if (this.tidyStarted) return;
+    this.tidyStarted = true;
+    // A frame for the spinner to show, then the work.
+    requestAnimationFrame(() =>
+      setTimeout(() => {
+        try {
+          this.tidyNow();
+        } finally {
+          this.tidying = false;
+          this.root.setAttribute("data-ui-tidied", "");
+          this.schedule();
+        }
+      }),
+    );
+  }
+
+  private tidyNow() {
+    // Their sizes now, as drawn: the canvas may have been hidden when it read them.
+    for (const node of this.nodes.values()) {
+      if (node.fixed) continue;
+      node.width = node.el.offsetWidth || node.width;
+      node.height = node.el.offsetHeight || node.height;
+    }
+    const plan = this.planLayout([...this.order], {});
+    if (!plan) return;
+    for (const [id, to] of plan.target) {
+      const node = this.nodes.get(id);
+      if (!node) continue;
+      node.x = to.x;
+      node.y = to.y;
+      node.el.style.translate = `${node.x}px ${node.y}px`;
+      this.decorate(node);
+      this.touchNode(id);
+    }
+    // Not undone, nor taken back if the server refuses it: the pile it
+    // opened as is no place to go back to.
+    if (this.arranges) {
+      const nodes = [...plan.target].map(([id, p]) => ({ id, x: p.x, y: p.y }));
+      this.push("hakushi:change", { op: "move", nodes, opened: true });
+    }
   }
 
   // The nodes from their places to others, in a quarter of a second (at
