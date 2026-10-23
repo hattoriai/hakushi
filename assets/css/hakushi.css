@@ -377,8 +377,8 @@
 /* An edge to a faint node (data-hakushi-faint, as a table of another
    schema): dashed and fainter. */
 .hakushi-edge[data-ui-faint]:not([data-ui-selected], [data-ui-connected]) .hakushi-edge-line {
-  stroke-dasharray: 5 4;
-  opacity: 0.6;
+  stroke-dasharray: 4 4;
+  opacity: 0.45;
 }
 
 .hakushi-edge[data-animated] .hakushi-edge-line {
@@ -1104,10 +1104,19 @@
 
 /* Schema: a table of another schema, a stub: faint, dashed, never edited. */
 .hakushi-kit-table[data-hakushi-faint] {
-  border-style: dashed;
-  background: color-mix(in oklab, var(--hakushi-node-background) 70%, transparent);
+  border: 1.5px dashed color-mix(in oklab, var(--hakushi-muted) 70%, transparent);
+  background: color-mix(in oklab, var(--hakushi-node-background) 25%, transparent);
   box-shadow: none;
-  opacity: 0.75;
+  color: var(--hakushi-muted);
+  opacity: 0.55;
+}
+
+.hakushi-kit-table[data-hakushi-faint] :is(.hakushi-kit-table-head, .hakushi-kit-column + .hakushi-kit-column) {
+  border-color: transparent;
+}
+
+.hakushi-kit-table[data-hakushi-faint] :is(.hakushi-icon, .hakushi-kit-key) {
+  color: inherit;
 }
 
 /* The schema before the name, as one word with it: no gap of the head's. */
