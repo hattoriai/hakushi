@@ -376,6 +376,31 @@ defmodule Hakushi.Kit do
   end
 
   @doc false
+  # A kit the canvas is given is a module that is there: the Images kit is
+  # there only when the app has Storehouse, for its files.
+  def check!(Hakushi.Kits.Images = kit) do
+    unless Code.ensure_loaded?(kit) do
+      raise ArgumentError, """
+      Hakushi.Kits.Images keeps the images' files with Storehouse, which is \
+      not in the app's deps. Add it to mix.exs, and run mix deps.get:
+
+          {:storehouse, "~> 0.1"}
+      """
+    end
+
+    :ok
+  end
+
+  def check!(kit) do
+    unless Code.ensure_loaded?(kit) do
+      raise ArgumentError,
+            "a canvas's kit must be a module, got: #{inspect(kit)}, which is not one"
+    end
+
+    :ok
+  end
+
+  @doc false
   # An optional callback of a kit: the module is loaded first, as
   # function_exported?/3 is false for a module not loaded yet.
   def exports?(kit, function, arity),

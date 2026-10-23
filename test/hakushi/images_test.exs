@@ -141,6 +141,16 @@ defmodule Hakushi.ImagesTest do
     end
   end
 
+  describe "a canvas's kits" do
+    test "are modules that are there: the Images kit, with Storehouse in the deps" do
+      assert Hakushi.Kit.check!(Kit) == :ok
+
+      assert_raise ArgumentError, ~r/must be a module/, fn ->
+        Hakushi.Kit.check!(Hakushi.Kits.NotThere)
+      end
+    end
+  end
+
   describe "the kit's node" do
     @image %Storehouse.File{
       key: "2026/10/k-a.png",

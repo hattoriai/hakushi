@@ -163,6 +163,8 @@ defmodule Hakushi.Canvas do
   # the canvas's own, which the browser sends as the person drops, pastes
   # or picks them.
   defp allow_files(socket) do
+    Enum.each(socket.assigns.kits, &Kit.check!/1)
+
     case Kit.uploader(socket.assigns.kits) do
       nil ->
         assign(socket, :uploader, nil)
