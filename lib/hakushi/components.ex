@@ -135,7 +135,15 @@ defmodule Hakushi.Components do
     with ⌘, Ctrl or a pinch), for a canvas in a page that scrolls, as an embed\
     """
 
-  attr :fit, :boolean, default: true, doc: "when `true`, the canvas opens on all of its nodes"
+  attr :fit, :any,
+    default: true,
+    values: [true, false, :readable],
+    doc: """
+    when `true`, the canvas opens on all of its nodes; when `:readable`, on all of them if they \
+    are large enough to read (60% or more), else on its most joined node and its neighbours, at a \
+    zoom people read: for a large graph (a schema of hundreds of tables), whose whole would show \
+    no detail\
+    """
 
   attr :refit, :boolean,
     default: false,

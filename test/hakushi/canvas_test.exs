@@ -221,6 +221,17 @@ defmodule Hakushi.CanvasTest do
       assert html =~ "&quot;algorithm&quot;:&quot;layered&quot;"
     end
 
+    test "a canvas that should be read says so" do
+      html =
+        render_component(&Hakushi.Components.canvas/1,
+          id: "big",
+          graph: Hakushi.Graph.new(),
+          fit: :readable
+        )
+
+      assert html =~ "&quot;fit&quot;:&quot;readable&quot;"
+    end
+
     test "layout!/1 takes the forms of the attribute, and refuses others" do
       assert Hakushi.Canvas.layout!(:right) == {:layered, :right}
       assert Hakushi.Canvas.layout!(:down) == {:layered, :down}

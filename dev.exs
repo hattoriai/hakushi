@@ -1676,6 +1676,7 @@ defmodule HakushiDev.DatabaseLive do
         kits={[Hakushi.Kits.Schema]}
         readonly={:arrange}
         tidy
+        fit={:readable}
         layout={@way}
         label="The tables of the database"
       />

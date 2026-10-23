@@ -21,8 +21,10 @@ import { Minimap } from "./minimap";
 import { check } from "./rules";
 import { align, snapToGrid, type Guide } from "./snap";
 import type { Config, EdgeModel, End, Handle, HandleKind, Live, NodeModel, Person, Point, Rect, Side, Tool, View } from "./types";
-import { centerOn, clamp, fit, reveal, toCanvas, visible, zoomAt } from "./view";
+import { centerOn, clamp, fit, readableView, reveal, toCanvas, visible, zoomAt } from "./view";
 
+// The smallest zoom a canvas that should be read (fit "readable") opens at.
+const READABLE_ZOOM = 0.6;
 // Nodes are culled (not laid out off the screen) above this many.
 const CULL_FROM = 150;
 // How far around the screen nodes stay laid out, in pixels.
@@ -898,7 +900,7 @@ export class Canvas {
     if (!this.fitted && this.size.width > 0) {
       if (this.tidying) return this.startTidy();
       this.fitted = true;
-      this.view = this.config.fit && this.nodes.size ? this.fitView() : { x: 40, y: 40, zoom: 1 };
+      this.view = this.config.fit && this.nodes.size ? this.openingView() : { x: 40, y: 40, zoom: 1 };
     }
     const viewChanged = this.view !== this.drawnView;
     if (viewChanged) {
@@ -2370,6 +2372,31 @@ export class Canvas {
   private fitView(ids?: Iterable<string>): View {
     const list = ids ? [...ids].map((id) => this.nodes.get(id)).filter((n): n is NodeModel => !!n) : [...this.nodes.values()];
     return fit(union(list.map((n) => this.rect(n))), this.size.width, this.size.height, 48, this.config.minZoom, this.config.maxZoom);
+  }
+
+  // The view it opens on: all of its nodes; or, when it should be read and
+  // they are too many to read at once, the most joined node and its
+  // neighbours, at a zoom people read.
+  private openingView(): View {
+    const all = this.fitView();
+    if (this.config.fit !== "readable" || all.zoom >= READABLE_ZOOM) return all;
+    let heart: string | null = null;
+    let most = -1;
+    for (const id of this.order) {
+      const count = this.byNode.get(id)?.size ?? 0;
+      if (count > most) {
+        most = count;
+        heart = id;
+      }
+    }
+    const near = new Set([heart!]);
+    for (const e of this.byNode.get(heart!) ?? []) {
+      const edge = this.edges.get(e);
+      if (edge) near.add(edge.source).add(edge.target);
+    }
+    const focus = union([...near].map((id) => this.nodes.get(id)).filter((n): n is NodeModel => !!n).map((n) => this.rect(n)));
+    const zoom = clamp(Math.max(READABLE_ZOOM, this.fitView(near).zoom), this.config.minZoom, this.config.maxZoom);
+    return readableView(all, focus, this.size.width, this.size.height, zoom);
   }
 
   fitAll() {

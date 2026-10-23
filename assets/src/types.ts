@@ -20,7 +20,8 @@ export interface Config {
   snap: boolean;
   minimap: boolean;
   controls: boolean;
-  fit: boolean;
+  /** How it opens: on all its nodes, on none (false), or on all of them unless too small to read, then on its most joined node ("readable"). */
+  fit: boolean | "readable";
   minZoom: number;
   maxZoom: number;
   readonly: boolean;

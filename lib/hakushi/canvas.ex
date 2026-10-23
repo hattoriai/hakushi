@@ -1365,7 +1365,7 @@ defmodule Hakushi.Canvas do
       "snap" => assigns.snap,
       "minimap" => assigns.minimap,
       "controls" => assigns.controls,
-      "fit" => assigns.fit,
+      "fit" => if(assigns.fit == :readable, do: "readable", else: assigns.fit),
       "minZoom" => assigns.min_zoom,
       "maxZoom" => assigns.max_zoom,
       "readonly" => assigns.readonly,

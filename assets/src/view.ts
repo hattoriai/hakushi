@@ -49,6 +49,16 @@ export function fit(box: Rect | null, width: number, height: number, padding: nu
   };
 }
 
+/**
+ * The view a canvas opens on when it should be read (`fit` "readable"):
+ * the fitted view when its zoom is `readable` or more; else the zoom of
+ * `readable`, on the middle of `focus` (the heart of the graph).
+ */
+export function readableView(fitted: View, focus: Rect | null, width: number, height: number, readable: number): View {
+  if (fitted.zoom >= readable || !focus) return fitted;
+  return centerOn({ x: 0, y: 0, zoom: readable }, focus.x + focus.width / 2, focus.y + focus.height / 2, width, height);
+}
+
 /** The view that puts the point (x, y) of the canvas in the middle of the screen. */
 export function centerOn(view: View, x: number, y: number, width: number, height: number): View {
   return { x: width / 2 - x * view.zoom, y: height / 2 - y * view.zoom, zoom: view.zoom };

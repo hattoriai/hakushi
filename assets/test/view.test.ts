@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fit, reveal, toCanvas, toScreen, visible, zoomAt } from "../src/view";
+import { fit, readableView, reveal, toCanvas, toScreen, visible, zoomAt } from "../src/view";
 
 test("screen and canvas points go back and forth", () => {
   const view = { x: 100, y: -50, zoom: 2 };
@@ -35,4 +35,16 @@ test("reveal moves only as far as it must", () => {
   const moved = reveal(view, { x: 600, y: 10, width: 50, height: 20 }, 500, 500, 10);
   assert.equal(moved.x, -160);
   assert.equal(moved.y, 0);
+});
+
+test("a readable opening: the fitted view when large enough, else the focus at a readable zoom", () => {
+  const near = fit({ x: 0, y: 0, width: 800, height: 400 }, 1000, 600, 48, 0.1, 4);
+  assert.deepEqual(readableView(near, { x: 0, y: 0, width: 100, height: 100 }, 1000, 600, 0.6), near);
+
+  const far = fit({ x: 0, y: 0, width: 40_000, height: 30_000 }, 1000, 600, 48, 0.1, 4);
+  const view = readableView(far, { x: 5000, y: 3000, width: 200, height: 100 }, 1000, 600, 0.6);
+  assert.equal(view.zoom, 0.6);
+  // The middle of the focus is the middle of the screen.
+  assert.ok(Math.abs(5100 * 0.6 + view.x - 500) < 0.001);
+  assert.ok(Math.abs(3050 * 0.6 + view.y - 300) < 0.001);
 });
