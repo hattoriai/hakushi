@@ -102,12 +102,12 @@ defmodule Hakushi.Components do
     doc:
       "the person, on a shared canvas: the app's user, as its `Issho.Actor` says them (or a map with an `:id`, and a `:name`, `:color` and `:avatar`)"
 
-  attr :background, :atom,
+  attr :background, :any,
     default: nil,
-    values: [nil, :dots, :lines, :cross, :none],
     doc: """
-    the paper: dots, lines (graph paper), crosses, or none; the default is the first kit's \
-    (`c:Hakushi.Kit.canvas/0`), else dots\
+    the paper: `:dots`, `:lines` (graph paper), `:cross`, `:none`, or the name of a paper of \
+    the app's own (see `Hakushi.Paper`); the default is the first kit's \
+    (`c:Hakushi.Kit.canvas/0`), else dots. A paper people chose (`papers`) wins.\
     """
 
   attr :grid, :integer,
@@ -117,6 +117,15 @@ defmodule Hakushi.Components do
   attr :snap, :boolean,
     default: nil,
     doc: "when `true`, nodes snap to the paper's grid; the default is a kit's, else `false`"
+
+  attr :papers, :any,
+    default: nil,
+    doc: """
+    the papers people choose from, in a picker of the controls: `true` for Hakushi's \
+    (dots, graph paper, crosses, none), or a list of them (`:dots`) and of the app's own \
+    (`%{name: "iso", label: "Isometric"}`); none by default. The paper chosen is the graph's \
+    (a change, which undoes and which everyone sees); see `Hakushi.Paper`\
+    """
 
   attr :wheel, :atom,
     default: :pan,
@@ -217,6 +226,7 @@ defmodule Hakushi.Components do
       user={@user}
       background={@background}
       grid={@grid}
+      papers={@papers}
       snap={@snap}
       wheel={@wheel}
       fit={@fit}

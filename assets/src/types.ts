@@ -15,6 +15,8 @@ export interface Rules {
 export interface Config {
   rules: Rules;
   grid: number;
+  /** The paper's pattern (the canvas's `data-background`). */
+  background?: string;
   snap: boolean;
   minimap: boolean;
   controls: boolean;
@@ -33,6 +35,9 @@ export interface Config {
   user: string | null;
   /** The tools of the kits, for the bar of tools (Hakushi.Kit's `tools/1`). */
   tools?: Tool[];
+  /** The papers people choose from (the canvas's `papers`), and the sizes of their squares. */
+  papers?: { name: string; label: string }[];
+  paperGrids?: number[];
   messages: Record<string, string>;
   locale: string;
 }

@@ -72,7 +72,7 @@ the schema and the workflow are shared.
 
 | | |
 | --- | --- |
-| Paper | dots, lines (graph paper, with a stronger line every five squares), crosses, or none; the size of a square; snap to the grid |
+| Paper | dots, lines (graph paper, with a stronger line every five squares), crosses, none, or a paper of your own; the size of a square; snap to the grid; a picker for people (`papers`), whose choice is the graph's, shared and undone as any change |
 | View | pan with the wheel or a trackpad, Space and a drag, the middle button, one finger; zoom with ⌘ or Ctrl and the wheel, a pinch, the controls, + and -; fit (⇧1), 100% (⇧0); an overview (minimap) to click and drag |
 | Nodes | your own HEEx, a `:node` slot for each type; drawn from the node's data, on the server; locked nodes; resized by their corners (`resizable`); a part of a node to drag it by (`data-hakushi-drag`), and fields and buttons in it that are theirs |
 | Handles | sources, targets or both, on any side of the node or of any element in it (a row of a table); several with one id, of which an edge takes the nearest; `type`, `accepts` and `max` |

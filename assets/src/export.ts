@@ -14,6 +14,8 @@ export interface ExportOptions {
   transparent: boolean;
   /** The name of the file, without its extension (`download`). */
   filename: string;
+  /** Whether the image has the canvas's paper (its pattern) behind the nodes; it has none unless asked. */
+  paper: boolean;
 }
 
 const XHTML = "http://www.w3.org/1999/xhtml";
@@ -25,7 +27,7 @@ export async function exportImage(root: HTMLElement, world: HTMLElement, box: Re
   const padding = options.padding ?? 32;
   const width = Math.ceil(box.width + padding * 2);
   const height = Math.ceil(box.height + padding * 2);
-  const svgText = await serialize(root, world, box, padding, width, height, options.transparent ?? false);
+  const svgText = await serialize(root, world, box, padding, width, height, options.transparent ?? false, options.paper ?? false);
 
   if ((options.format ?? "png") === "svg") return new Blob([svgText], { type: "image/svg+xml" });
 
@@ -53,7 +55,7 @@ export async function exportImage(root: HTMLElement, world: HTMLElement, box: Re
   }
 }
 
-async function serialize(root: HTMLElement, world: HTMLElement, box: Rect, padding: number, width: number, height: number, transparent: boolean): Promise<string> {
+async function serialize(root: HTMLElement, world: HTMLElement, box: Rect, padding: number, width: number, height: number, transparent: boolean, paper: boolean): Promise<string> {
   const style = getComputedStyle(root);
   const clone = world.cloneNode(true) as HTMLElement;
   clone.removeAttribute("id");
@@ -84,13 +86,23 @@ async function serialize(root: HTMLElement, world: HTMLElement, box: Rect, paddi
 
   const wrapper = document.createElementNS(XHTML, "div") as HTMLElement;
   wrapper.setAttribute("class", `${root.className} hakushi-export`);
-  wrapper.setAttribute("data-background", "none");
+  // The paper, when asked: its pattern at 100%, where it is under the nodes.
+  const background = paper ? (root.dataset.background ?? "none") : "none";
+  wrapper.setAttribute("data-background", background);
   wrapper.setAttribute(
     "style",
     `${vars.join(" ")} position: relative; width: ${width}px; height: ${height}px; overflow: hidden; ` +
       `font-family: ${style.fontFamily}; font-size: ${style.fontSize}; color: ${style.color}; ` +
       `background: ${transparent ? "transparent" : style.backgroundColor};`,
   );
+  if (background !== "none") {
+    const grid = Number(JSON.parse(root.querySelector<HTMLElement>(".hakushi-hook")?.dataset.config ?? "{}").grid) || 20;
+    const at = `${padding - box.x}px ${padding - box.y}px`;
+    const pattern = document.createElementNS(XHTML, "div") as HTMLElement;
+    pattern.setAttribute("class", "hakushi-background");
+    pattern.setAttribute("style", `--hakushi-grid-size: ${grid}px; inset: 0; translate: none; background-position: ${at}; mask-position: ${at}; -webkit-mask-position: ${at};`);
+    wrapper.append(pattern);
+  }
   wrapper.append(clone);
 
   const css = await styleSheets();

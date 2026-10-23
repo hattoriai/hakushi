@@ -161,7 +161,14 @@ defmodule Hakushi.MixProject do
           Hakushi.Mermaid,
           Hakushi.Icons
         ],
-        Graph: [Hakushi.Graph, Hakushi.Node, Hakushi.Edge, Hakushi.Change, Hakushi.Rules],
+        Graph: [
+          Hakushi.Graph,
+          Hakushi.Node,
+          Hakushi.Edge,
+          Hakushi.Change,
+          Hakushi.Rules,
+          Hakushi.Paper
+        ],
         Collaboration: [Hakushi.Room],
         Storage: [Hakushi.Graph.Type],
         Testing: [Hakushi.Test]

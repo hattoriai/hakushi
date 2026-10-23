@@ -450,9 +450,17 @@ export class Canvas {
     const minimap = this.config.minimap;
     const controls = this.config.controls;
     const tools = JSON.stringify(this.config.tools ?? []) + this.config.readonly;
+    const papers = JSON.stringify(this.config.papers ?? []);
+    const grid = this.config.grid;
     this.readConfig();
-    if (minimap !== this.config.minimap || controls !== this.config.controls) this.buildControls();
+    // Another size of squares: the paper is drawn again at once.
+    if (grid !== this.config.grid) this.drawnView = null;
+    if (minimap !== this.config.minimap || controls !== this.config.controls || papers !== JSON.stringify(this.config.papers ?? [])) {
+      this.togglePaperMenu(false);
+      this.buildControls();
+    }
     if (tools !== JSON.stringify(this.config.tools ?? []) + this.config.readonly) this.buildTools();
+    this.drawPaperMenu();
     this.showNotice();
     this.schedule();
   }
@@ -1293,6 +1301,13 @@ export class Canvas {
         );
       }
       if (this.config.exportable) group.append(button("export", t("export"), icons.download, () => void this.download()));
+      // The papers people choose from (the canvas's `papers`), in a menu.
+      if ((this.config.papers ?? []).length > 1) {
+        const paper = button("paper", t("paper"), icons.paper, () => this.togglePaperMenu());
+        paper.setAttribute("aria-haspopup", "menu");
+        paper.setAttribute("aria-expanded", "false");
+        group.append(paper);
+      }
       group.addEventListener("pointerdown", (event) => event.stopPropagation());
       this.controlsEl = group;
       this.ui.append(group);
@@ -1305,6 +1320,94 @@ export class Canvas {
       });
       this.ui.append(this.minimap.el);
     }
+  }
+
+  // -- The paper -----------------------------------------------------------------
+  //
+  // A menu of the papers the canvas offers, and of the sizes of their
+  // squares. A paper chosen is a change of the graph's (Hakushi.Paper): it
+  // undoes, and on a shared canvas everyone sees it.
+
+  private paperMenu: HTMLElement | null = null;
+
+  private togglePaperMenu(open = !this.paperMenu) {
+    const button = this.controlsEl?.querySelector<HTMLElement>('[data-action="paper"]');
+    if (!open) {
+      this.paperMenu?.remove();
+      this.paperMenu = null;
+      document.removeEventListener("pointerdown", this.closePaperMenu, true);
+      button?.setAttribute("aria-expanded", "false");
+      return;
+    }
+    const menu = el("div", { class: "hakushi-paper-menu", role: "menu", "aria-label": this.messages.t("paper") });
+    menu.addEventListener("pointerdown", (event) => event.stopPropagation());
+    menu.addEventListener("keydown", (event) => this.paperKey(event));
+    this.paperMenu = menu;
+    this.drawPaperMenu();
+    this.ui.append(menu);
+    button?.setAttribute("aria-expanded", "true");
+    document.addEventListener("pointerdown", this.closePaperMenu, true);
+    menu.querySelector<HTMLElement>('[aria-checked="true"]')?.focus();
+  }
+
+  // A press anywhere but the menu and its button closes it.
+  private closePaperMenu = (event: Event) => {
+    const target = event.target as Element | null;
+    if (target?.closest?.(".hakushi-paper-menu") || target?.closest?.('[data-action="paper"]')) return;
+    this.togglePaperMenu(false);
+  };
+
+  private drawPaperMenu() {
+    const menu = this.paperMenu;
+    if (!menu) return;
+    const focused = (document.activeElement as HTMLElement | null)?.dataset?.paperItem;
+    const current = this.config.background ?? this.root.dataset.background ?? "dots";
+    const grid = this.config.grid;
+    const item = (key: string, label: string, checked: boolean, choose: () => void, swatch?: string) => {
+      const b = el("button", { type: "button", role: "menuitemradio", class: "hakushi-paper-item", "aria-checked": String(checked), tabindex: "-1", "data-paper-item": key });
+      if (swatch !== undefined) b.append(el("span", { class: "hakushi-paper-frame", "aria-hidden": "true" }, [el("span", { class: "hakushi-paper-swatch", "data-background": swatch })]));
+      b.append(el("span", {}, [label]));
+      b.addEventListener("click", choose);
+      return b;
+    };
+    const papers = el("div", { role: "group", "aria-label": this.messages.t("paper") });
+    for (const paper of this.config.papers ?? []) {
+      papers.append(item(`paper:${paper.name}`, paper.label, paper.name === current, () => this.choosePaper(paper.name, this.config.grid), paper.name));
+    }
+    const sizes = el("div", { role: "group", class: "hakushi-paper-sizes", "aria-label": this.messages.t("paperSquares") });
+    const names = ["squaresSmall", "squaresMedium", "squaresLarge"];
+    (this.config.paperGrids ?? []).forEach((size, i) => {
+      sizes.append(item(`grid:${size}`, this.messages.t(names[i] ?? "paperSquares"), size === grid, () => this.choosePaper(this.config.background ?? current, size)));
+    });
+    menu.replaceChildren(papers, el("div", { class: "hakushi-paper-heading", "aria-hidden": "true" }, [this.messages.t("paperSquares")]), sizes);
+    if (focused) menu.querySelector<HTMLElement>(`[data-paper-item="${CSS.escape(focused)}"]`)?.focus();
+  }
+
+  private paperKey(event: KeyboardEvent) {
+    const items = [...(this.paperMenu?.querySelectorAll<HTMLElement>(".hakushi-paper-item") ?? [])];
+    const index = items.indexOf(document.activeElement as HTMLElement);
+    if (event.key === "Escape" || event.key === "Tab") {
+      if (event.key === "Escape") event.preventDefault();
+      this.togglePaperMenu(false);
+      if (event.key === "Escape") this.controlsEl?.querySelector<HTMLElement>('[data-action="paper"]')?.focus();
+    } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      items[(index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
+    } else if (event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      items[event.key === "Home" ? 0 : items.length - 1]?.focus();
+    }
+    event.stopPropagation();
+  }
+
+  /** Chooses a paper the canvas offers (its name) and the size of its squares: a change, which undoes. */
+  choosePaper(background: string, grid: number = this.config.grid) {
+    if (this.config.readonly) return;
+    const paper = (this.config.papers ?? []).find((p) => p.name === background);
+    if (!paper || (background === this.config.background && grid === this.config.grid)) return;
+    this.push("hakushi:change", { op: "paper", paper: { background, grid } }, (reply) => {
+      if (!reply.error) this.announce(this.messages.t("paperChosen", { name: paper.label }));
+    });
   }
 
   // -- The tools of the kits ---------------------------------------------------
@@ -1642,7 +1745,7 @@ export class Canvas {
   private pointerDown(event: PointerEvent) {
     const target = event.target as Element;
     this.root.removeAttribute("data-ui-keyboard");
-    if (target.closest(".hakushi-controls, .hakushi-tools, .hakushi-minimap, .hakushi-edge-input, [data-hakushi-people], .hakushi-following")) return;
+    if (target.closest(".hakushi-controls, .hakushi-tools, .hakushi-paper-menu, .hakushi-minimap, .hakushi-edge-input, [data-hakushi-people], .hakushi-following")) return;
     if (event.pointerType === "pen") this.penSeen = true;
     this.bounds = this.root.getBoundingClientRect();
     this.pointers.set(event.pointerId, this.local(event));
@@ -3062,6 +3165,7 @@ export class Canvas {
   }
 
   destroy() {
+    this.togglePaperMenu(false);
     clearTimeout(this.panTimer);
     for (const o of this.observers) o.disconnect();
     for (const cleanup of this.cleanups) cleanup();

@@ -110,6 +110,7 @@ defmodule HakushiTest.CanvasLive do
       user={@user}
       readonly={@readonly}
       rules={[cycles: false]}
+      papers={[:dots, :lines, %{name: "iso", label: "Isometric"}]}
       label="Schema"
     >
       <:node type="table" :let={node}>

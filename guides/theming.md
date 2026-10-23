@@ -44,9 +44,54 @@ and the ring of the nodes they selected or drag.
 ## The paper
 
 `background` is `:dots` (the default), `:lines` (graph paper, a stronger
-line every five squares), `:cross` or `:none`, and `grid` the size of a
-square at 100% (20 pixels unless set). The pattern scales and moves with
-the view.
+line every five squares), `:cross` or `:none`, or a paper of your own,
+and `grid` the size of a square at 100% (20 pixels unless set). The
+pattern scales and moves with the view.
+
+### People choose the paper
+
+`papers` puts a picker in the controls: the papers people choose from,
+and the size of their squares (small, medium, large: 10, 20 and 40
+pixels). It is off unless you give it.
+
+```heex
+<.canvas id="board" graph={@graph} papers={true} on_change={&save/2} />
+<.canvas id="board" graph={@graph} papers={[:dots, :lines, %{name: "iso", label: "Isometric"}]} />
+```
+
+The paper people choose is the graph's (`Hakushi.Graph`'s `paper`), and
+choosing it is a change as any other (`Hakushi.Change.paper/1`): it goes
+through `on_change`, which saves it with the graph, ⌘Z takes it back,
+and on a shared canvas everyone sees it. It wins over the canvas's
+`background` and `grid` until it is taken back. Your app changes it the
+same way, with `Hakushi.Live.change/2` or `Hakushi.Issho.change/4`:
+
+```elixir
+Hakushi.Live.change("board", Hakushi.Change.paper(background: :lines, grid: 20))
+```
+
+### A paper of your own
+
+A paper is a pattern of CSS, on the canvas's paper and on its swatch in
+the picker. Draw it with the canvas's properties: `--hakushi-grid-size`
+(a square, at the zoom), `--hakushi-pattern` and
+`--hakushi-pattern-strong`; the canvas moves it with the view.
+
+```css
+.hakushi[data-background="iso"] .hakushi-background,
+.hakushi-paper-swatch[data-background="iso"] {
+  background: var(--hakushi-pattern-strong);
+  mask-image: url("data:image/svg+xml,...");
+  mask-size: calc(var(--hakushi-grid-size) * 1.732) var(--hakushi-grid-size);
+}
+```
+
+Name it in `background` (`background="iso"`) or in `papers`. The
+development app's moodboard has one, isometric (see `dev.exs`); see
+`Hakushi.Paper`.
+
+An exported image has no paper unless asked: `Hakushi.Live.export/2`
+with `paper: true`, or the canvas's `download({paper: true})`.
 
 ## Parts of the canvas
 

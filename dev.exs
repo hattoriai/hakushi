@@ -6,7 +6,8 @@
 # one type), an automation (/workflow, steps dragged from a palette, a
 # condition with two ways out, no cycles), a moodboard (/board, notes that
 # resize, swatches, labelled arrows, snapped to the grid, and ink: a pen,
-# a highlighter, an eraser and a lasso) and two thousand
+# a highlighter, an eraser and a lasso; a picker of papers, one of them the
+# app's own) and two thousand
 # nodes in a grid, joined to their neighbours (/scale, `?n=` for another
 # count). The schema, the workflow and the moodboard are
 # shared: open them in two windows as two people. The graphs are kept in
@@ -697,6 +698,17 @@ defmodule HakushiDev.Layouts do
           .step .way { position: relative; display: flex; justify-content: space-between; padding: 0.35rem 0.875rem; font-size: 0.75rem; color: var(--atelier-muted); }
           .step .way + .way { border-top: 1px dashed var(--atelier-line); }
 
+          /* A paper of the app's own, for the moodboard's picker: isometric,
+             a triangle of lines at each square (see Hakushi.Paper). */
+          .hakushi[data-background="iso"] .hakushi-background,
+          .hakushi-paper-swatch[data-background="iso"] {
+            background: var(--hakushi-pattern-strong);
+            -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 34.64 20'%3E%3Cpath d='M0 0L34.64 20M34.64 0L0 20M0 0V20M17.32 0V20' fill='none' stroke='black' stroke-width='0.7'/%3E%3C/svg%3E");
+            mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 34.64 20'%3E%3Cpath d='M0 0L34.64 20M34.64 0L0 20M0 0V20M17.32 0V20' fill='none' stroke='black' stroke-width='0.7'/%3E%3C/svg%3E");
+            -webkit-mask-size: calc(var(--hakushi-grid-size) * 1.732) var(--hakushi-grid-size);
+            mask-size: calc(var(--hakushi-grid-size) * 1.732) var(--hakushi-grid-size);
+          }
+
           /* Moodboard: notes, swatches, a specimen. */
           .note { position: relative; width: 100%; height: 100%; padding: 0.875rem 1rem; border-radius: 4px; background: var(--tone); color: #2b2620; font-family: "Segoe Print", "Bradley Hand", "Marker Felt", cursive; font-size: 0.9375rem; line-height: 1.35; box-shadow: 0 1px 1px rgba(0,0,0,0.06), 0 10px 18px -12px rgba(0,0,0,0.35); }
           .note[data-tone="yellow"] { --tone: #fdf0a6; }
@@ -1159,6 +1171,7 @@ defmodule HakushiDev.BoardLive do
         background={:cross}
         grid={20}
         snap
+        papers={[:dots, :lines, :cross, :none, %{name: "iso", label: "Isometric"}]}
         rules={[loops: false]}
         label="The moodboard"
       >

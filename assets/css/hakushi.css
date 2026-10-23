@@ -163,13 +163,15 @@
   background-size: var(--hakushi-grid-size, 20px) var(--hakushi-grid-size, 20px);
 }
 
-.hakushi[data-background="dots"] .hakushi-background {
+.hakushi[data-background="dots"] .hakushi-background,
+.hakushi-paper-swatch[data-background="dots"] {
   background-image: radial-gradient(circle at 0 0, var(--hakushi-pattern-strong) 1.1px, transparent 1.5px);
   background-size: var(--hakushi-grid-size, 20px) var(--hakushi-grid-size, 20px);
 }
 
 /* Graph paper: a line every square, a stronger one every five. */
-.hakushi[data-background="lines"] .hakushi-background {
+.hakushi[data-background="lines"] .hakushi-background,
+.hakushi-paper-swatch[data-background="lines"] {
   background-image:
     linear-gradient(to right, var(--hakushi-pattern-strong) 1px, transparent 1px),
     linear-gradient(to bottom, var(--hakushi-pattern-strong) 1px, transparent 1px),
@@ -183,12 +185,106 @@
 }
 
 /* Crosses: a small plus at each corner of the squares. */
-.hakushi[data-background="cross"] .hakushi-background {
+.hakushi[data-background="cross"] .hakushi-background,
+.hakushi-paper-swatch[data-background="cross"] {
   background: var(--hakushi-pattern-strong);
   -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M0 3V0h3M17 0h3v3M20 17v3h-3M3 20H0v-3' fill='none' stroke='black' stroke-width='1.6'/%3E%3C/svg%3E");
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M0 3V0h3M17 0h3v3M20 17v3h-3M3 20H0v-3' fill='none' stroke='black' stroke-width='1.6'/%3E%3C/svg%3E");
   -webkit-mask-size: var(--hakushi-grid-size, 20px) var(--hakushi-grid-size, 20px);
   mask-size: var(--hakushi-grid-size, 20px) var(--hakushi-grid-size, 20px);
+}
+
+/* The papers people choose from: a menu over the controls, each paper with
+   a swatch of its pattern (a paper of the app's own styles its swatch too,
+   see Hakushi.Paper). */
+.hakushi-paper-menu {
+  position: absolute;
+  bottom: 52px;
+  left: 12px;
+  z-index: 2;
+  display: grid;
+  gap: 2px;
+  min-width: 11rem;
+  padding: 4px;
+  border-radius: calc(var(--hakushi-radius) + 3px);
+  background: var(--hakushi-control);
+  box-shadow: var(--hakushi-control-shadow);
+  color: var(--hakushi-text);
+  font-size: 0.8125rem;
+}
+
+.hakushi-paper-menu [role="group"] {
+  display: grid;
+  gap: 1px;
+}
+
+.hakushi-paper-sizes {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.hakushi-paper-heading {
+  margin: 4px 6px 0;
+  color: var(--hakushi-muted);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.hakushi-paper-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: var(--hakushi-radius);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hakushi-paper-sizes .hakushi-paper-item {
+  justify-content: center;
+}
+
+.hakushi-paper-item:hover {
+  background: color-mix(in oklab, var(--hakushi-text) 7%, transparent);
+}
+
+.hakushi-paper-item:focus-visible {
+  outline: 2px solid var(--hakushi-accent);
+  outline-offset: -2px;
+}
+
+.hakushi-paper-item[aria-checked="true"] {
+  background: color-mix(in oklab, var(--hakushi-accent) 14%, transparent);
+  color: var(--hakushi-accent);
+}
+
+.hakushi-paper-frame {
+  display: block;
+  flex: none;
+  width: 28px;
+  height: 20px;
+  overflow: hidden;
+  border: 1px solid var(--hakushi-border);
+  border-radius: 4px;
+  background: var(--hakushi-background);
+}
+
+.hakushi-paper-swatch {
+  --hakushi-grid-size: 6px;
+  display: block;
+  width: 100%;
+  height: 100%;
+  background-size: var(--hakushi-grid-size) var(--hakushi-grid-size);
+}
+
+.hakushi-control[aria-expanded="true"] {
+  background: color-mix(in oklab, var(--hakushi-accent) 14%, transparent);
+  color: var(--hakushi-accent);
 }
 
 /* The world: the nodes, the edges and their labels, moved and scaled as one. */
