@@ -1,7 +1,7 @@
 defmodule Hakushi.MixProject do
   use Mix.Project
 
-  @version "0.3.1"
+  @version "0.3.2"
   @source_url "https://github.com/hattoriai/hakushi"
 
   # HAKUSHI_OLDEST=1 resolves the oldest Phoenix and LiveView that Hakushi
@@ -55,6 +55,9 @@ defmodule Hakushi.MixProject do
       # needs Ecto; the rest of Hakushi does not.
       {:ecto, "~> 3.13", optional: true},
       {:esbuild, "~> 0.10", only: :dev, runtime: false},
+      # `mix igniter.install hakushi`: the installer edits the app with
+      # Igniter when the app has it, and as plain text when it does not.
+      {:igniter, "~> 0.6", optional: true},
       # Shared canvases (`live`): Issho is the room, its people and their
       # cursors. A canvas without `live` never needs it.
       {:issho, "~> 0.3", optional: true},
@@ -123,6 +126,7 @@ defmodule Hakushi.MixProject do
         "guides/testing.md",
         "guides/theming.md",
         "guides/accessibility.md",
+        "guides/features.md",
         "guides/limits.md",
         "CHANGELOG.md",
         "CONTRIBUTING.md",
@@ -145,6 +149,7 @@ defmodule Hakushi.MixProject do
           "guides/theming.md"
         ],
         Reference: [
+          "guides/features.md",
           "guides/accessibility.md",
           "guides/limits.md"
         ]

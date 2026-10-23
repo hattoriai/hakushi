@@ -7,6 +7,25 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-10-23
+
+One command installs Hakushi: `mix igniter.install hakushi`.
+
+### Added
+
+- `mix hakushi.install` runs on [Igniter](https://hexdocs.pm/igniter)
+  when the app has it, so `mix igniter.install hakushi` adds the
+  dependency and sets up the app in one command. Igniter shows each
+  change and asks before it writes. With Igniter, the task also imports
+  `Hakushi.Components` in the `html_helpers` of the web module. Without
+  Igniter, the task works as before. Igniter is an optional dependency.
+- A Features guide: everything the canvas does, in one table.
+
+### Changed
+
+- A shorter README: what Hakushi is, the install, a first canvas, and
+  links to the guides.
+
 ## [0.3.1] - 2026-10-22
 
 Agents read what a person sees of a shared canvas, and a selected node's
@@ -255,7 +274,8 @@ The first release.
   Japanese.
 - `hakushi.css` and the Sumi theme, `hakushi-sumi.css`.
 
-[Unreleased]: https://github.com/hattoriai/hakushi/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/hattoriai/hakushi/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/hattoriai/hakushi/releases/tag/v0.3.2
 [0.3.1]: https://github.com/hattoriai/hakushi/releases/tag/v0.3.1
 [0.3.0]: https://github.com/hattoriai/hakushi/releases/tag/v0.3.0
 [0.2.0]: https://github.com/hattoriai/hakushi/releases/tag/v0.2.0
