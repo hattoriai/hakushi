@@ -14,8 +14,13 @@ if Code.ensure_loaded?(Issho.Tool) do
     # A canvas someone has open (or one the policy describes), by its
     # document: the first canvas to open it gives its graph, its rules and
     # its on_change. The room is the document's.
-    def open(ctx, canvas) do
+    #
+    # An agent that a person paused or stopped (Issho.Work) reads the
+    # canvas, and does nothing else on it, not even go there: told why, as
+    # Issho's room tools tell it.
+    def open(ctx, canvas, mode \\ :write) do
       with {:ok, participant} <- Context.join(ctx, Issho.Policy.room(canvas)),
+           :ok <- free(participant, mode),
            {:ok, %{"state" => %Graph{} = graph}} <- Participant.open(participant, canvas) do
         {:ok, %__MODULE__{ctx: ctx, participant: participant, canvas: canvas, graph: graph}}
       else
@@ -27,6 +32,15 @@ if Code.ensure_loaded?(Issho.Tool) do
 
         {:error, reason} ->
           Context.error(reason)
+      end
+    end
+
+    defp free(_participant, :read), do: :ok
+
+    defp free(participant, :write) do
+      case Participant.interrupted(participant) do
+        nil -> :ok
+        by -> {:error, {:interrupted, by}}
       end
     end
 
@@ -158,6 +172,11 @@ if Code.ensure_loaded?(Issho.Tool) do
       way has `passes_under`, their ids. The node on top hides that part
       of the line, so to a person it seems to end at that node: it does
       not join it. Its ends are `source` and `target`, always.
+
+      To hear what people do on the canvas, wait_for_events with names
+      ["canvas.*"]: canvas.added, canvas.connected, canvas.reconnected,
+      canvas.moved, canvas.updated and canvas.deleted, each with the ids
+      of its nodes and edges.
       """,
       annotations: [read_only: true, idempotent: true]
 
@@ -169,7 +188,7 @@ if Code.ensure_loaded?(Issho.Tool) do
 
     @impl true
     def call(%{canvas: name} = args, ctx) do
-      with {:ok, canvas} <- Canvas.open(ctx, name) do
+      with {:ok, canvas} <- Canvas.open(ctx, name, :read) do
         {seer, seen} = seen(canvas, args[:of], ctx)
         boxes = seen["nodes"] || %{}
         under = seen["edges"] || %{}

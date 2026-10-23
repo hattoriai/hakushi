@@ -279,7 +279,7 @@ defmodule Hakushi.Components do
       do:
         raise(
           ArgumentError,
-          "<.canvas issho={...}> needs {:issho, \"~> 0.3\"} in your dependencies"
+          "<.canvas issho={...}> needs {:issho, \"~> 0.4\"} in your dependencies"
         )
 
     assign(assigns, :join, hakushi_issho.join!(issho))

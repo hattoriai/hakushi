@@ -34,7 +34,7 @@ for your policy. Any other key raises.
 1. Issho in your dependencies:
 
    ```elixir
-   {:issho, "~> 0.3"}
+   {:issho, "~> 0.4"}
    ```
 
 2. An Issho instance in your supervision tree, after the PubSub, with
@@ -60,7 +60,9 @@ for your policy. Any other key raises.
    ```
 
    `action` is `:join` (open the canvas, see who is here), `:read`
-   (receive the changes), `:write` (change it) or `:lock`. The policy is
+   (receive the changes), `:write` (change it), `:lock`, `:comment`
+   (write in the room's threads, see [Comments](#comments)) or
+   `:interrupt` (pause or stop someone else's agent). The policy is
    asked as each person opens the canvas, and again for each change, in
    both directions: a person whose access you take away stops seeing the
    changes, and `Issho.revoke(MyApp.Issho, topic, user_id)` takes them
@@ -175,8 +177,95 @@ pan and zoom). Its format is part of Hakushi's API, and only grows
 ## A cluster
 
 The room's process is found from every node of a cluster (`:global`,
-unless your Issho instance names another registry), and the PubSub must
-reach every node, as Phoenix's does.
+unless your Issho instance names another registry), and so is each agent
+in the room; the PubSub must reach every node, as Phoenix's does.
+
+## Events
+
+Each change of a shared canvas is an event of its room
+(`Issho.Event`), once the room has it, named for what the change did:
+
+| Event | When | `data` |
+|---|---|---|
+| `canvas.added` | nodes added: dropped, pasted, an undone delete | `%{nodes: [%{id, type}], edges: [%{id, source, target}]}` |
+| `canvas.connected` | edges drawn | `%{edges: [%{id, source, target}]}` |
+| `canvas.reconnected` | an edge's end moved to another node | `%{edges: [%{id, source, target}]}`, its new ends |
+| `canvas.moved` | nodes moved or resized | `%{nodes: [%{id, x, y}]}`, with `width` and `height` for a resize and `parent` for a node put in a group or out; the nodes inside a moved node too |
+| `canvas.updated` | nodes or edges changed: a node's data, an edge's label | `%{nodes: [id], edges: [id]}` |
+| `canvas.deleted` | nodes and edges deleted | `%{nodes: [id], edges: [id]}`, with the nodes inside and the edges that went with them |
+
+The event's `document` is the canvas's, and its `by` who made the change
+(a person, an agent and whom it acts for, your server). A change of the
+paper makes none of its own: Issho's `document.changed` says it, as it
+says every change.
+
+An agent hears what people do on the canvas, and acts on it:
+
+```text
+wait_for_events {"room": "schema:42", "names": ["canvas.*"]}
+```
+
+A component of the page hears them (`Issho.Live.subscribe/3`), and so
+does your app, for a log, a notification, a count:
+
+```elixir
+Issho.Events.subscribe(MyApp.Issho, "schema:42")
+
+def handle_info({Issho, :event, %Issho.Event{name: "canvas.deleted", data: data}}, socket) do
+  ...
+end
+```
+
+## Comments
+
+Issho's comments (`Issho.Components.comments/1`) go on the canvas as on
+any block of the page: a person selects nodes, writes, and the thread is
+on them, with a mark at the node on each person's screen, where it is in
+their pan and zoom. Hakushi says where its places are, so the marks need
+no code of yours. Give the panel the canvas's words for a place with the
+`:place` slot and `Hakushi.Issho.Place.label/3`:
+
+```heex
+<.canvas id="schema" graph={@graph} issho={[instance: MyApp.Issho, document: @doc]} user={@current_user} />
+
+<.comments id="comments" room={@doc}>
+  <:place :let={%{place: place, default: default}}>
+    {Hakushi.Issho.Place.label(place, @graph, document: @doc) || default}
+  </:place>
+</.comments>
+```
+
+A thread on a node says `The node “customers”` (its name as the canvas
+says it to a screen reader: give `label/3` the canvas's `kits` and
+`node_label` if it has them), on several nodes `The node “customers” and
+2 more`, on a point `A point on the canvas`, and the panel's own words
+when the nodes are gone.
+
+The graph is the room's, as it is now: keep it with the canvas's events,
+in the LiveView that is in the room.
+
+```elixir
+def mount(_params, _session, socket) do
+  doc = "schema:#{socket.assigns.schema.id}"
+
+  if connected?(socket) do
+    {:ok, _session} = Issho.Live.join(MyApp.Issho, socket.assigns.current_user, doc)
+    Issho.Live.subscribe(doc, :self, events: ["canvas.*"])
+  end
+
+  {:ok, assign(socket, doc: doc, graph: socket.assigns.schema.graph)}
+end
+
+def handle_info({Issho.Live, "event", _room, %Issho.Event{}}, socket),
+  do: {:noreply, assign(socket, :graph, Hakushi.Issho.graph(MyApp.Issho, socket.assigns.doc) || socket.assigns.graph)}
+
+# The room's other news (its people, their cursors) is the canvas's.
+def handle_info({Issho.Live, _event, _room, _payload}, socket), do: {:noreply, socket}
+```
+
+The threads are kept in your Issho instance's store (`:store`), whatever
+the canvas's document is. See Issho's comments guide for who may
+comment, mentions, and agents that answer.
 
 ## The app's own changes
 
@@ -206,6 +295,10 @@ gives it the canvas's verbs, however it reaches your app:
 | `draw_on_canvas` | strokes of ink, or a ring around a node: the people see the pen draw |
 | `draw_shape` | a shape (rectangle, ellipse, diamond, triangle, text) or a line of its own, with its text and style; or a shape's text, style and rotation |
 | `add_image` | an image from an address of a host the app allows, or a file of the app's by name, with its alt text and caption: the people see its placeholder while it comes |
+
+A person may pause or stop an agent at work (Issho's agents bar,
+`Issho.Work`): then it reads the canvas and does nothing else on it, not
+even go there, and the tool tells it why, as Issho's own tools do.
 
 Its pointer goes to where it works and drags as a hand does, in a straight
 line: only where it goes is sent, and each browser draws the way there

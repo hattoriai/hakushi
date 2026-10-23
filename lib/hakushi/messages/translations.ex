@@ -149,7 +149,10 @@ defmodule Hakushi.Messages.Translations do
     "refusedNotAnImage" => "That file is not an image the canvas takes.",
     "refusedNotAllowed" => "Images from that address are not allowed.",
     "refusedTooManyFiles" => "Too many files at once.",
-    "refusedFileFailed" => "The image could not be added."
+    "refusedFileFailed" => "The image could not be added.",
+    "placeNode" => "The node “{name}”",
+    "placeNodes" => "The node “{name}” and {n} more",
+    "placePoint" => "A point on the canvas"
   }
 
   @all %{
@@ -299,7 +302,10 @@ defmodule Hakushi.Messages.Translations do
       "refusedNotAnImage" => "O ficheiro não é uma imagem que a tela aceite.",
       "refusedNotAllowed" => "Não são permitidas imagens desse endereço.",
       "refusedTooManyFiles" => "Demasiados ficheiros de uma vez.",
-      "refusedFileFailed" => "Não foi possível adicionar a imagem."
+      "refusedFileFailed" => "Não foi possível adicionar a imagem.",
+      "placeNode" => "O nó “{name}”",
+      "placeNodes" => "O nó “{name}” e mais {n}",
+      "placePoint" => "Um ponto da tela"
     },
     "es" => %{
       "canvas" => "Lienzo",
@@ -447,7 +453,10 @@ defmodule Hakushi.Messages.Translations do
       "refusedNotAnImage" => "El archivo no es una imagen que el lienzo acepte.",
       "refusedNotAllowed" => "No se permiten imágenes de esa dirección.",
       "refusedTooManyFiles" => "Demasiados archivos a la vez.",
-      "refusedFileFailed" => "No se pudo añadir la imagen."
+      "refusedFileFailed" => "No se pudo añadir la imagen.",
+      "placeNode" => "El nodo «{name}»",
+      "placeNodes" => "El nodo «{name}» y {n} más",
+      "placePoint" => "Un punto del lienzo"
     },
     "fr" => %{
       "canvas" => "Canevas",
@@ -592,7 +601,10 @@ defmodule Hakushi.Messages.Translations do
       "refusedNotAnImage" => "Ce fichier n’est pas une image que la toile accepte.",
       "refusedNotAllowed" => "Les images de cette adresse ne sont pas permises.",
       "refusedTooManyFiles" => "Trop de fichiers à la fois.",
-      "refusedFileFailed" => "L’image n’a pas pu être ajoutée."
+      "refusedFileFailed" => "L’image n’a pas pu être ajoutée.",
+      "placeNode" => "Le nœud « {name} »",
+      "placeNodes" => "Le nœud « {name} » et {n} de plus",
+      "placePoint" => "Un point du canevas"
     },
     "de" => %{
       "canvas" => "Leinwand",
@@ -738,7 +750,10 @@ defmodule Hakushi.Messages.Translations do
       "refusedNotAnImage" => "Die Datei ist kein Bild, das die Fläche annimmt.",
       "refusedNotAllowed" => "Bilder von dieser Adresse sind nicht erlaubt.",
       "refusedTooManyFiles" => "Zu viele Dateien auf einmal.",
-      "refusedFileFailed" => "Das Bild konnte nicht hinzugefügt werden."
+      "refusedFileFailed" => "Das Bild konnte nicht hinzugefügt werden.",
+      "placeNode" => "Der Knoten „{name}“",
+      "placeNodes" => "Der Knoten „{name}“ und {n} weitere",
+      "placePoint" => "Ein Punkt der Leinwand"
     },
     "ja" => %{
       "canvas" => "キャンバス",
@@ -882,7 +897,10 @@ defmodule Hakushi.Messages.Translations do
       "refusedNotAnImage" => "キャンバスが受け付ける画像ではありません。",
       "refusedNotAllowed" => "そのアドレスの画像は許可されていません。",
       "refusedTooManyFiles" => "一度に追加できるファイルが多すぎます。",
-      "refusedFileFailed" => "画像を追加できませんでした。"
+      "refusedFileFailed" => "画像を追加できませんでした。",
+      "placeNode" => "ノード「{name}」",
+      "placeNodes" => "ノード「{name}」ほか{n}件",
+      "placePoint" => "キャンバス上の点"
     }
   }
 
