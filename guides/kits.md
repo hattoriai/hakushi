@@ -136,7 +136,14 @@ images in them) are those of any node.
 The files go to your app's store with
 [Storehouse](https://hexdocs.pm/storehouse), as Kotoba's attachments do:
 the local disk, S3 (and the stores that speak its API: R2, MinIO,
-LocalStack), or a store of your own. On the local disk:
+LocalStack), or a store of your own. Add it to your deps (a canvas
+without images never needs it):
+
+```elixir
+{:storehouse, "~> 0.1"}
+```
+
+On the local disk:
 
 ```elixir
 # config/runtime.exs, in the :prod block

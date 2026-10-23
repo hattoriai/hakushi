@@ -70,8 +70,9 @@ defmodule Hakushi.MixProject do
       {:phoenix_live_reload, "~> 1.6", only: :dev},
       {:phoenix_live_view, if(@oldest, do: "~> 1.1.0", else: "~> 1.1")},
       {:stream_data, "~> 1.1", only: :test},
-      # The images of the Images kit: checked, stored and served.
-      {:storehouse, "~> 0.1"}
+      # The files of the Images kit: checked, stored and served. A canvas
+      # without images never needs it.
+      {:storehouse, "~> 0.1", optional: true}
     ]
   end
 

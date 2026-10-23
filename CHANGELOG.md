@@ -24,7 +24,8 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   [Storehouse](https://hexdocs.pm/storehouse), as Kotoba's attachments
   are: the local disk, S3, or a store of the app's
   (`config :storehouse, adapter: ...`); `Storehouse.Local.Plug` serves
-  them.
+  them. Storehouse is an optional dependency: add `{:storehouse, "~> 0.1"}`
+  for images.
 - An agent adds an image: `add_image`, from an address or a file of the
   app's, with its placeholder for the others while it comes.
 - Kits take files (`c:Hakushi.Kit.upload/0`, `uploaded/4`, `pasted/3`),

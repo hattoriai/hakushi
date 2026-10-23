@@ -244,18 +244,25 @@ if Code.ensure_loaded?(Issho.Engine) do
     """
     @spec tools() :: [module()]
     def tools,
-      do: [
-        Hakushi.Issho.Tools.Read,
-        Hakushi.Issho.Tools.Point,
-        Hakushi.Issho.Tools.Add,
-        Hakushi.Issho.Tools.Move,
-        Hakushi.Issho.Tools.Connect,
-        Hakushi.Issho.Tools.Update,
-        Hakushi.Issho.Tools.Delete,
-        Hakushi.Issho.Tools.Draw,
-        Hakushi.Issho.Tools.Shape,
-        Hakushi.Issho.Tools.Image
-      ]
+      do:
+        [
+          Hakushi.Issho.Tools.Read,
+          Hakushi.Issho.Tools.Point,
+          Hakushi.Issho.Tools.Add,
+          Hakushi.Issho.Tools.Move,
+          Hakushi.Issho.Tools.Connect,
+          Hakushi.Issho.Tools.Update,
+          Hakushi.Issho.Tools.Delete,
+          Hakushi.Issho.Tools.Draw,
+          Hakushi.Issho.Tools.Shape
+        ] ++ image_tools()
+
+    # add_image, when the app has Storehouse for the images' files.
+    if Code.ensure_loaded?(Storehouse) do
+      defp image_tools, do: [Hakushi.Issho.Tools.Image]
+    else
+      defp image_tools, do: []
+    end
 
     @doc "The graph of a shared canvas as its room has it, or `nil` when no canvas has it open."
     @spec graph(atom(), String.t()) :: Graph.t() | nil
