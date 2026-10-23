@@ -138,29 +138,37 @@ test("the others see a line as it is drawn, and the stroke it becomes", async ({
   await expect(strokes(ada)).toHaveCount(1);
   await expect(ada.locator("#board .hakushi-ink-live path")).toHaveCount(0);
 
-  // Both draw at once: both pens down, their moves in turn (Firefox's input,
-  // driven for two pages at the same moment, waits on itself).
+  // Both draw at once: Ada with the mouse, Kenji with a pen at the same
+  // time (Firefox's driver holds one mouse button at a time, across its
+  // windows: Kenji's pen is the browser's own events).
   await tool(ada, "ink:pen").click();
   await tool(kenji, "ink:pen").click();
-  const theirs = [
-    { page: ada, points: wave(380, 520) },
-    { page: kenji, points: wave(380, 620) },
-  ];
-  for (const { page, points } of theirs) {
-    const at = (await page.locator("#board").boundingBox())!;
-    await page.mouse.move(at.x + points[0][0], at.y + points[0][1]);
-    await page.mouse.down();
-  }
-  for (let i = 1; i < theirs[0].points.length; i++) {
-    for (const { page, points } of theirs) {
-      const at = (await page.locator("#board").boundingBox())!;
-      await page.mouse.move(at.x + points[i][0], at.y + points[i][1], { steps: 2 });
-    }
+  const mine = wave(380, 520);
+  const his = wave(380, 620);
+  const pen = (type: string, [x, y]: [number, number]) =>
+    kenji.evaluate(
+      ({ type, x, y }) => {
+        const root = document.getElementById("board")!;
+        const r = root.getBoundingClientRect();
+        root.dispatchEvent(
+          new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 5, pointerType: "pen", clientX: r.left + x, clientY: r.top + y, pressure: type === "pointerup" ? 0 : 0.6, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1, isPrimary: true }),
+        );
+      },
+      { type, x, y },
+    );
+  const at = (await ada.locator("#board").boundingBox())!;
+  await ada.mouse.move(at.x + mine[0][0], at.y + mine[0][1]);
+  await ada.mouse.down();
+  await pen("pointerdown", his[0]);
+  for (let i = 1; i < mine.length; i++) {
+    await ada.mouse.move(at.x + mine[i][0], at.y + mine[i][1], { steps: 2 });
+    await pen("pointermove", his[i]);
   }
   // Each sees the other's line before either lifts.
   await expect(ada.locator("#board .hakushi-ink-live path")).toHaveCount(2);
   await expect(kenji.locator("#board .hakushi-ink-live path")).toHaveCount(2);
-  for (const { page } of theirs) await page.mouse.up();
+  await ada.mouse.up();
+  await pen("pointerup", his[his.length - 1]);
   await expect(strokes(ada)).toHaveCount(3);
   await expect(strokes(kenji)).toHaveCount(3);
 });
