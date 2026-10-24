@@ -788,7 +788,24 @@ export class Canvas {
     const notice = this.root.querySelector(":scope > .hakushi-notice");
     const notices = new MutationObserver(() => this.showNotice());
     if (notice) notices.observe(notice, { attributes: true, childList: true, characterData: true, subtree: true });
-    this.observers.push(nodes, edges, sizes, notices);
+    // The page's theme changes (an attribute or class on <html> or <body>,
+    // or the system's scheme): the minimap reads its colors again.
+    const theme = new MutationObserver(() => this.themeChanged());
+    const watched = { attributes: true, attributeFilter: ["class", "style", "data-theme"] };
+    theme.observe(document.documentElement, watched);
+    if (document.body) theme.observe(document.body, watched);
+    this.observers.push(nodes, edges, sizes, notices, theme);
+    this.scheme = typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: dark)") : null;
+    this.scheme?.addEventListener("change", this.onScheme);
+  }
+
+  private scheme: MediaQueryList | null = null;
+  private onScheme = () => this.themeChanged();
+
+  private themeChanged() {
+    if (!this.minimap) return;
+    this.minimap.refresh();
+    this.schedule();
   }
 
   private get sizes(): ResizeObserver {
@@ -4055,6 +4072,7 @@ export class Canvas {
     this.toggleLayoutMenu(false);
     clearTimeout(this.panTimer);
     for (const o of this.observers) o.disconnect();
+    this.scheme?.removeEventListener("change", this.onScheme);
     for (const cleanup of this.cleanups) cleanup();
     cancelAnimationFrame(this.frame);
     clearTimeout(this.noticeTimer);
