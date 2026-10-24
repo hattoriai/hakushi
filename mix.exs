@@ -1,7 +1,7 @@
 defmodule Hakushi.MixProject do
   use Mix.Project
 
-  @version "0.5.0"
+  @version "0.6.0"
   @source_url "https://github.com/hattoriai/hakushi"
 
   # HAKUSHI_OLDEST=1 resolves the oldest Phoenix and LiveView that Hakushi

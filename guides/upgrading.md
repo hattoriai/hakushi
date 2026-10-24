@@ -1,5 +1,11 @@
 # Upgrading
 
+## To Hakushi 0.6
+
+Update `{:hakushi, "~> 0.6"}`. A canvas's code stays as it was. What is
+new is opt-in: a kit's `group?/1` makes its node types groups, as a
+`:node` slot's `group` does. See [Groups](groups.md).
+
 ## To Hakushi 0.5
 
 Update `{:hakushi, "~> 0.5"}`. A canvas's code stays as it was, with two
