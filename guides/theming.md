@@ -41,8 +41,11 @@ handles, the controls), and the default node.
 The kits have their own: Ink's `--hakushi-ink-<colour>` and
 `--hakushi-highlighter-opacity`; Shapes' `--hakushi-shape-<colour>` (ink,
 gray, blue, green, yellow, red, violet, and your own), whose fills are a
-tint of them on the surface (`--hakushi-shape-tint`, 16%); Images'
-`--hakushi-image-radius` (the corners of an image, 4px).
+tint of them on the surface (`--hakushi-shape-tint`, 16%); Notes'
+`--hakushi-note-<colour>` (yellow, rose, sky, mint, lilac), a tint of them
+on the surface (`--hakushi-note-tint`, 42%); Schema's primary keys and
+Flow's conditions, `--hakushi-kit-alt`; Images' `--hakushi-image-radius`
+(the corners of an image, 4px).
 
 `--hakushi-person` is a person's colour, on their avatar, their cursor
 and the ring of the nodes they selected or drag.
@@ -144,6 +147,23 @@ or `data-theme`, or the system's setting. Load it after `hakushi.css`:
 @import "../../deps/hakushi/priv/static/hakushi.css";
 @import "../../deps/hakushi/priv/static/hakushi-sumi.css";
 ```
+
+Each of Sumi's seven themes (Ink, Smoke, Stone and Lacquer; Paper, Snow
+and Silk) has its own accent, which selects, and the canvases follow it:
+
+* the dark themes have the dark palette, and the kits' dark colours;
+* a colour of the kits of the accent's hue is another in that theme, so
+  that a selected note, shape or stroke shows: on Ink and Paper (blade)
+  the orange pen is amber and red a crimson; on Smoke (jade) green and
+  the mint note a leaf green; on Stone (gold) yellow lemon, and the
+  primary keys and conditions orange; on Lacquer (vermilion) red a
+  lighter crimson and the rose note pinker; on Snow (indigo) blue azure;
+  on Silk (lotus pink) the rose note coral;
+* on Smoke the notes are a lighter tint, and on the light themes the
+  primary keys a darker amber, for 4.5:1.
+
+The development app (`mix dev`) shows each: `?sumi=smoke`, or the links
+in its panel; `/colours` has every colour of the kits on one canvas.
 
 ## Forced colours and motion
 

@@ -54,7 +54,8 @@ const liveSocket = new LiveSocket("/live", Socket, {
 
 Import the style sheet in `assets/css/app.css`, below the other `@import`
 lines. The Sumi theme is optional (Sumi is the design system of Hattori
-AI, the makers of Hakushi):
+AI, the makers of Hakushi), and follows Sumi's seven themes and their
+accents:
 
 ```css
 @import "../../deps/hakushi/priv/static/hakushi.css";

@@ -18,7 +18,9 @@
 # reloads on a change.
 #
 # Query params of every page: `as` - who you are: `ada` (the default),
-# `kenji`, `ines`, or `viewer` (read-only); `theme=sumi`, `dark=1`. The
+# `kenji`, `ines`, or `viewer` (read-only); `theme=sumi`, `dark=1`, or
+# `sumi=smoke` (any of Sumi's seven themes, to see each; /colours has every
+# colour of the kits on one canvas). The
 # schema with `comments=1` has Issho's comments beside it: threads on its
 # tables, said by name.
 #
@@ -813,23 +815,75 @@ defmodule HakushiDev.Layouts do
   @moduledoc """
   The root layout (the style sheets, the import map, the LiveSocket) and
   the app's frame: the side bar, the top bar, and the panel to be someone
-  else or change the theme.
+  else or change the theme. `?sumi=smoke` (any of Sumi's seven themes)
+  loads hakushi-sumi.css on that theme of Sumi.
   """
   use Phoenix.Component
 
   import HakushiDev.Icons
 
+  # Sumi's themes, as the canvases read them: the paper, the surfaces, the
+  # line, the text, the muted text, the accent and the text on it (Sumi's
+  # own CSS needs Tailwind, which this app has not; these are its values).
+  @sumi_themes [
+    {"dark", "Ink", :dark,
+     ["oklch(12% 0.003 270)", "oklch(16% 0.004 270)", "oklch(20% 0.005 270)"],
+     "oklch(95% 0.012 85)", 0.5, "#e84a1c", "oklch(12% 0.003 270)"},
+    {"smoke", "Smoke", :dark,
+     ["oklch(27% 0.005 270)", "oklch(30.5% 0.006 270)", "oklch(34% 0.007 270)"],
+     "oklch(92% 0.01 85)", 0.62, "oklch(72% 0.13 168)", "oklch(27% 0.005 270)"},
+    {"stone", "Stone", :dark,
+     ["oklch(20% 0.006 70)", "oklch(23.5% 0.007 70)", "oklch(27% 0.008 70)"],
+     "oklch(95% 0.01 85)", 0.52, "oklch(78% 0.13 82)", "oklch(20% 0.006 70)"},
+    {"lacquer", "Lacquer", :dark,
+     ["oklch(14% 0.022 25)", "oklch(18% 0.026 25)", "oklch(22% 0.03 25)"], "oklch(93% 0.016 75)",
+     0.53, "oklch(63% 0.21 24)", "oklch(14% 0.022 25)"},
+    {"light", "Paper", :light,
+     ["oklch(96% 0.01 85)", "oklch(93% 0.012 85)", "oklch(89% 0.014 80)"], "oklch(15% 0.003 270)",
+     0.65, "#e84a1c", "oklch(12% 0.003 270)"},
+    {"snow", "Snow", :light,
+     ["oklch(99.5% 0.001 270)", "oklch(97% 0.003 270)", "oklch(92.5% 0.005 270)"],
+     "oklch(20% 0.006 270)", 0.65, "oklch(50% 0.17 262)", "oklch(100% 0 0)"},
+    {"silk", "Silk", :light,
+     ["oklch(97.5% 0.012 350)", "oklch(95% 0.016 350)", "oklch(91.5% 0.02 350)"],
+     "oklch(22% 0.012 350)", 0.65, "oklch(56% 0.21 358)", "oklch(100% 0 0)"}
+  ]
+
+  @doc "Sumi's seven themes: their ids and names."
+  def sumi_themes, do: for({id, name, _, _, _, _, _, _} <- @sumi_themes, do: {id, name})
+
+  defp sumi_style(id) do
+    case List.keyfind(@sumi_themes, id, 0) do
+      {_, _, scheme, [base_100, base_200, base_300], text, muted, accent, on_accent} ->
+        """
+        :root {
+          color-scheme: #{scheme};
+          --color-base-100: #{base_100}; --color-base-200: #{base_200}; --color-base-300: #{base_300};
+          --color-base-content: #{text}; --sumi-text-muted: oklch(from #{text} l c h / #{muted});
+          --color-sumi-blade: #{accent}; --color-primary-content: #{on_accent};
+        }
+        """
+
+      nil ->
+        ""
+    end
+  end
+
   def root(assigns) do
     params = assigns.conn.params
+    look = if List.keymember?(@sumi_themes, params["sumi"], 0), do: params["sumi"]
+    dark = params["dark"] == "1"
 
     assigns =
       assigns
-      |> assign(:sumi, params["theme"] == "sumi")
-      |> assign(:dark, params["dark"] == "1")
+      |> assign(:sumi, params["theme"] == "sumi" or look != nil)
+      |> assign(:look, look)
+      |> assign(:dark, dark)
+      |> assign(:data_theme, look || if(dark, do: "dark", else: "light"))
 
     ~H"""
     <!DOCTYPE html>
-    <html lang="en" data-theme={if(@dark, do: "dark", else: "light")} class={@sumi && "sumi"}>
+    <html lang="en" data-theme={@data_theme} class={@sumi && "sumi"}>
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -843,6 +897,7 @@ defmodule HakushiDev.Layouts do
         <link :if={@sumi} rel="stylesheet" href="/vendor/issho/issho-sumi.css" />
         <link rel="stylesheet" href="/css/hakushi.css" />
         <link :if={@sumi} rel="stylesheet" href="/css/hakushi-sumi.css" />
+        {@look && Phoenix.HTML.raw("<style>" <> sumi_style(@look) <> "</style>")}
         <style>
           :root { color-scheme: light; --atelier-accent: #2e6b5c; --atelier-bg: #faf9f7; --atelier-side: #f3f1ed; --atelier-line: #e7e3dc; --atelier-ink: #1f1d1a; --atelier-muted: #79736a; --atelier-card: #fff; }
           [data-theme="dark"] { color-scheme: dark; --atelier-bg: #17161a; --atelier-side: #1e1d21; --atelier-line: #2c2a30; --atelier-ink: #eceae6; --atelier-muted: #9c968e; --atelier-accent: #6fbfa5; --atelier-card: #222126; }
@@ -1031,9 +1086,15 @@ defmodule HakushiDev.Layouts do
             aria-current={@me.id == id && "true"}
           >{name}</a>
           <br /> Theme:
-          <a href={"?" <> URI.encode_query(Map.drop(@query, ["theme", "dark"]))} aria-current={!@query["theme"] && !@query["dark"] && "true"}>Hakushi</a>
-          <a href={"?" <> URI.encode_query(@query |> Map.put("theme", "sumi") |> Map.delete("dark"))} aria-current={@query["theme"] == "sumi" && !@query["dark"] && "true"}>Sumi</a>
-          <a href={"?" <> URI.encode_query(Map.put(@query, "dark", "1"))} aria-current={@query["dark"] == "1" && "true"}>Dark</a>
+          <a href={"?" <> URI.encode_query(Map.drop(@query, ["theme", "dark", "sumi"]))} aria-current={!@query["theme"] && !@query["dark"] && !@query["sumi"] && "true"}>Hakushi</a>
+          <a href={"?" <> URI.encode_query(@query |> Map.put("theme", "sumi") |> Map.drop(["dark", "sumi"]))} aria-current={@query["theme"] == "sumi" && !@query["dark"] && "true"}>Sumi</a>
+          <a href={"?" <> URI.encode_query(@query |> Map.put("dark", "1") |> Map.delete("sumi"))} aria-current={@query["dark"] == "1" && !@query["sumi"] && "true"}>Dark</a>
+          <br /> Sumi:
+          <a
+            :for={{id, name} <- sumi_themes()}
+            href={"?" <> URI.encode_query(@query |> Map.put("sumi", id) |> Map.drop(["theme", "dark"]))}
+            aria-current={@query["sumi"] == id && "true"}
+          >{name}</a>
           <br /> Open this page in another window as Kenji: the canvas is shared.
         </div>
       </aside>
@@ -1060,12 +1121,13 @@ defmodule HakushiDev.Layouts do
       {:whiteboard, "/whiteboard", "Whiteboard", "whiteboard"},
       {:spec, "/spec", "Design spec", "spec"},
       {:scale, "/scale", "Two thousand nodes", "scale"},
-      {:database, "/database", "A database", "schema"}
+      {:database, "/database", "A database", "schema"},
+      {:colours, "/colours", "Every colour", "board"}
     ]
   end
 
   def qs(query, extra) do
-    case Map.merge(Map.take(query, ["as", "theme", "dark", "room"]), extra) do
+    case Map.merge(Map.take(query, ["as", "theme", "dark", "sumi", "room"]), extra) do
       empty when map_size(empty) == 0 -> ""
       query -> "?" <> URI.encode_query(query)
     end
@@ -1101,7 +1163,7 @@ defmodule HakushiDev.Page do
      |> assign(:follow, params["follow"] != "false")
      |> assign(:room, params["room"])
      |> assign(:comments, params["comments"] == "1")
-     |> assign(:query, Map.take(params, ["as", "theme", "dark", "room"]))}
+     |> assign(:query, Map.take(params, ["as", "theme", "dark", "sumi", "room"]))}
   end
 end
 
@@ -1773,6 +1835,114 @@ defmodule HakushiDev.AgentPlug do
   end
 end
 
+defmodule HakushiDev.ColoursLive do
+  @moduledoc """
+  Every colour of the kits on one canvas: the notes, the shapes, the pen
+  and the highlighter, a table's keys and a condition. To see them in each
+  theme (`?sumi=smoke`), with a selection.
+  """
+  use Phoenix.LiveView
+
+  import Hakushi.Components
+  import HakushiDev.Layouts, only: [app: 1]
+
+  alias Hakushi.Kits.{Flow, Ink, Notes, Schema, Shapes}
+
+  @kits [Notes, Shapes, Ink, Schema, Flow]
+
+  @impl true
+  def mount(_params, _session, socket), do: {:ok, assign(socket, graph: graph())}
+
+  def on_change(_change, %{result: result}) do
+    send(self(), {:graph, result})
+    :ok
+  end
+
+  @impl true
+  def handle_info({:graph, graph}, socket), do: {:noreply, assign(socket, graph: graph)}
+
+  @impl true
+  def render(assigns) do
+    assigns = assign(assigns, :kits, @kits)
+
+    ~H"""
+    <.app page={:colours} me={@me} query={@query} title="Every colour" crumb="Of the kits">
+      <:actions>
+        <span class="hint">Each theme under Sumi, in the panel: the colours, and a selection, in its accent.</span>
+      </:actions>
+      <.canvas id="colours" graph={@graph} on_change={&on_change/2} kits={@kits} readonly={@readonly} label="Every colour" />
+    </.app>
+    """
+  end
+
+  defp graph do
+    notes =
+      for {color, i} <- Enum.with_index(Notes.colors()),
+          do: %{
+            id: "note-" <> color,
+            type: "note",
+            x: i * 180,
+            y: 0,
+            width: 160,
+            height: 100,
+            data: %{"text" => color, "color" => color}
+          }
+
+    shapes =
+      for {color, i} <- Enum.with_index(Shapes.colors()) do
+        style = %{"text" => color, "fill" => color, "stroke" => color}
+        Map.put(Shapes.shape("rect", [i * 130, 140, 110, 64], style), :id, "shape-" <> color)
+      end
+
+    strokes =
+      for {tool, y} <- [{"pen", 250}, {"highlighter", 320}],
+          {color, i} <- Enum.with_index(Ink.colors()) do
+        x = i * 130
+        points = for t <- 0..10, do: [x + t * 10, y + 14 * :math.sin(t / 10 * 2 * :math.pi())]
+        {:ok, stroke} = Ink.stroke(points, tool: tool, color: color)
+        Map.put(stroke, :id, "#{tool}-#{color}")
+      end
+
+    Hakushi.Graph.new(
+      nodes:
+        notes ++
+          shapes ++
+          strokes ++
+          [
+            %{
+              id: "table",
+              type: "schema-table",
+              x: 960,
+              y: 0,
+              data: %{
+                "name" => "invoices",
+                "columns" => [
+                  %{"id" => "i1", "name" => "id", "type" => "uuid", "key" => "pk"},
+                  %{"id" => "i2", "name" => "customer_id", "type" => "uuid", "key" => "fk"},
+                  %{"id" => "i3", "name" => "total", "type" => "money", "key" => nil}
+                ]
+              }
+            },
+            %{
+              id: "condition",
+              type: "flow-condition",
+              x: 960,
+              y: 200,
+              data: %{"title" => "Over €1,000?", "detail" => ""}
+            },
+            %{
+              id: "step",
+              type: "flow-step",
+              x: 960,
+              y: 320,
+              data: %{"title" => "Send the receipt", "detail" => "Email"}
+            }
+          ],
+      edges: [%{source: "note-yellow", target: "note-rose"}]
+    )
+  end
+end
+
 defmodule HakushiDev.Router do
   use Phoenix.Router
 
@@ -1802,6 +1972,7 @@ defmodule HakushiDev.Router do
       live("/spec", HakushiDev.SpecLive)
       live("/scale", HakushiDev.ScaleLive)
       live("/database", HakushiDev.DatabaseLive)
+      live("/colours", HakushiDev.ColoursLive)
     end
   end
 end
