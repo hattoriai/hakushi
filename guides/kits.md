@@ -308,7 +308,11 @@ end
   `Hakushi.Kits.Shapes`.
 * `styles/1` (optional) is a panel of styles beside the selection, whose
   choices go to `edit/3` (the action `"style"`) for each node, in one
-  change.
+  change. The panel reads a node's values from an element of its own
+  with `data-hakushi-style`: JSON of the node's values, by the groups'
+  keys. A group shows only when a selected node has its key there, an
+  `"action"` too: with no such element, the panel is empty. See
+  [A panel of styles](#a-panel-of-styles).
 * A node's element with `data-hakushi-text` is written in place on a
   double click (`edit/3`, the action `"text"`); one with
   `data-hakushi-rotate` turns by a knob (the action `"rotate"`, in
@@ -317,6 +321,44 @@ end
 Test a kit with `Hakushi.Test`: `drop/5` makes its node from its item
 (`"roadmap:milestone"`), `edit/5` sends an action as its controls do,
 and `nodes/2` reads the canvas.
+
+### A panel of styles
+
+`styles/1` says the groups of the panel, and the node says its values in
+`data-hakushi-style`, which the panel reads to show the groups and press
+the choice the nodes share:
+
+```elixir
+@impl true
+def styles(_messages) do
+  [
+    %{
+      key: "status",
+      label: "Status",
+      kind: "choice",
+      options: [%{value: "planned", label: "Planned"}, %{value: "done", label: "Done"}]
+    }
+  ]
+end
+
+@impl true
+def node(assigns) do
+  ~H"""
+  <div class="milestone" data-hakushi-style={JSON.encode!(%{status: get(@node.data, "status")})}>
+    ...
+  </div>
+  """
+end
+
+@impl true
+def edit("style", %{"style" => %{"status" => status}}, data) when status in ["planned", "done"],
+  do: {:ok, Map.put(data, "status", status)}
+```
+
+(The `"style"` clause goes before the one that refuses the other actions.)
+A key the JSON does not have hides its group: a node with no
+`data-hakushi-style` has an empty panel. Keep a key with a `nil` value
+(`"status": null`) for a group that shows with nothing pressed.
 
 ## Markdown, and back
 

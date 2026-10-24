@@ -187,10 +187,19 @@ defmodule Hakushi.Kit do
   or a field for a text (`"text"`, with a `placeholder`), which sends its
   value as a choice does; or a button of the canvas's own for one node
   (`"action"`, by its `key`: `"crop"` crops an image in place).
-  A node shows its style in its element's `data-hakushi-style` (JSON of
-  those keys it has); a choice sends `"hakushi:edit"` with the nodes, the
-  action `"style"` and `%{"style" => %{key => value}}`, which `c:edit/3`
-  gets for each node. Defaults to none. See `Hakushi.Kits.Shapes`.
+  A node shows its style in an element of its own with
+  `data-hakushi-style`: JSON of the node's values, by the groups' keys.
+  The panel reads it to show the groups and press the choices the nodes
+  share; a group shows only when a selected node has its key there (an
+  `"action"` too), so that a node with no such element has an empty
+  panel:
+
+      <div class="milestone" data-hakushi-style={JSON.encode!(%{status: get(@node.data, "status")})}>
+
+  A choice sends `"hakushi:edit"` with the nodes, the action `"style"`
+  and `%{"style" => %{key => value}}`, which `c:edit/3` gets for each
+  node. Defaults to none. See `Hakushi.Kits.Shapes` and the
+  [Kits](kits.md#a-panel-of-styles) guide.
   """
   @callback styles(messages :: map()) :: [map()]
 
