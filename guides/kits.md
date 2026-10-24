@@ -299,7 +299,9 @@ end
   select's change in a form); `edit/3` gets the node's data and returns
   the new data, or `:error`. Check what comes in, as for any event.
 * `canvas/0` (optional) is its paper, tidy up and rules; `resizable?/1`
-  (optional) says which types resize by their corners.
+  (optional) says which types resize by their corners, and `group?/1`
+  (optional) which types are groups, that hold other nodes (a lane, see
+  [Groups](groups.md)).
 * `icon/0` and the elements' icons are names of `Hakushi.Icons`.
 * `tools/1` (optional) puts tools in a bar on the canvas, which draw a
   line (`"draw"`), a box (`"box"`) or a line from a point to a point
