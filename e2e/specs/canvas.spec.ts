@@ -65,6 +65,23 @@ test("selects with a click, Shift, and a box", async ({ page }) => {
   await expect(page.locator("#board .hakushi-node[data-ui-selected]")).toHaveCount(0);
 });
 
+test("the minimap follows the page's theme", async ({ page }) => {
+  await openCanvas(page, "/scale");
+  // A theme of the page: an accent of its own, set by an attribute on <html>.
+  await page.addStyleTag({ content: "html[data-theme=test] .hakushi { --hakushi-accent: rgb(0, 200, 0) !important; }" });
+  const green = () =>
+    page.locator(".hakushi-minimap").evaluate((canvas: HTMLCanvasElement) => {
+      const data = canvas.getContext("2d")!.getImageData(0, 0, canvas.width, canvas.height).data;
+      let n = 0;
+      for (let i = 0; i < data.length; i += 4) if (data[i] < 60 && data[i + 1] > 150 && data[i + 2] < 60) n++;
+      return n;
+    });
+  expect(await green()).toBe(0);
+  await page.evaluate(() => (document.documentElement.dataset.theme = "test"));
+  // Its view is drawn in the new accent, without a change on the canvas.
+  await expect.poll(green).toBeGreaterThan(20);
+});
+
 test("the minimap moves the view", async ({ page }) => {
   await openCanvas(page, "/scale");
   const before = (await node(page, "n0").boundingBox())!;

@@ -12,6 +12,14 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `c:Hakushi.Kit.group?/1`: a kit's node types can be groups (a lane), as
   a `:node` slot's `group` makes them. See the Groups guide.
 
+### Fixed
+
+- The minimap kept the colors of the theme the page had when the canvas
+  opened: on a page whose theme changed (a theme picker, the system's
+  dark mode), its nodes and its view were in the old theme's colors, the
+  nodes all but invisible on a dark one. It reads them again when the
+  theme of the page changes.
+
 ## [0.5.0] - 2026-10-23
 
 Diagrams of data: ways to tidy up, a canvas people only arrange, laid out
