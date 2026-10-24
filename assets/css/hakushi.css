@@ -67,6 +67,17 @@
   --hakushi-shape-red: #e5484d;
   --hakushi-shape-violet: #8e4ec6;
   --hakushi-shape-tint: 16%;
+  /* Notes (Hakushi.Kits.Notes): the colours of the notes, a tint of them
+     on the surface. */
+  --hakushi-note-yellow: #fcd34d;
+  --hakushi-note-rose: #fb7185;
+  --hakushi-note-sky: #7dd3fc;
+  --hakushi-note-mint: #6ee7b7;
+  --hakushi-note-lilac: #c4b5fd;
+  --hakushi-note-tint: 42%;
+  /* The kits' second colour, beside the accent: Schema's primary keys and
+     Flow's conditions. */
+  --hakushi-kit-alt: #c58a12;
 }
 
 /*
@@ -1193,7 +1204,7 @@
   cursor: pointer;
 }
 
-.hakushi-kit-key[data-key="pk"] { color: #c58a12; }
+.hakushi-kit-key[data-key="pk"] { color: var(--hakushi-kit-alt); }
 .hakushi-kit-key[data-key="fk"] { color: var(--hakushi-accent); }
 .hakushi-kit-key:disabled { cursor: default; }
 .hakushi-kit-key:not(:disabled):hover { background: color-mix(in oklab, var(--hakushi-text) 7%, transparent); }
@@ -1295,8 +1306,8 @@
 }
 
 .hakushi-kit-step[data-kind="condition"] .hakushi-kit-step-icon {
-  background: color-mix(in oklab, #c58a12 14%, transparent);
-  color: #c58a12;
+  background: color-mix(in oklab, var(--hakushi-kit-alt) 14%, transparent);
+  color: var(--hakushi-kit-alt);
 }
 
 .hakushi-kit-step-text {
@@ -1328,7 +1339,7 @@
 
 /* Notes: a sticky note. */
 .hakushi-kit-note {
-  --hakushi-note: #fcd34d;
+  --hakushi-note: var(--hakushi-note-yellow);
   position: relative;
   display: flex;
   width: 100%;
@@ -1337,14 +1348,14 @@
   min-height: 5rem;
   padding: 0.75rem 0.875rem;
   border-radius: 4px 4px 12px 4px;
-  background: color-mix(in oklab, var(--hakushi-note) 42%, var(--hakushi-surface));
+  background: color-mix(in oklab, var(--hakushi-note) var(--hakushi-note-tint), var(--hakushi-surface));
   box-shadow: 0 1px 2px rgba(15, 15, 20, 0.08), 0 6px 14px -6px rgba(15, 15, 20, 0.18);
 }
 
-.hakushi-kit-note[data-color="rose"] { --hakushi-note: #fb7185; }
-.hakushi-kit-note[data-color="sky"] { --hakushi-note: #7dd3fc; }
-.hakushi-kit-note[data-color="mint"] { --hakushi-note: #6ee7b7; }
-.hakushi-kit-note[data-color="lilac"] { --hakushi-note: #c4b5fd; }
+.hakushi-kit-note[data-color="rose"] { --hakushi-note: var(--hakushi-note-rose); }
+.hakushi-kit-note[data-color="sky"] { --hakushi-note: var(--hakushi-note-sky); }
+.hakushi-kit-note[data-color="mint"] { --hakushi-note: var(--hakushi-note-mint); }
+.hakushi-kit-note[data-color="lilac"] { --hakushi-note: var(--hakushi-note-lilac); }
 
 .hakushi-kit-note-text {
   flex: 1;

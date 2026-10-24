@@ -16,7 +16,12 @@
  *
  * Dark and light: on a page with the Sumi themes, the canvases follow them.
  * Without them, the built-in palette follows the data-theme attribute
- * ("dark" or "light") first, then prefers-color-scheme.
+ * first (Sumi's seven: "dark", "smoke", "stone" and "lacquer" are dark;
+ * "light", "snow" and "silk" light), then prefers-color-scheme.
+ *
+ * Each Sumi theme has its own accent, which selects. A colour of the kits
+ * of the accent's hue is another in that theme, below, so that a selected
+ * note, shape or stroke shows.
  */
 
 /* The Sumi palette, light. */
@@ -29,9 +34,12 @@
   --hakushi-sumi-muted: oklch(15% 0.003 270 / 0.65);
 }
 
-/* The Sumi palette, dark: data-theme="dark", or a dark preference on a page
-   that does not ask for light. */
-[data-theme="dark"] {
+/* The Sumi palette, dark: Sumi's dark themes (Ink, Smoke, Stone, Lacquer),
+   or a dark preference on a page that does not ask for a light one. */
+[data-theme="dark"],
+[data-theme="smoke"],
+[data-theme="stone"],
+[data-theme="lacquer"] {
   --hakushi-sumi-base-100: oklch(12% 0.003 270);
   --hakushi-sumi-base-200: oklch(16% 0.004 270);
   --hakushi-sumi-base-300: oklch(20% 0.005 270);
@@ -40,13 +48,108 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
+  :root:not([data-theme="light"], [data-theme="snow"], [data-theme="silk"]) {
     --hakushi-sumi-base-100: oklch(12% 0.003 270);
     --hakushi-sumi-base-200: oklch(16% 0.004 270);
     --hakushi-sumi-base-300: oklch(20% 0.005 270);
     --hakushi-sumi-content: oklch(95% 0.012 85);
     --hakushi-sumi-muted: oklch(95% 0.012 85 / 0.5);
   }
+}
+
+/* The kits' colours on Sumi's dark themes: hakushi.css gives its dark ones
+   to data-theme="dark" only. No specificity, as there, so that an app's
+   own win. */
+:where([data-theme="smoke"], [data-theme="stone"], [data-theme="lacquer"]) {
+  --hakushi-ink-red: #ff6b6f;
+  --hakushi-ink-orange: #ff8b3e;
+  --hakushi-ink-yellow: #ffd60a;
+  --hakushi-ink-green: #3dd68c;
+  --hakushi-ink-blue: #7b9cff;
+  --hakushi-ink-violet: #b48cff;
+  --hakushi-highlighter-opacity: 0.32;
+  --hakushi-shape-blue: #7b9cff;
+  --hakushi-shape-green: #3dd68c;
+  --hakushi-shape-yellow: #ffd60a;
+  --hakushi-shape-red: #ff6b6f;
+  --hakushi-shape-violet: #b48cff;
+  --hakushi-shape-tint: 24%;
+}
+
+@media (prefers-color-scheme: dark) {
+  :where(:root:not([data-theme="light"], [data-theme="snow"], [data-theme="silk"])) {
+    --hakushi-ink-red: #ff6b6f;
+    --hakushi-ink-orange: #ff8b3e;
+    --hakushi-ink-yellow: #ffd60a;
+    --hakushi-ink-green: #3dd68c;
+    --hakushi-ink-blue: #7b9cff;
+    --hakushi-ink-violet: #b48cff;
+    --hakushi-highlighter-opacity: 0.32;
+    --hakushi-shape-blue: #7b9cff;
+    --hakushi-shape-green: #3dd68c;
+    --hakushi-shape-yellow: #ffd60a;
+    --hakushi-shape-red: #ff6b6f;
+    --hakushi-shape-violet: #b48cff;
+    --hakushi-shape-tint: 24%;
+  }
+}
+
+/* Schema's primary keys and Flow's conditions on Sumi's light themes: a
+   darker amber, for 4.5:1 on the paper. */
+:where([data-theme="light"], [data-theme="snow"], [data-theme="silk"]) {
+  --hakushi-kit-alt: oklch(52% 0.12 70);
+}
+
+/* A colour of the accent's hue is another, in that theme only.
+   Ink and Paper (blade, a red orange): the orange pen is amber, and the red
+   pen and shape a crimson, lighter than the blade on Ink, deeper on Paper. */
+:where([data-theme="dark"]) {
+  --hakushi-ink-orange: oklch(79% 0.16 66);
+  --hakushi-ink-red: oklch(72% 0.17 8);
+  --hakushi-shape-red: oklch(72% 0.17 8);
+}
+
+:where([data-theme="light"]) {
+  --hakushi-ink-orange: oklch(70% 0.17 62);
+  --hakushi-ink-red: oklch(52% 0.19 15);
+  --hakushi-shape-red: oklch(52% 0.19 15);
+}
+
+/* Smoke (jade): the green pen and shape are a leaf green, the mint note a
+   greener mint; and the notes are a lighter tint, for 4.5:1 on its paper. */
+:where([data-theme="smoke"]) {
+  --hakushi-ink-green: oklch(80% 0.18 138);
+  --hakushi-shape-green: oklch(80% 0.18 138);
+  --hakushi-note-mint: oklch(87% 0.13 140);
+  --hakushi-note-tint: 34%;
+}
+
+/* Stone (gold): the yellow pen, shape and note are lemon, and the primary
+   keys and conditions orange. */
+:where([data-theme="stone"]) {
+  --hakushi-ink-yellow: oklch(92% 0.18 108);
+  --hakushi-shape-yellow: oklch(92% 0.18 108);
+  --hakushi-note-yellow: oklch(92% 0.15 108);
+  --hakushi-kit-alt: oklch(72% 0.16 45);
+}
+
+/* Lacquer (vermilion): the red pen and shape are a crimson lighter than
+   the vermilion, the rose note pinker. */
+:where([data-theme="lacquer"]) {
+  --hakushi-ink-red: oklch(74% 0.16 6);
+  --hakushi-shape-red: oklch(74% 0.16 6);
+  --hakushi-note-rose: oklch(74% 0.15 350);
+}
+
+/* Snow (indigo): the blue pen and shape are azure. */
+:where([data-theme="snow"]) {
+  --hakushi-ink-blue: oklch(58% 0.14 232);
+  --hakushi-shape-blue: oklch(58% 0.14 232);
+}
+
+/* Silk (lotus pink): the rose note is coral. */
+:where([data-theme="silk"]) {
+  --hakushi-note-rose: oklch(76% 0.14 32);
 }
 
 /* The mapping. */

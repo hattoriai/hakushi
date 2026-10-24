@@ -5,6 +5,25 @@ All notable changes to Hakushi are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- The Sumi theme follows Sumi's seven themes and their accents: a colour
+  of the kits of the accent's hue (a pen, a shape, a note, the primary
+  keys) is another in that theme, so that a selection shows. `mix dev`
+  shows each (`?sumi=smoke`), and every colour of the kits at `/colours`.
+  See the Theming guide.
+- `--hakushi-note-<colour>` and `--hakushi-note-tint`, the colours of the
+  notes; `--hakushi-kit-alt`, Schema's primary keys and Flow's conditions.
+
+### Fixed
+
+- The Sumi theme gave Sumi's dark themes other than Ink the light palette
+  and the light colours of the pens and shapes, and Sumi's light themes
+  other than Paper the dark palette on a system in dark mode. The notes
+  on Smoke, and the primary keys on the light themes, were under 4.5:1.
+
 ## [0.6.0] - 2026-10-24
 
 ### Added
