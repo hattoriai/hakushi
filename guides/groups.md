@@ -13,8 +13,16 @@ when it is deleted, and are drawn over it.
 </.canvas>
 ```
 
-`group` on a `:node` slot makes its nodes groups. A node is in a group by
-its `parent`:
+`group` on a `:node` slot makes its nodes groups; for a kit's types, its
+`c:Hakushi.Kit.group?/1` does, as `resizable?/1` does for `resizable`:
+
+```elixir
+@impl true
+def group?(type), do: type == "roadmap-lane"
+```
+
+An app's `:node` slot for the type wins over the kit. A node is in a
+group by its `parent`:
 
 ```elixir
 Hakushi.Graph.new(

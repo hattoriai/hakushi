@@ -1111,8 +1111,8 @@ defmodule Hakushi.Canvas do
             data-width={node.width}
             data-height={node.height}
             data-locked={node.locked && "true"}
-            data-resizable={resizable?(@node_slots, @kits, node) && "true"}
-            data-group={slot_flag?(@node_slots, node, :group) && "true"}
+            data-resizable={node_flag?(@node_slots, @kits, node, :resizable) && "true"}
+            data-group={node_flag?(@node_slots, @kits, node, :group) && "true"}
             data-parent={node.parent}
             style={node_style(node)}
             tabindex="-1"
@@ -1304,10 +1304,12 @@ defmodule Hakushi.Canvas do
     )
   end
 
-  defp resizable?(slots, kits, node) do
+  # A node's `resizable` or `group`: its slot's, else its kit's.
+  defp node_flag?(slots, kits, node, flag) do
     case {Enum.find(slots, &(&1[:type] == node.type)), Kit.for_type(kits, node.type)} do
-      {nil, kit} when kit != nil -> Kit.resizable?(kit, node.type)
-      _slot -> slot_flag?(slots, node, :resizable)
+      {nil, kit} when kit != nil and flag == :resizable -> Kit.resizable?(kit, node.type)
+      {nil, kit} when kit != nil and flag == :group -> Kit.group?(kit, node.type)
+      _slot -> slot_flag?(slots, node, flag)
     end
   end
 

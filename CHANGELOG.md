@@ -7,6 +7,11 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `c:Hakushi.Kit.group?/1`: a kit's node types can be groups (a lane), as
+  a `:node` slot's `group` makes them. See the Groups guide.
+
 ## [0.5.0] - 2026-10-23
 
 Diagrams of data: ways to tidy up, a canvas people only arrange, laid out

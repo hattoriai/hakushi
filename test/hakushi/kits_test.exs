@@ -9,6 +9,22 @@ defmodule Hakushi.KitsTest do
 
   @endpoint HakushiTest.Endpoint
 
+  # A kit whose lanes hold its cards.
+  defmodule Lanes do
+    use Hakushi.Kit
+
+    def name, do: "lanes"
+    def title(_messages), do: "Lanes"
+    def icon, do: "workflow"
+    def types, do: ["lane", "lane-card"]
+    def elements(_messages), do: []
+    def new_node(_item, {x, y}, _messages), do: %{type: "lane-card", x: x, y: y, data: %{}}
+    def node(assigns), do: ~H"<div>{@node.id}</div>"
+    def edit(_action, _params, _data), do: :error
+    def resizable?(type), do: type == "lane"
+    def group?(type), do: type == "lane"
+  end
+
   doctest Hakushi.Kits.Schema
 
   defp open(query \\ "") do
@@ -261,6 +277,42 @@ defmodule Hakushi.KitsTest do
       {_view, html} = open()
       assert html =~ ~s(data-background="lines")
       assert html =~ "&quot;cycles&quot;:false"
+    end
+
+    test "a kit's types are groups by group?/1, and an app's slot wins" do
+      graph =
+        Hakushi.Graph.new(
+          nodes: [
+            %{id: "doing", type: "lane", x: 0, y: 0, width: 400, height: 300, data: %{}},
+            %{id: "undo", type: "lane-card", x: 20, y: 40, parent: "doing", data: %{}},
+            %{id: "todo", type: "note", x: 600, y: 0, data: %{"text" => "Refunds"}}
+          ]
+        )
+
+      html =
+        render_component(&Hakushi.Components.canvas/1,
+          id: "road",
+          graph: graph,
+          kits: [Lanes, Notes]
+        )
+
+      assert html =~ ~r/data-id="doing"[^>]*data-group="true"/
+      refute html =~ ~r/data-id="undo"[^>]*data-group="true"/
+      # A kit with no group?/1 has no groups.
+      refute html =~ ~r/data-id="todo"[^>]*data-group="true"/
+      assert Hakushi.Kit.group?(Lanes, "lane")
+      refute Hakushi.Kit.group?(Notes, "note")
+
+      html =
+        render_component(&Hakushi.Components.canvas/1,
+          id: "road",
+          graph: graph,
+          kits: [Lanes],
+          node: [%{type: "lane", inner_block: fn _, _ -> "lane" end, __slot__: :node}]
+        )
+
+      assert html =~ ~s(data-id="doing")
+      refute html =~ ~r/data-id="doing"[^>]*data-group="true"/
     end
 
     test "Flow and Notes" do

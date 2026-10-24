@@ -118,6 +118,13 @@ defmodule Hakushi.Kit do
   @callback resizable?(type :: String.t()) :: boolean()
 
   @doc """
+  Whether the nodes of a type are groups, which hold others (a lane, a
+  frame), as a `:node` slot's `group` makes them. Defaults to `false`.
+  See the [Groups](groups.md) guide.
+  """
+  @callback group?(type :: String.t()) :: boolean()
+
+  @doc """
   The canvas the kit likes: its paper (`background`, `grid`, `snap`), the
   way the tidy up goes (`layout`, as the canvas's attribute: `:right`,
   `:down`, `:force`, `:grid`, or `{:layered, :down}`) and the rules of its edges (`rules`, a
@@ -237,6 +244,7 @@ defmodule Hakushi.Kit do
               {:ok, map()} | {:error, term()}
 
   @optional_callbacks resizable?: 1,
+                      group?: 1,
                       upload: 0,
                       uploaded: 4,
                       pasted: 3,
@@ -332,6 +340,10 @@ defmodule Hakushi.Kit do
   @doc false
   def resizable?(kit, type),
     do: exports?(kit, :resizable?, 1) and kit.resizable?(type)
+
+  @doc false
+  def group?(kit, type),
+    do: exports?(kit, :group?, 1) and kit.group?(type)
 
   @doc false
   # The tools of a canvas's kits, for its bar: each with its kit's name.
