@@ -157,6 +157,7 @@ defmodule Hakushi.Messages.Translations do
     "refusedFileFailed" => "The image could not be added.",
     "placeNode" => "The node “{name}”",
     "placeNodes" => "The node “{name}” and {n} more",
+    "placeLabelNodes" => "{n} nodes",
     "placePoint" => "A point on the canvas"
   }
 
@@ -315,6 +316,7 @@ defmodule Hakushi.Messages.Translations do
       "refusedFileFailed" => "Não foi possível adicionar a imagem.",
       "placeNode" => "O nó “{name}”",
       "placeNodes" => "O nó “{name}” e mais {n}",
+      "placeLabelNodes" => "{n} nós",
       "placePoint" => "Um ponto da tela"
     },
     "es" => %{
@@ -471,6 +473,7 @@ defmodule Hakushi.Messages.Translations do
       "refusedFileFailed" => "No se pudo añadir la imagen.",
       "placeNode" => "El nodo «{name}»",
       "placeNodes" => "El nodo «{name}» y {n} más",
+      "placeLabelNodes" => "{n} nodos",
       "placePoint" => "Un punto del lienzo"
     },
     "fr" => %{
@@ -624,6 +627,7 @@ defmodule Hakushi.Messages.Translations do
       "refusedFileFailed" => "L’image n’a pas pu être ajoutée.",
       "placeNode" => "Le nœud « {name} »",
       "placeNodes" => "Le nœud « {name} » et {n} de plus",
+      "placeLabelNodes" => "{n} nœuds",
       "placePoint" => "Un point du canevas"
     },
     "de" => %{
@@ -778,6 +782,7 @@ defmodule Hakushi.Messages.Translations do
       "refusedFileFailed" => "Das Bild konnte nicht hinzugefügt werden.",
       "placeNode" => "Der Knoten „{name}“",
       "placeNodes" => "Der Knoten „{name}“ und {n} weitere",
+      "placeLabelNodes" => "{n} Knoten",
       "placePoint" => "Ein Punkt der Leinwand"
     },
     "ja" => %{
@@ -930,6 +935,7 @@ defmodule Hakushi.Messages.Translations do
       "refusedFileFailed" => "画像を追加できませんでした。",
       "placeNode" => "ノード「{name}」",
       "placeNodes" => "ノード「{name}」ほか{n}件",
+      "placeLabelNodes" => "ノード{n}件",
       "placePoint" => "キャンバス上の点"
     }
   }

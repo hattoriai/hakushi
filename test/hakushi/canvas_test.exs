@@ -292,6 +292,67 @@ defmodule Hakushi.CanvasTest do
     end
   end
 
+  describe "a selection in words, the label of its place" do
+    alias Hakushi.{Canvas, Graph, Kits, Messages}
+
+    @kits [Kits.Notes, Kits.Flow, Kits.Shapes, Kits.Images, Kits.Ink]
+
+    defp label(nodes, ids, opts \\ []) do
+      assigns = %{
+        graph: Graph.new(nodes: nodes),
+        kits: @kits,
+        messages: Messages.for_locale(opts[:locale] || "en", %{}),
+        node_label: opts[:node_label] || (&Canvas.label/1)
+      }
+
+      Canvas.place_label(assigns, ids)
+    end
+
+    test "a node's words: its title, text, alt or name" do
+      flow = %{id: "f", type: "flow-step", data: %{"title" => "Invoice paid", "detail" => "x"}}
+      note = %{id: "n", type: "note", data: %{"text" => "  Ask finance\nabout refunds "}}
+      image = %{id: "i", type: "image", data: %{"alt" => "The palette", "url" => "/a.png"}}
+      table = %{id: "t", data: %{name: "users"}}
+
+      assert label([flow], ["f"]) == "Invoice paid"
+      assert label([note], ["n"]) == "Ask finance about refunds"
+      assert label([image], ["i"]) == "The palette"
+      assert label([table], ["t"]) == "users"
+    end
+
+    test "the first words of a long text, whole, in 60 characters" do
+      text = String.duplicate("Fold it again and ", 10)
+      words = label([%{id: "n", type: "note", data: %{"text" => text}}], ["n"])
+
+      assert words == "Fold it again and Fold it again and Fold it again and Fold…"
+      assert String.length(words) <= 60
+    end
+
+    test "a node without words: its kind, never its id" do
+      assert label([%{id: "n", type: "note", data: %{"text" => ""}}], ["n"]) == "Note"
+      assert label([%{id: "i", type: "image", data: %{"url" => "/a.png"}}], ["i"]) == "Image"
+
+      assert label([%{id: "s", type: "ink-stroke", data: %{"points" => []}}], ["s"]) ==
+               Messages.for_locale("en", %{})["drawing"]
+
+      assert label([%{id: "x", type: "default", data: %{}}], ["x"]) == nil
+    end
+
+    test "the app's node_label says it" do
+      nodes = [%{id: "t", data: %{name: "users"}}]
+      assert label(nodes, ["t"], node_label: &"Table #{&1.data.name}") == "Table users"
+    end
+
+    test "several nodes: how many, in the canvas's language" do
+      nodes = [%{id: "a", data: %{}}, %{id: "b", data: %{}}, %{id: "c", data: %{}}]
+
+      assert label(nodes, ["a", "b", "c"]) == "3 nodes"
+      assert label(nodes, ["a", "b", "gone"]) == "2 nodes"
+      assert label(nodes, ["a", "b"], locale: "fr") == "2 nœuds"
+      assert label(nodes, ["gone"]) == nil
+    end
+  end
+
   test "refuses what a browser should not send" do
     {view, _html} = open()
     assert {:error, _} = Hakushi.Test.move(view, "schema", [{"note", "x", 1}])

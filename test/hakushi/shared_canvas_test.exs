@@ -149,10 +149,20 @@ defmodule Hakushi.SharedCanvasTest do
     hook = element(ada, "#schema-hook")
 
     render_hook(hook, "hakushi:peer", %{"selected" => ["note"]})
-    assert place_of_ada.() == %{"doc" => doc, "at" => %{"node" => "note"}}
+    assert place_of_ada.() == %{"doc" => doc, "at" => %{"node" => "note"}, "label" => "A note"}
 
-    render_hook(hook, "hakushi:peer", %{"selected" => ["note", "frame"]})
-    assert place_of_ada.() == %{"doc" => doc, "at" => %{"nodes" => ["note", "frame"]}}
+    # Nodes in words: how many the canvas has of them.
+    render_hook(hook, "hakushi:peer", %{"selected" => ["note", "users", "frame"]})
+
+    assert place_of_ada.() == %{
+             "doc" => doc,
+             "at" => %{"nodes" => ["note", "users", "frame"]},
+             "label" => "2 nodes"
+           }
+
+    # Nodes the canvas does not have: no words, only where.
+    render_hook(hook, "hakushi:peer", %{"selected" => ["frame"]})
+    assert place_of_ada.() == %{"doc" => doc, "at" => %{"node" => "frame"}}
 
     render_hook(hook, "hakushi:peer", %{"selected" => []})
     assert place_of_ada.() == nil

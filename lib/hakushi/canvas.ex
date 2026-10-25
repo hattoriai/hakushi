@@ -644,7 +644,7 @@ defmodule Hakushi.Canvas do
       room,
       aware
       |> Issho.Awareness.put_block(doc, state)
-      |> selection_place(doc, state["selected"])
+      |> selection_place(doc, state["selected"], socket.assigns)
     )
 
     {:noreply, socket}
@@ -958,19 +958,94 @@ defmodule Hakushi.Canvas do
   # The nodes selected are the person's place (`Hakushi.Issho.Place`): where
   # a comment of the room goes, what Issho's pointers show when their
   # pointer is off the canvas. With none, a place of this canvas goes; one
-  # of another component (a text the person types in) stays.
-  defp selection_place(aware, doc, []) do
+  # of another component (a text the person types in) stays. Its label
+  # says it in a few words, for those who only read it (an agent).
+  defp selection_place(aware, doc, [], _assigns) do
     case aware["place"] do
       %{"doc" => ^doc} -> Map.delete(aware, "place")
       _other -> aware
     end
   end
 
-  defp selection_place(aware, doc, [id]),
-    do: Map.put(aware, "place", %{"doc" => doc, "at" => %{"node" => id}})
+  defp selection_place(aware, doc, ids, assigns) do
+    at = if match?([_id], ids), do: %{"node" => hd(ids)}, else: %{"nodes" => ids}
 
-  defp selection_place(aware, doc, ids),
-    do: Map.put(aware, "place", %{"doc" => doc, "at" => %{"nodes" => ids}})
+    place =
+      case place_label(assigns, ids) do
+        nil -> %{"doc" => doc, "at" => at}
+        label -> %{"doc" => doc, "at" => at, "label" => label}
+      end
+
+    Map.put(aware, "place", place)
+  end
+
+  @doc false
+  # A selection in a few words: a node's own (`node_words/2`), or how many
+  # nodes ("3 nodes"); nil for nodes the canvas does not have. Issho cleans
+  # and cuts a label; `at` stays what says where.
+  def place_label(%{graph: %Graph{} = graph} = assigns, ids) do
+    case for(id <- ids, node = Graph.node(graph, id), do: node) do
+      [] -> nil
+      [node] -> node_words(assigns, node)
+      nodes -> String.replace(assigns.messages["placeLabelNodes"], "{n}", "#{length(nodes)}")
+    end
+  end
+
+  def place_label(_assigns, _ids), do: nil
+
+  # The app's name of a node, else its words (a title, a text, an image's
+  # alt), else its kind ("Drawing", "Note"); never its id.
+  defp node_words(assigns, node) do
+    words =
+      if assigns.node_label == (&__MODULE__.label/1),
+        do:
+          own_words(node.data) || Kit.label(assigns.kits, node, assigns.messages) ||
+            kind(assigns.kits, node, assigns.messages),
+        else: assigns.node_label.(node)
+
+    first_words(words)
+  end
+
+  @words ~w(title text alt caption description label name)
+
+  defp own_words(data) when is_map(data) do
+    Enum.find_value(@words, fn key ->
+      case Kit.get(data, key) do
+        text when is_binary(text) -> first_words(text)
+        _other -> nil
+      end
+    end)
+  end
+
+  defp own_words(_data), do: nil
+
+  # The kit's word for an item of the node's type, as its button says it.
+  defp kind(kits, node, messages) do
+    with kit when kit != nil <- Kit.for_type(kits, node.type) do
+      Enum.find_value(kit.elements(messages), &(&1[:item] == node.type && &1[:label]))
+    end
+  end
+
+  # One line of whole words, at most 60 characters (Issho's most).
+  defp first_words(text) when is_binary(text) do
+    words = String.split(text)
+    line = Enum.join(words, " ")
+
+    cond do
+      line == "" -> nil
+      String.length(line) <= 60 -> line
+      true -> cut(words)
+    end
+  end
+
+  defp first_words(_other), do: nil
+
+  defp cut([first | rest]) do
+    Enum.reduce_while(rest, String.slice(first, 0, 59), fn word, line ->
+      next = line <> " " <> word
+      if String.length(next) <= 59, do: {:cont, next}, else: {:halt, line}
+    end) <> "…"
+  end
 
   defp peer_state(params) do
     %{

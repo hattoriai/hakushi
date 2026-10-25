@@ -16,6 +16,13 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   See the Theming guide.
 - `--hakushi-note-<colour>` and `--hakushi-note-tint`, the colours of the
   notes; `--hakushi-kit-alt`, Schema's primary keys and Flow's conditions.
+- A shared canvas's place of what a person selects has a `"label"`
+  (hattoriai/issho#32), the few words Issho shows agents and comments:
+  the node's name as the app says it (`node_label`), else its title, its
+  text or an image's alt, else its kind (`"Note"`, `"Drawing"`); for
+  several nodes, how many (`"3 nodes"`, the new `placeLabelNodes` in the
+  canvas's languages). `"at"` still says where; Issho releases before
+  labels ignore it.
 
 ### Fixed
 
