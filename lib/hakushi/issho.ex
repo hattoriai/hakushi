@@ -13,6 +13,12 @@ if Code.ensure_loaded?(Issho.Engine) do
     In the room, it is the `"at"` of a place of the canvas's document:
     `%{"doc" => "board:42", "at" => %{"point" => [120, 80]}}`.
 
+    A canvas's place of what a person selects also has a `"label"`, a
+    few words for those who only read it (an agent, Issho's comments):
+    the node's name as the app says it (`node_label`), else its title,
+    its text or an image's alt, else its kind (`"Drawing"`); for several
+    nodes, how many (`"3 nodes"`). It is only words: `"at"` says where.
+
     `label/3` says a place in words, for a thread of comments on it.
     """
     @behaviour Issho.Place
