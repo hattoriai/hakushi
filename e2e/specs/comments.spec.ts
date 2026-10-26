@@ -29,10 +29,11 @@ test("a thread on a node: said by name, and marked on the node for everyone", as
     expect(Math.abs(spot.y + spot.height / 2 - table.y)).toBeLessThan(24);
   }
 
-  // Kenji deletes the table: the thread stays, and its place has no name now.
+  // Kenji deletes the table: the thread stays, said by the words its place
+  // had (Issho's labels, hattoriai/issho#32), not by a node that is gone.
   await kenji.evaluate(() => {
     const canvas = (window as unknown as { canvasOf(id: string): { live: { push(e: string, p: object, r: (x: unknown) => void): void } } }).canvasOf("schema");
     canvas.live.push("hakushi:change", { op: "delete", nodes: ["clients"] }, () => {});
   });
-  await expect(ada.locator("#comments .issho-thread .issho-thread-place-label")).toHaveText("On a part of the page");
+  await expect(ada.locator("#comments .issho-thread .issho-thread-place-label")).toHaveText("“clients”");
 });
