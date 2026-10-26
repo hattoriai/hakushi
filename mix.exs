@@ -148,11 +148,13 @@ defmodule Hakushi.MixProject do
           "guides/embedding.md",
           "guides/layout.md",
           "guides/changes.md",
-          "guides/collaboration.md",
           "guides/upgrading.md",
           "guides/navigation.md",
           "guides/testing.md",
           "guides/theming.md"
+        ],
+        "Collaboration (optional, with Issho)": [
+          "guides/collaboration.md"
         ],
         Reference: [
           "guides/features.md",
@@ -183,7 +185,8 @@ defmodule Hakushi.MixProject do
           Hakushi.Rules,
           Hakushi.Paper
         ],
-        Collaboration: [Hakushi.Room],
+        # Compiled only when the app has Issho.
+        "Collaboration (optional, with Issho)": [~r/^Hakushi\.Issho/],
         Storage: [
           Hakushi.Graph.Type
         ],

@@ -46,7 +46,7 @@ rules of `type`, `accepts` and `max` are the browser's; check what an
 edge means in `on_change`. The rules of the graph (`loops`,
 `duplicates`, `cycles`) are checked on both.
 
-## A shared canvas
+## A shared canvas, with Issho
 
 * The room keeps the graph in memory while anyone has the canvas open.
   A change made to your database by other means (a migration, a script)

@@ -106,7 +106,7 @@ LiveView renders the frame and its canvas for it.
 * A page that reads the document (`readonly`) shows the canvas read-only:
   people pan, zoom and go full screen, and change nothing.
 
-### Shared, in a document
+### Shared, in a document, with Issho
 
 A canvas with `issho` in a document is shared in its own room, the
 canvas's, whatever the document's room: everyone with the canvas open, in
