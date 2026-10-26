@@ -24,6 +24,13 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   canvas's languages). `"at"` still says where; Issho releases before
   labels ignore it.
 
+### Changed
+
+- The docs put the canvas first, and collaboration as what it is: optional,
+  with Issho. The README, the Quickstart and the guides read without
+  Issho, its parts in sections of their own ("…, with Issho"), and its
+  guide and modules in a group of their own in the docs.
+
 ### Fixed
 
 - The Sumi theme gave Sumi's dark themes other than Ink the light palette

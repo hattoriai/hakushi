@@ -36,6 +36,8 @@ words the person sees.
 | `notice/2` | the reason the canvas shows for its last refusal |
 | `people/2` | the others on a shared canvas |
 
+## A shared canvas, with Issho
+
 A shared canvas in a test is shared with the other LiveViews of its
 topic in the test: open two, as two people, to test what one sees of the
 other. Start an Issho instance for the tests (`Issho.Test.start!/1`

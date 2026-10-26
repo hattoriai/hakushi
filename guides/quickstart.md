@@ -1,7 +1,8 @@
 # Quickstart
 
 A canvas in a LiveView, its graph from your database, and each change
-saved back.
+saved back. Nothing here needs Issho: this is the whole canvas, for one
+person at a time.
 
 ## Install
 
@@ -104,5 +105,9 @@ A node without an id gets one. `new_node` returning `nil` makes none.
 ## Next
 
 * [Nodes](nodes.md) and [Edges](edges.md): what the canvas draws.
-* [Collaboration](collaboration.md): one canvas for everyone on it.
 * [Testing](testing.md): the canvas in `Phoenix.LiveViewTest`.
+
+## Next: collaboration (optional)
+
+For several people on one canvas at once, add Issho, an optional
+dependency. See [Collaboration](collaboration.md).

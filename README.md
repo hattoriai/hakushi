@@ -7,8 +7,9 @@ people pan and zoom.**
 
 Database schemas, workflows, moodboards, mind maps, org charts. You draw
 each node in your own HEEx. People connect them. Your server checks and
-saves each change. With [Issho](https://github.com/hattoriai/issho), many
-people can edit one canvas at the same time.
+saves each change. It is a whole canvas on its own, for one person at a
+time. For many people on one canvas, add
+[Issho](https://github.com/hattoriai/issho) (optional).
 
 Hakushi (白紙) means "a blank sheet of paper". The JavaScript comes
 prebuilt in the Hex package, so your app does not need Node.js for it.
@@ -129,8 +130,6 @@ LiveView and storage.
   in the browser and on the server. → [Edges](guides/edges.md)
 * **The server decides.** Each move, edge, delete and paste goes through
   `on_change` before people see it. → [Changes](guides/changes.md)
-* **Shared canvases.** Live cursors, selections and drags, and your
-  policy for who may do what. → [Collaboration](guides/collaboration.md)
 * **Ready-made kits.** Schema, Flow, Notes, Ink, Shapes and Images in
   one line, or kits of your own. → [Kits](guides/kits.md)
 * **Groups and frames, tidy up, and export as PNG or SVG.**
@@ -143,6 +142,14 @@ LiveView and storage.
 
 The full list is in [Features](guides/features.md).
 
+## Collaboration (optional, with Issho)
+
+With [Issho](https://github.com/hattoriai/issho), several people edit one
+canvas at the same time: live cursors, selections and drags, and your
+policy for who may do what. Issho is an optional dependency: nothing of
+it is compiled unless you add `{:issho, "~> 0.4.2"}`. Without it, the
+canvas is the same, for one person. → [Collaboration](guides/collaboration.md)
+
 ## Try the demo
 
 ```sh
@@ -152,8 +159,9 @@ mix dev
 
 Open http://localhost:4099. The demo is a small project tool with four
 canvases: a schema, a workflow, a moodboard, and two thousand nodes
-(`?n=10000` for more). Open a second window as Kenji (the panel at the
-bottom left) to edit the schema or the workflow together.
+(`?n=10000` for more). The demo has Issho: open a second window as
+Kenji (the panel at the bottom left) to edit the schema or the workflow
+together.
 
 ![Two people on one canvas: Kenji's cursor and name, his avatar in the corner, and the table he is moving, outlined in his colour](https://raw.githubusercontent.com/hattoriai/hakushi/main/media/collaboration.png)
 

@@ -1,5 +1,12 @@
 # Collaboration
 
+> #### Optional {: .info}
+>
+> Collaboration needs [Issho](https://hex.pm/packages/issho), an optional
+> dependency: add `{:issho, "~> 0.4.2"}` to your deps. Without it, nothing
+> of it is compiled, and Hakushi is the same canvas, for one person at a
+> time.
+
 A canvas that several people open at once, as a shared design file is:
 each sees the others' changes as they happen, their cursors, the nodes
 they selected and those they drag, in their colours.

@@ -50,21 +50,24 @@ end
 ```
 
 It gets the change, and a map with the `graph` before the change, the
-`result` after it, `by`, who made it, and the `canvas`'s id. On a shared
-canvas, `by` is an `Issho.Identity`, the same in every component's
-callback: a person (`key` is your actor's, `"user:4"`), an agent (and
-whom it acts for, `on_behalf_of`) or your server (`kind: :service`, from
-`Hakushi.Issho.change/4`). On a canvas alone, it is the canvas's `user`.
-(`user`, the change's `by`, is there too, as in 0.2, and goes in a later
-version.) It returns:
+`result` after it, `by`, who made it, and the `canvas`'s id. On a canvas
+alone, `by` is the canvas's `user`. (`user`, the change's `by`, is there
+too, as in 0.2, and goes in a later version.) It returns:
 
 * `:ok`, or `{:ok, anything}`: the change happens;
 * `{:error, reason}`: it does not, and `reason` (a string) is shown;
 * `{:error, changeset}`: it does not, and the changeset's first error is
   shown.
 
-On a shared canvas, `on_change` runs once for each change, in the room
-(see [Collaboration](collaboration.md)), not once for each person.
+### On a shared canvas, with Issho
+
+On a shared canvas, `by` is an `Issho.Identity`, the same in every
+component's callback: a person (`key` is your actor's, `"user:4"`), an
+agent (and whom it acts for, `on_behalf_of`) or your server
+(`kind: :service`, from `Hakushi.Issho.change/4`).
+
+`on_change` runs once for each change, in the room (see
+[Collaboration](collaboration.md)), not once for each person.
 
 ## What the browser may send
 
@@ -87,14 +90,16 @@ def handle_event("rename", %{"id" => id, "title" => title}, socket) do
 end
 ```
 
-From anywhere (a job, another LiveView), for a shared canvas:
-`Hakushi.Issho.change(MyApp.Issho, topic, change)`.
-
 Or give the canvas a new `graph`: without `issho`, it shows what changed
 from the graph it had.
 
 The app's changes go the same way as a person's, `on_change` included,
 and people cannot undo them.
+
+### From anywhere, with Issho
+
+From anywhere (a job, another LiveView), for a shared canvas:
+`Hakushi.Issho.change(MyApp.Issho, topic, change)`.
 
 ## Undo and redo
 
