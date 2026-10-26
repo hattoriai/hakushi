@@ -411,11 +411,11 @@ if Code.ensure_loaded?(Issho.Engine) do
         [
           Hakushi.Issho.Tools.Read,
           Hakushi.Issho.Tools.Point,
-          Hakushi.Issho.Tools.Add,
+          Hakushi.Issho.Actions.AddNode,
           Hakushi.Issho.Tools.Move,
-          Hakushi.Issho.Tools.Connect,
-          Hakushi.Issho.Tools.Update,
-          Hakushi.Issho.Tools.Delete,
+          Hakushi.Issho.Actions.Connect,
+          Hakushi.Issho.Actions.Update,
+          Hakushi.Issho.Actions.Delete,
           Hakushi.Issho.Tools.Draw,
           Hakushi.Issho.Tools.Shape
         ] ++ image_tools()

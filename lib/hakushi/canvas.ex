@@ -50,10 +50,18 @@ defmodule Hakushi.Canvas do
   alias Phoenix.LiveView.{JS, TagEngine}
 
   alias Hakushi.{Change, Commit, Graph, Kit, Messages, Node, Paper, Rules}
+  alias Hakushi.Issho.Actions
 
   # Issho is optional: a canvas without `issho` never calls it.
   @compile {:no_warn_undefined,
-            [Issho.Live, Issho.Actor, Issho.Awareness, Issho.Join, Hakushi.Issho]}
+            [
+              Issho.Live,
+              Issho.Actor,
+              Issho.Awareness,
+              Issho.Join,
+              Hakushi.Issho,
+              Hakushi.Issho.Actions
+            ]}
 
   # The changes of each person that undo can take back.
   @undo_limit 100
@@ -895,7 +903,7 @@ defmodule Hakushi.Canvas do
         doc ->
           with {:ok, _graph, _change, inverse} <-
                  Commit.check_and_apply(socket.assigns.graph, change, socket.assigns.rules),
-               {:ok, _receipt} <- Issho.Live.transact(socket.assigns.room, doc, [change]) do
+               {:ok, _receipt} <- Actions.commit(socket.assigns.room, doc, change) do
             {:ok, inverse}
           end
       end

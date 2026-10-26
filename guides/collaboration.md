@@ -297,11 +297,22 @@ gives it the canvas's verbs, however it reaches your app:
 | `add_node` | a node of a type the canvas draws, at a place |
 | `move_node` | drags a node to a place: the people see it go |
 | `connect_nodes` | an edge, from a handle to a handle |
-| `update_node` | a node's data, type or lock |
+| `update_node` | a node's data, type, lock, place or size |
 | `delete_items` | nodes, with their edges, and edges |
 | `draw_on_canvas` | strokes of ink, or a ring around a node: the people see the pen draw |
 | `draw_shape` | a shape (rectangle, ellipse, diamond, triangle, text) or a line of its own, with its text and style; or a shape's text, style and rotation |
 | `add_image` | an image from an address of a host the app allows, or a file of the app's by name, with its alt text and caption: the people see its placeholder while it comes |
+
+### The same actions as a person's
+
+`add_node`, `connect_nodes`, `update_node` and `delete_items` are Issho's
+actions (`Issho.Action`, `Hakushi.Issho.Actions`): the same ones a
+person's canvas runs when they drop or draw a node, connect two, edit one
+or delete. Each is the same change, as whoever makes it, under the room's
+policy and the canvas's rules; the room hears each as `"action.done"`,
+by the person or the agent; an agent's `list_actions` (Issho) lists
+them. A drag, an edge's ends or label, and the paper are no actions: they
+change the canvas as a keystroke does a text.
 
 A person may pause or stop an agent at work (Issho's agents bar,
 `Issho.Work`): then it reads the canvas and does nothing else on it, not

@@ -9,6 +9,21 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- A shared canvas's commands are Issho's actions (hattoriai/issho#57,
+  `Hakushi.Issho.Actions`): adding a node, connecting two, changing one
+  and deleting are each one action, which a person's canvas runs (a drop
+  or a drawing, a connect, an edit, a delete) and an agent runs as its
+  tool (`add_node`, `connect_nodes`, `update_node`, `delete_items`, the
+  same names and arguments): the same change, as whoever makes it,
+  heard as `"action.done"`. An agent's pointer goes there first, and a
+  pause on its way changes nothing. `update_node` also takes a node's
+  place and size.
+
+### Changed
+
+- Hakushi takes Issho from its GitHub branch until Issho's next release
+  (its actions), which comes before Hakushi's.
+
 - The Sumi theme follows Sumi's seven themes and their accents: a colour
   of the kits of the accent's hue (a pen, a shape, a note, the primary
   keys) is another in that theme, so that a selection shows. `mix dev`

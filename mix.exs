@@ -63,7 +63,10 @@ defmodule Hakushi.MixProject do
       {:igniter, "~> 0.6", optional: true},
       # Shared canvases (`live`): Issho is the room, its people and their
       # cursors. A canvas without `live` never needs it.
-      {:issho, "~> 0.4.2", optional: true},
+      # A canvas's actions (hattoriai/issho#57) are in Issho's next release,
+      # before Hakushi's: its GitHub branch until then.
+      {:issho,
+       github: "hattoriai/issho", branch: "claude/issho-component-actions", optional: true},
       # MCP for the development app's agents.
       {:sake, "~> 0.4", only: [:dev, :test]},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
@@ -202,11 +205,34 @@ defmodule Hakushi.MixProject do
     end
   end
 
+  # Issho's browser client and style sheets, built from its sources when
+  # its checkout has none (Issho from GitHub, until its next release).
+  defp issho_client(_args) do
+    static = "deps/issho/priv/static"
+
+    unless File.exists?(Path.join(static, "issho.esm.js")) do
+      File.mkdir_p!(static)
+      Mix.Task.run("esbuild", ["issho_client"])
+
+      for sheet <- ~w(issho.css issho-sumi.css),
+          do: File.cp!(Path.join("deps/issho/assets/css", sheet), Path.join(static, sheet))
+    end
+
+    # Where the app finds them (Application.app_dir/2): the build's link to
+    # the checkout's priv, which a checkout with none at its compile lacks.
+    priv = Path.join(Mix.Project.build_path(), "lib/issho/priv")
+
+    unless File.exists?(priv) do
+      File.mkdir_p!(Path.dirname(priv))
+      File.ln_s!(Path.expand("deps/issho/priv"), priv)
+    end
+  end
+
   defp aliases do
     [
       setup: ["deps.get", "cmd --cd assets npm ci", "cmd --cd e2e npm ci"],
       "assets.build": ["hakushi.build"],
-      dev: "run --no-halt dev.exs",
+      dev: [&issho_client/1, "run --no-halt dev.exs"],
       "test.e2e": [&e2e_deps/1, "cmd --cd e2e npm test"],
       "test.js": ["cmd --cd assets npm test"],
       # The compile and the asset build run in a child VM, as in Kotoba and

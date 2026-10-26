@@ -23,6 +23,15 @@ if config_env() == :dev do
       args: esbuild_args ++ ~w(--format=cjs --outfile=../priv/static/hakushi.cjs.js),
       cd: Path.expand("../assets", __DIR__),
       env: %{"NODE_PATH" => nil}
+    ],
+    # Issho's browser client, from its sources while Hakushi takes Issho
+    # from GitHub (its Hex package has it built), with Issho's own
+    # arguments: for `mix dev` and the browser tests.
+    issho_client: [
+      args:
+        ~w(src/index.ts --bundle --minify --target=es2020 --external:phoenix --format=esm --outfile=../priv/static/issho.esm.js),
+      cd: Path.expand("../deps/issho/assets", __DIR__),
+      env: %{"NODE_PATH" => nil}
     ]
 end
 
