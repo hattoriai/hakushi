@@ -81,7 +81,7 @@ defmodule Hakushi.MixProject do
 
   defp description do
     "Canvas for Phoenix: nodes of your own HEEx on an endless sheet, joined by edges, " <>
-      "with every change checked on the server and live collaboration."
+      "with every change checked on the server, and optional live collaboration with Issho."
   end
 
   defp package do
