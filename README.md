@@ -2,6 +2,18 @@
 
 ![Hakushi — Canvas for Phoenix](https://raw.githubusercontent.com/hattoriai/hakushi/main/media/banner.png)
 
+<p>
+  <a href="https://hex.pm/packages/hakushi">
+    <img alt="Hex Version" src="https://img.shields.io/hexpm/v/hakushi.svg">
+  </a>
+  <a href="https://hexdocs.pm/hakushi">
+    <img src="https://img.shields.io/badge/docs-hexdocs-blue" alt="HexDocs">
+  </a>
+  <a href="https://github.com/hattoriai/hakushi/actions">
+    <img alt="CI Status" src="https://github.com/hattoriai/hakushi/actions/workflows/ci.yml/badge.svg">
+  </a>
+</p>
+
 **A canvas for Phoenix LiveView: nodes and edges on an endless sheet that
 people pan and zoom.**
 
