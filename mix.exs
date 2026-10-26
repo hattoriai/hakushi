@@ -63,10 +63,9 @@ defmodule Hakushi.MixProject do
       {:igniter, "~> 0.6", optional: true},
       # Shared canvases (`live`): Issho is the room, its people and their
       # cursors. A canvas without `live` never needs it.
-      # A canvas's actions (hattoriai/issho#57) are in Issho's next release,
-      # before Hakushi's: its GitHub branch until then.
-      {:issho,
-       github: "hattoriai/issho", branch: "claude/issho-component-actions", optional: true},
+      # A canvas's actions (hattoriai/issho#57, and its reads, #59) are in
+      # Issho's next release, before Hakushi's: GitHub until then.
+      {:issho, github: "hattoriai/issho", branch: "claude/issho-action-read", optional: true},
       # MCP for the development app's agents.
       {:sake, "~> 0.4", only: [:dev, :test]},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
