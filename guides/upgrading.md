@@ -1,5 +1,14 @@
 # Upgrading
 
+## To Hakushi 0.7, on Issho 0.5
+
+Update `{:hakushi, "~> 0.7"}`, and `{:issho, "~> 0.5"}` if your app
+shares canvases. A canvas's code stays as it was. A shared canvas's
+commands (adding a node, connecting two, changing one, deleting) are now
+Issho's actions, for a person's canvas and an agent's tool alike: the
+tools keep their names and arguments, and the room hears each as
+`"action.done"`. See [Collaboration](collaboration.md).
+
 ## To Hakushi 0.6
 
 Update `{:hakushi, "~> 0.6"}`. A canvas's code stays as it was. What is

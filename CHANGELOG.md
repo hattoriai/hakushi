@@ -7,6 +7,11 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-26
+
+A shared canvas's commands are Issho's actions: one for a person's canvas
+and an agent's tool alike, seen as the agent does them.
+
 ### Added
 
 - A shared canvas's commands are Issho's actions (hattoriai/issho#57,
@@ -21,8 +26,8 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- Hakushi takes Issho from its GitHub branch until Issho's next release
-  (its actions), which comes before Hakushi's.
+- A shared canvas takes Issho 0.5 (`{:issho, "~> 0.5"}`), for its
+  actions.
 
 - The Sumi theme follows Sumi's seven themes and their accents: a colour
   of the kits of the accent's hue (a pen, a shape, a note, the primary
