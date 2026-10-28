@@ -39,9 +39,14 @@ test("on_viewport hears the view when it comes to rest", async ({ page }) => {
 
 test("focus/3 brings a table to the middle and selects it, and fit/2 shows them all", async ({ page }) => {
   await openCanvas(page, "/");
+  // Zoomed in, each step shown before the next: the zoom it then keeps.
   await page.locator('[data-action="zoom-reset"]').click();
+  await expect.poll(() => zoom(page)).toBe(100);
   await page.locator('[data-action="zoom-in"]').click();
+  await expect.poll(() => zoom(page)).toBeGreaterThan(100);
+  const once = await zoom(page);
   await page.locator('[data-action="zoom-in"]').click();
+  await expect.poll(() => zoom(page)).toBeGreaterThan(once);
   const before = await zoom(page);
 
   await page.locator("#find input").fill("time");
