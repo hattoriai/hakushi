@@ -173,6 +173,8 @@ export interface EdgeMark {
   dim: boolean;
   title: string | null;
   lit: boolean;
+  /** What it is to an older graph, on a canvas that compares: added, removed or changed. */
+  diff: string | null;
 }
 
 /** An end of an edge: a node, and a handle of it. */

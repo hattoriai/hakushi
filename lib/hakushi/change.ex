@@ -233,6 +233,70 @@ defmodule Hakushi.Change do
   defp string_or_nil(value) when is_binary(value), do: value
   defp string_or_nil(_value), do: nil
 
+  @doc """
+  The change as JSON-able maps, with string keys, to keep it (a version
+  of `Hakushi.History`, a log of the app's own). The `data` of its nodes
+  and edges goes as it is, so it must be JSON-able itself; `by` keeps its
+  `id` and `name`.
+  """
+  @spec dump(t()) :: map()
+  def dump(%__MODULE__{} = change) do
+    %{
+      "op" => Atom.to_string(change.op),
+      "nodes" => Enum.map(change.nodes, &dump_item/1),
+      "edges" => Enum.map(change.edges, &dump_item/1)
+    }
+    |> put_dumped("paper", change.paper && dump_item(change.paper))
+    |> put_dumped("by", change.by && dump_item(Map.take(change.by, [:id, :name])))
+  end
+
+  defp put_dumped(map, _key, nil), do: map
+  defp put_dumped(map, key, value), do: Map.put(map, key, value)
+
+  defp dump_item(id) when is_binary(id), do: id
+  defp dump_item(%_{} = struct), do: struct |> Map.from_struct() |> dump_item()
+
+  defp dump_item(%{} = map) do
+    for {key, value} <- map, not is_nil(value) or key in [:parent, :label], into: %{} do
+      {to_string(key), value}
+    end
+  end
+
+  # The keys of the maps of a move, a reconnect and an update, and of `by`.
+  @item_keys ~w(id x y width height parent data type locked label path marker animated source source_handle target target_handle name)a
+
+  @doc "The change of `dump/1`'s maps."
+  @spec load(map()) :: t()
+  def load(%{"op" => op} = map) do
+    op =
+      Enum.find(@ops, &(Atom.to_string(&1) == op)) || raise ArgumentError, "no op #{inspect(op)}"
+
+    nodes = Map.get(map, "nodes", [])
+    edges = Map.get(map, "edges", [])
+
+    %__MODULE__{
+      op: op,
+      nodes: load_items(op, nodes, &Node.new/1),
+      edges: load_items(op, edges, &Edge.new/1),
+      paper: map["paper"] && Paper.new(map["paper"]),
+      by: map["by"] && load_map(map["by"])
+    }
+  end
+
+  # An add's and a connect's nodes and edges are whole; a delete's are ids;
+  # the others' are maps of the keys that change.
+  defp load_items(op, items, whole) when op in [:add, :connect], do: Enum.map(items, whole)
+  defp load_items(:delete, ids, _whole), do: ids
+  defp load_items(_op, items, _whole), do: Enum.map(items, &load_map/1)
+
+  defp load_map(map) do
+    for {key, value} <- map,
+        atom = Enum.find(@item_keys, &(Atom.to_string(&1) == key)),
+        into: %{} do
+      {atom, value}
+    end
+  end
+
   @doc false
   def ops, do: @ops
 end

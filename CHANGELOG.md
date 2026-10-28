@@ -52,6 +52,14 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   which call `on_menu`. The menu key and Shift+F10 open it from the
   keyboard. `Hakushi.Test.menu/3` and `pick/4` open it and choose in it.
   See the Navigation guide.
+- Versions: `Hakushi.Graph.compare/2` says what was added, removed,
+  moved and changed from one graph to another; a canvas with `compare`
+  (an older graph) shows its graph against it, read-only, with what was
+  removed as ghosts (`data-diff`, `--hakushi-diff-*`,
+  `Hakushi.Test.diff/2`); `Hakushi.History` keeps a canvas's versions,
+  who made each change and when, gives any version back, and goes to
+  JSON (`dump/1`, `load/1`), as does a change (`Hakushi.Change.dump/1`,
+  `load/1`). See the Versions guide.
 
 ### Changed
 

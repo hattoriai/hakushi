@@ -773,6 +773,87 @@ defmodule Hakushi.Graph do
   end
 
   @doc """
+  How one graph became another, for people to see (a visual diff, the
+  versions of a canvas): the ids of the nodes and edges `added` and
+  `removed`, those `moved` (a node's place or size), and those `changed`,
+  with the fields that changed (a node's `:type`, `:data`, `:locked` or
+  `:parent`; an edge's ends, `:label`, `:path`, `:marker`, `:animated` or
+  `:data`). A node that moved and changed is in both. `paper` is whether
+  the paper changed.
+
+      iex> old = Hakushi.Graph.new(nodes: [%{id: "a"}, %{id: "b", data: %{n: 1}}])
+      iex> new = Hakushi.Graph.new(nodes: [%{id: "b", x: 10, data: %{n: 2}}, %{id: "c"}])
+      iex> Hakushi.Graph.compare(old, new)
+      %{
+        added: %{nodes: ["c"], edges: []},
+        removed: %{nodes: ["a"], edges: []},
+        moved: ["b"],
+        changed: %{nodes: %{"b" => [:data]}, edges: %{}},
+        paper: false
+      }
+  """
+  @spec compare(t(), t()) :: %{
+          added: %{nodes: [Node.id()], edges: [Edge.id()]},
+          removed: %{nodes: [Node.id()], edges: [Edge.id()]},
+          moved: [Node.id()],
+          changed: %{nodes: %{Node.id() => [atom()]}, edges: %{Edge.id() => [atom()]}},
+          paper: boolean()
+        }
+  def compare(%__MODULE__{} = old, %__MODULE__{} = new) do
+    node_fields = [:type, :data, :locked, :parent]
+
+    edge_fields = [
+      :source,
+      :source_handle,
+      :target,
+      :target_handle,
+      :label,
+      :path,
+      :marker,
+      :animated,
+      :data
+    ]
+
+    %{
+      added: %{
+        nodes: Enum.reject(new.node_order, &Map.has_key?(old.nodes, &1)),
+        edges: Enum.reject(new.edge_order, &Map.has_key?(old.edges, &1))
+      },
+      removed: %{
+        nodes: Enum.reject(old.node_order, &Map.has_key?(new.nodes, &1)),
+        edges: Enum.reject(old.edge_order, &Map.has_key?(new.edges, &1))
+      },
+      moved: moved_nodes(old, new),
+      changed: %{
+        nodes: changed_fields(old.nodes, new.nodes, new.node_order, node_fields),
+        edges: changed_fields(old.edges, new.edges, new.edge_order, edge_fields)
+      },
+      paper: old.paper != new.paper
+    }
+  end
+
+  defp moved_nodes(old, new) do
+    box = [:x, :y, :width, :height]
+
+    for id <- new.node_order,
+        before = old.nodes[id],
+        before != nil,
+        Map.take(before, box) != Map.take(new.nodes[id], box),
+        do: id
+  end
+
+  defp changed_fields(old, new, order, fields) do
+    for id <- order,
+        before = old[id],
+        before != nil,
+        now = new[id],
+        changed = Enum.filter(fields, &(Map.fetch!(before, &1) != Map.fetch!(now, &1))),
+        changed != [],
+        into: %{},
+        do: {id, changed}
+  end
+
+  @doc """
   The graph as JSON-able maps, with string keys: for a column of the
   app's database (see `Hakushi.Graph.Type`) or a file. `data` goes as it
   is, so it must be JSON-able itself.

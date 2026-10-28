@@ -127,6 +127,7 @@ defmodule Hakushi.MixProject do
         "guides/layout.md",
         "guides/changes.md",
         "guides/marks.md",
+        "guides/versions.md",
         "guides/collaboration.md",
         "guides/upgrading.md",
         "guides/navigation.md",
@@ -150,6 +151,7 @@ defmodule Hakushi.MixProject do
           "guides/layout.md",
           "guides/changes.md",
           "guides/marks.md",
+          "guides/versions.md",
           "guides/upgrading.md",
           "guides/navigation.md",
           "guides/testing.md",
@@ -188,6 +190,7 @@ defmodule Hakushi.MixProject do
         ],
         Graph: [
           Hakushi.Graph,
+          Hakushi.History,
           Hakushi.Node,
           Hakushi.Edge,
           Hakushi.Change,

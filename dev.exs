@@ -756,6 +756,25 @@ defmodule HakushiDev.Store do
 
   def put(name, room, graph), do: Agent.update(__MODULE__, &Map.put(&1, key(name, room), graph))
 
+  @doc "The history of a canvas (Hakushi.History), since its first change here."
+  def history(name, room) do
+    Agent.get(__MODULE__, &Map.get(&1, key(name, room) <> "#history")) ||
+      Hakushi.History.new(get(name, room))
+  end
+
+  @doc "A change of a canvas, into its history, from the graph it changed."
+  def record(name, room, change, %{graph: before, by: by}) do
+    Agent.update(__MODULE__, fn state ->
+      key = key(name, room) <> "#history"
+      history = Map.get_lazy(state, key, fn -> Hakushi.History.new(before) end)
+
+      case Hakushi.History.record(history, change, by: by && by.name) do
+        {:ok, history} -> Map.put(state, key, history)
+        {:error, _reason, _id} -> Map.put(state, key, Hakushi.History.new(before))
+      end
+    end)
+  end
+
   def key(name, nil), do: name
   def key(name, room), do: name <> ":" <> room
 
@@ -923,6 +942,9 @@ defmodule HakushiDev.Layouts do
           .top .crumb { color: var(--atelier-muted); font-size: 0.875rem; }
           .top .spacer { flex: 1; }
           .top .hint { color: var(--atelier-muted); font-size: 0.8125rem; }
+          .versions .version { display: grid; gap: 2px; width: 100%; text-align: left; font: inherit; padding: 0.5rem 0.6rem; border: 1px solid var(--atelier-line); border-radius: 8px; background: var(--atelier-card); color: inherit; cursor: pointer; }
+          .versions .version small { color: var(--atelier-muted); font-size: 0.75rem; }
+          .versions .version.chosen { border-color: var(--atelier-accent); }
           .top .find input { font: inherit; font-size: 0.8125rem; padding: 0.3rem 0.5rem; border: 1px solid var(--atelier-line, #ddd); border-radius: 6px; background: transparent; color: inherit; width: 9rem; }
           .button { display: inline-flex; align-items: center; gap: 0.375rem; height: 2rem; padding: 0 0.75rem; border: 1px solid var(--atelier-line); border-radius: 7px; background: var(--atelier-card); color: var(--atelier-ink); font: inherit; font-size: 0.8125rem; font-weight: 500; }
           .button.primary { background: var(--atelier-accent); border-color: transparent; color: #fff; }
@@ -1439,19 +1461,42 @@ defmodule HakushiDev.WorkflowLive do
      assign(socket,
        graph: HakushiDev.Store.get("workflow", socket.assigns.room),
        kinds: @kinds,
-       run: nil
+       run: nil,
+       history: nil,
+       then: nil
      )}
   end
 
-  def on_change(_change, %{result: result}, room) do
+  def on_change(change, %{result: result} = context, room) do
     HakushiDev.Store.put("workflow", room, result)
+    HakushiDev.Store.record("workflow", room, change, context)
     :ok
+  end
+
+  # The versions of the workflow (Hakushi.History): a list of them, and the
+  # workflow as it is now against the one chosen (the canvas's compare).
+  @impl true
+  def handle_event("history", _params, socket) do
+    case socket.assigns.history do
+      nil ->
+        {:noreply,
+         assign(socket,
+           history: HakushiDev.Store.history("workflow", socket.assigns.room),
+           then: nil
+         )}
+
+      _open ->
+        {:noreply, assign(socket, history: nil, then: nil)}
+    end
+  end
+
+  def handle_event("then", %{"version" => version}, socket) do
+    {:noreply, assign(socket, :then, String.to_integer(version))}
   end
 
   # A run of the workflow, step by step, shown with marks (Hakushi.Live.mark/3),
   # which are not saved: each step waits, runs (with its progress) and is
   # done, and the edges it takes run.
-  @impl true
   def handle_event("run", _params, socket) do
     graph =
       Hakushi.Issho.graph(HakushiDev.Issho, topic("workflow", socket.assigns.room)) ||
@@ -1520,7 +1565,8 @@ defmodule HakushiDev.WorkflowLive do
     <.app page={:workflow} me={@me} query={@query} title="Workflow" crumb="When an invoice is paid">
       <:actions>
         <span class="hint">Live · ran 3 minutes ago</span>
-        <button type="button" class="button" phx-click="run" disabled={@run != nil}>Run</button>
+        <button type="button" class="button" phx-click="run" disabled={@run != nil or @history != nil}>Run</button>
+        <button type="button" class="button" phx-click="history" aria-pressed={to_string(@history != nil)}>History</button>
         <span class="button primary"><.icon name="check" /> Published</span>
       </:actions>
       <aside :if={!@readonly} class="palette">
@@ -1530,7 +1576,42 @@ defmodule HakushiDev.WorkflowLive do
           <div>{label}<small>{detail(kind)}</small></div>
         </.canvas_item>
       </aside>
+      <aside :if={@history} class="palette versions" aria-label="Versions">
+        <p :if={Hakushi.History.versions(@history) == []}>No changes yet. Move a step, then look again.</p>
+        <button
+          :for={v <- Enum.reverse(Hakushi.History.versions(@history))}
+          type="button"
+          class={["version", @then == v.version - 1 && "chosen"]}
+          phx-click="then"
+          phx-value-version={v.version - 1}
+          data-version={v.version}
+        >
+          <strong>Before version {v.version}</strong>
+          <small>{v.op} · {length(v.nodes)} nodes · {v.by || "the app"}</small>
+        </button>
+      </aside>
       <.canvas
+        :if={@history && @then}
+        id="workflow-then"
+        graph={Hakushi.History.graph(@history)}
+        compare={Hakushi.History.at(@history, @then)}
+        background={:dots}
+        label="The workflow now, against a version"
+      >
+        <:node :let={node}>
+          <div class="step" data-status={node.data[:status] || node.data["status"]} style={"--kind: #{kind_color(node.type)}"}>
+            <div class="body">
+              <span class="kind"><.icon name={node.type} /></span>
+              <div>
+                <small>{kind_label(node.type)}</small>
+                <strong>{node.data[:title] || node.data["title"]}</strong>
+              </div>
+            </div>
+          </div>
+        </:node>
+      </.canvas>
+      <.canvas
+        :if={!(@history && @then)}
         id="workflow"
         graph={@graph}
         on_change={&on_change(&1, &2, @room)}
