@@ -101,6 +101,46 @@ agent (and whom it acts for, `on_behalf_of`) or your server
 `on_change` runs once for each change, in the room (see
 [Collaboration](collaboration.md)), not once for each person.
 
+## Hearing of the changes
+
+`on_change` is where the app checks and saves a change. A process that
+only needs to hear of them (to keep its own copy of the graph, run a
+flow again, index it, or hand the canvas's news to a parent LiveView)
+takes `notify`:
+
+```heex
+<.canvas id="flow" graph={@graph} on_change={&Flows.change(&1, &2, @flow)} notify={self()} />
+```
+
+```elixir
+def handle_info({Hakushi, "flow", {:changed, _change, graph}}, socket),
+  do: {:noreply, assign(socket, :graph, graph)}
+
+def handle_info({Hakushi, "flow", {:selected, %{nodes: nodes}}}, socket),
+  do: {:noreply, assign(socket, :selected, nodes)}
+
+def handle_info({Hakushi, "flow", _event}, socket), do: {:noreply, socket}
+```
+
+`notify` is a pid, or a name (`MyApp.FlowRunner`, `{:global, name}`,
+`{:via, Registry, key}`): a canvas inside a LiveView of its own tells the
+LiveView around it (give it the parent's pid), and a process that runs a
+flow hears each change of its canvas. Nothing is sent when no process
+has the name. It gets `{Hakushi, id, event}`, where `id` is the canvas's
+and `event` is one of:
+
+| `event` | when |
+| --- | --- |
+| `{:changed, change, graph}` | a change applied: the change as it applied (a delete lists its edges) and the graph after it |
+| `{:selected, selection}` | the person selected other nodes or edges, as `on_select` hears it |
+| `{:viewport, viewport}` | their view came to rest, as `on_viewport` hears it |
+
+Every change that applied is news: the person's, an undo, the app's own
+(`Hakushi.Live.change/2`). On a shared canvas, each canvas that notifies
+hears everyone's, once the room has them; `on_change` still runs once
+for each change, in the room. A change refused is not news, nor a new
+`graph` the app gives the canvas, which it has already.
+
 ## What the browser may send
 
 The browser sends moves, edges, ends of edges, deletes and labels, which the server

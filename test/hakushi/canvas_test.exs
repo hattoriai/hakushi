@@ -319,6 +319,66 @@ defmodule Hakushi.CanvasTest do
     end
   end
 
+  describe "notify" do
+    test "the app's process hears of each change, selection and view" do
+      {view, _html} = open("?notify=true")
+
+      assert :ok = move(view, "schema", "note", {5, 6})
+      assert_receive {Hakushi, "schema", {:changed, %Hakushi.Change{op: :move}, graph}}
+      assert %{x: 5, y: 6} = Hakushi.Graph.node(graph, "note")
+
+      # Undone, and the app's own: changes as any.
+      assert :ok = undo(view, "schema")
+      assert_receive {Hakushi, "schema", {:changed, %Hakushi.Change{op: :move}, graph}}
+      assert %{x: 0} = Hakushi.Graph.node(graph, "note")
+      render_click(view, "app_change", %{})
+      assert_receive {Hakushi, "schema", {:changed, %Hakushi.Change{by: nil}, _graph}}
+
+      # A change refused is not news.
+      assert {:error, _message} = move(view, "schema", "pinned", {1, 1})
+      refute_receive {Hakushi, "schema", {:changed, _change, _graph}}
+
+      assert :ok = select(view, "schema", ["users"])
+      assert_receive {Hakushi, "schema", {:selected, %{nodes: ["users"], edges: []}}}
+      assert :ok = viewport(view, "schema", {0, 0, 640, 480}, 2)
+      assert_receive {Hakushi, "schema", {:viewport, %{width: 640, zoom: 2}}}
+    end
+
+    test "a process by its name, and none when no process has it" do
+      Process.register(self(), :hakushi_notified)
+
+      socket = fn notify ->
+        %Phoenix.LiveView.Socket{
+          assigns: %{
+            __changed__: %{},
+            id: "named",
+            graph: Hakushi.Graph.new(),
+            on_select: nil,
+            notify: notify
+          }
+        }
+      end
+
+      select = %{"nodes" => [], "edges" => []}
+      Hakushi.Canvas.handle_event("hakushi:select", select, socket.(:hakushi_notified))
+      assert_receive {Hakushi, "named", {:selected, %{nodes: []}}}
+
+      assert {:noreply, _socket} =
+               Hakushi.Canvas.handle_event("hakushi:select", select, socket.(:no_one_has_it))
+
+      # A canvas that notifies hears what the browser selects and sees.
+      html =
+        render_component(&Hakushi.Components.canvas/1,
+          id: "named",
+          graph: Hakushi.Graph.new(),
+          notify: :hakushi_notified
+        )
+
+      assert html =~ "&quot;reportSelect&quot;:true"
+      assert html =~ "&quot;reportView&quot;:true"
+    end
+  end
+
   describe "the app and the view" do
     test "on_select hears what the person selects, of what the canvas has" do
       {view, _html} = open()

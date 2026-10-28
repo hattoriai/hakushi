@@ -80,6 +80,20 @@ defmodule Hakushi.SharedCanvasTest do
     assert %{x: 70, y: 0} = Enum.find(nodes(ada, "schema"), &(&1.id == "note"))
   end
 
+  test "each canvas that notifies hears everyone's changes" do
+    topic = topic()
+    ada = open(topic, "ada", self(), "&notify=true")
+    grace = open(topic, "grace")
+
+    assert :ok = move(grace, "schema", "note", {31, 32})
+    settle(ada)
+
+    assert_receive {Hakushi, "schema",
+                    {:changed, %Hakushi.Change{op: :move, by: %{id: "grace"}}, graph}}
+
+    assert %{x: 31} = Hakushi.Graph.node(graph, "note")
+  end
+
   test "people on one topic share the changes, in one room" do
     topic = topic()
     ada = open(topic, "ada")

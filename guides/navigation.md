@@ -90,8 +90,9 @@ def handle_info({:viewport, viewport}, socket),
 A selection is a map of the `canvas`, and the ids of the `nodes` and the
 `edges` selected. A viewport is a map of the `canvas`, the part of the
 canvas on the screen (`x`, `y`, `width`, `height`, in the canvas's
-terms) and the `zoom`. A canvas without them sends neither, and on a
-shared canvas each person's are their own.
+terms) and the `zoom`. A canvas without them (or `notify`, which hears
+them too: see [Changes](changes.md#hearing-of-the-changes)) sends
+neither, and on a shared canvas each person's are their own.
 
 From the LiveView, `Hakushi.Live` moves the view and the selection:
 

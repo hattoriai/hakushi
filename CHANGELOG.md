@@ -27,6 +27,12 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   goes by the rules and `on_change` again, the person sees it and undoes
   it, and on a shared canvas everyone sees it, whoever made the first. See
   the Changes guide.
+- `notify`: a process that hears of the canvas (a pid, or a name),
+  sent `{Hakushi, id, event}` for each change that applied (`{:changed,
+  change, graph}`: the person's, an undo, the app's, and on a shared
+  canvas everyone's), each selection and each view at rest. For a
+  canvas in a LiveView of its own, a process that runs a flow, a copy of
+  the graph. See the Changes guide.
 
 ### Changed
 
