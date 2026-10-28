@@ -33,6 +33,14 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   canvas everyone's), each selection and each view at rest. For a
   canvas in a LiveView of its own, a process that runs a flow, a copy of
   the graph. See the Changes guide.
+- Marks: what a node or an edge is now, which is not saved
+  (`Hakushi.Live.mark/3`, `mark_edges/3`, `clear_marks/1`): a status
+  (`:running`, `:done`, `:failed`, `:warning`, `:waiting`, or the app's
+  own), a badge, a bar of progress, a highlight, dim, words, classes. The
+  spotlight (`Hakushi.Live.spotlight/2`) fades all but some nodes and
+  edges. Not part of the graph: `on_change` never sees them, and they go
+  with the page. `--hakushi-mark-*` colour them, and
+  `Hakushi.Test.marks/2` reads them. See the Marks guide.
 
 ### Changed
 

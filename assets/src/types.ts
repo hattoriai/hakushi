@@ -159,6 +159,18 @@ export interface EdgeModel {
   label: string | null;
   marker: "arrow" | "dot" | "none";
   animated: boolean;
+  /** The app's mark of it (Hakushi.Live.mark_edges/3), and whether the spotlight is on it. */
+  mark: EdgeMark;
+}
+
+/** What an edge is now, as the app marks it: not saved, not in the graph. */
+export interface EdgeMark {
+  status: string | null;
+  highlight: boolean;
+  color: string | null;
+  dim: boolean;
+  title: string | null;
+  lit: boolean;
 }
 
 /** An end of an edge: a node, and a handle of it. */

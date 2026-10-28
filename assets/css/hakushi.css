@@ -78,6 +78,15 @@
   /* The kits' second colour, beside the accent: Schema's primary keys and
      Flow's conditions. */
   --hakushi-kit-alt: #c58a12;
+  /* The marks of the app (Hakushi.Live.mark/3): the colour of each status,
+     and of a highlight. */
+  --hakushi-mark-running: var(--hakushi-accent);
+  --hakushi-mark-done: var(--hakushi-ink-green);
+  --hakushi-mark-failed: var(--hakushi-ink-red);
+  --hakushi-mark-warning: var(--hakushi-ink-orange);
+  --hakushi-mark-waiting: var(--hakushi-muted);
+  --hakushi-mark-highlight: var(--hakushi-accent);
+  --hakushi-mark-dim: 0.32;
 }
 
 /*
@@ -2093,4 +2102,124 @@
 @media (max-width: 40rem) {
   .hakushi-embed-subtitle { display: none; }
   .hakushi-embed-bar { flex-wrap: wrap; }
+}
+
+/* -- Marks (Hakushi.Live.mark/3) -------------------------------------------
+   What a node or an edge is now, as the app marks it: a ring in the colour
+   of its status or highlight, a badge, a bar of progress; faded when dim,
+   or out of the spotlight. A selection's ring wins over a mark's. */
+
+.hakushi-node[data-mark-status="running"],
+.hakushi-edge[data-mark-status="running"] {
+  --hakushi-mark: var(--hakushi-mark-running);
+}
+
+.hakushi-node[data-mark-status="done"],
+.hakushi-edge[data-mark-status="done"] {
+  --hakushi-mark: var(--hakushi-mark-done);
+}
+
+.hakushi-node[data-mark-status="failed"],
+.hakushi-edge[data-mark-status="failed"] {
+  --hakushi-mark: var(--hakushi-mark-failed);
+}
+
+.hakushi-node[data-mark-status="warning"],
+.hakushi-edge[data-mark-status="warning"] {
+  --hakushi-mark: var(--hakushi-mark-warning);
+}
+
+.hakushi-node[data-mark-status="waiting"],
+.hakushi-edge[data-mark-status="waiting"] {
+  --hakushi-mark: var(--hakushi-mark-waiting);
+}
+
+.hakushi-node:is([data-mark-status="running"], [data-mark-status="done"], [data-mark-status="failed"], [data-mark-status="warning"], [data-mark-highlight]):not([data-ui-selected], [data-ui-peer]) {
+  box-shadow: 0 0 0 2px var(--hakushi-mark, var(--hakushi-mark-highlight));
+}
+
+.hakushi-node[data-mark-status="waiting"]:not([data-ui-selected], [data-ui-peer]) {
+  outline: 2px dashed var(--hakushi-mark);
+  outline-offset: 2px;
+}
+
+.hakushi-node[data-mark-status="running"]:not([data-ui-selected], [data-ui-peer]) {
+  animation: hakushi-running 1.4s ease-in-out infinite;
+}
+
+@keyframes hakushi-running {
+  50% {
+    box-shadow: 0 0 0 2px var(--hakushi-mark), 0 0 0 6px color-mix(in oklab, var(--hakushi-mark) 22%, transparent);
+  }
+}
+
+.hakushi-node[data-mark-dim],
+.hakushi[data-spotlight] .hakushi-node:not([data-lit], [data-ui-selected]) {
+  opacity: var(--hakushi-mark-dim);
+  transition: opacity var(--hakushi-transition);
+}
+
+.hakushi-mark-badge {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  z-index: 1;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  border-radius: 9px;
+  background: var(--hakushi-mark, var(--hakushi-mark-highlight));
+  color: var(--hakushi-accent-text);
+  font: 600 11px/18px var(--hakushi-font);
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.hakushi-mark-progress {
+  position: absolute;
+  right: 6px;
+  bottom: 3px;
+  left: 6px;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: color-mix(in oklab, var(--hakushi-mark, var(--hakushi-mark-running)) 20%, transparent);
+  pointer-events: none;
+}
+
+.hakushi-mark-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--hakushi-mark, var(--hakushi-mark-running));
+  transition: width 200ms ease-out;
+}
+
+.hakushi-edge:is([data-mark-status], [data-mark-highlight]):not([data-ui-selected]) .hakushi-edge-line {
+  stroke: var(--hakushi-mark, var(--hakushi-mark-highlight));
+  stroke-width: calc(var(--hakushi-edge-width) + 0.5px);
+}
+
+.hakushi-edge[data-mark-status="running"] .hakushi-edge-line {
+  stroke-dasharray: 6 4;
+  animation: hakushi-flow 0.6s linear infinite;
+}
+
+.hakushi-edge[data-mark-status="waiting"] .hakushi-edge-line {
+  stroke-dasharray: 3 4;
+}
+
+.hakushi-edge[data-mark-dim],
+.hakushi-edge-label[data-mark-dim],
+.hakushi[data-spotlight] :is(.hakushi-edge, .hakushi-edge-label):not([data-lit], [data-ui-selected]) {
+  opacity: var(--hakushi-mark-dim);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hakushi-node[data-mark-status="running"],
+  .hakushi-edge[data-mark-status="running"] .hakushi-edge-line {
+    animation: none;
+  }
 }

@@ -1415,12 +1415,74 @@ defmodule HakushiDev.WorkflowLive do
   @impl true
   def mount(_params, _session, socket) do
     {:ok,
-     assign(socket, graph: HakushiDev.Store.get("workflow", socket.assigns.room), kinds: @kinds)}
+     assign(socket,
+       graph: HakushiDev.Store.get("workflow", socket.assigns.room),
+       kinds: @kinds,
+       run: nil
+     )}
   end
 
   def on_change(_change, %{result: result}, room) do
     HakushiDev.Store.put("workflow", room, result)
     :ok
+  end
+
+  # A run of the workflow, step by step, shown with marks (Hakushi.Live.mark/3),
+  # which are not saved: each step waits, runs (with its progress) and is
+  # done, and the edges it takes run.
+  @impl true
+  def handle_event("run", _params, socket) do
+    graph =
+      Hakushi.Issho.graph(HakushiDev.Issho, topic("workflow", socket.assigns.room)) ||
+        socket.assigns.graph
+
+    order = run_order(graph)
+    Hakushi.Live.clear_marks("workflow")
+    Hakushi.Live.mark("workflow", order, status: :waiting)
+    send(self(), :run)
+    {:noreply, assign(socket, :run, %{graph: graph, order: order, progress: 0.0})}
+  end
+
+  @impl true
+  def handle_info(:run, %{assigns: %{run: %{order: []}}} = socket),
+    do: {:noreply, assign(socket, :run, nil)}
+
+  def handle_info(
+        :run,
+        %{assigns: %{run: %{order: [id | rest], progress: progress} = run}} = socket
+      ) do
+    edges = for edge <- Hakushi.Graph.edges_of(run.graph, id), edge.source == id, do: edge.id
+
+    run =
+      if progress >= 1 do
+        Hakushi.Live.mark("workflow", id, status: :done, progress: nil, badge: "✓")
+        Hakushi.Live.mark_edges("workflow", edges, status: :done)
+        %{run | order: rest, progress: 0.0}
+      else
+        Hakushi.Live.mark("workflow", id, status: :running, progress: progress)
+        Hakushi.Live.mark_edges("workflow", edges, status: :running)
+        %{run | progress: progress + 0.5}
+      end
+
+    Process.send_after(self(), :run, 150)
+    {:noreply, assign(socket, :run, run)}
+  end
+
+  # The steps from the trigger on, each after the steps before it.
+  defp run_order(graph) do
+    starts = for node <- Hakushi.Graph.nodes(graph), node.type == "trigger", do: node.id
+    walk(graph, starts, [])
+  end
+
+  defp walk(_graph, [], seen), do: Enum.reverse(seen)
+
+  defp walk(graph, [id | rest], seen) do
+    if id in seen do
+      walk(graph, rest, seen)
+    else
+      next = for edge <- Hakushi.Graph.edges_of(graph, id), edge.source == id, do: edge.target
+      walk(graph, rest ++ next, [id | seen])
+    end
   end
 
   def new_node(kind, {x, y}) when is_map_key(@kinds, kind) do
@@ -1442,6 +1504,7 @@ defmodule HakushiDev.WorkflowLive do
     <.app page={:workflow} me={@me} query={@query} title="Workflow" crumb="When an invoice is paid">
       <:actions>
         <span class="hint">Live · ran 3 minutes ago</span>
+        <button type="button" class="button" phx-click="run" disabled={@run != nil}>Run</button>
         <span class="button primary"><.icon name="check" /> Published</span>
       </:actions>
       <aside :if={!@readonly} class="palette">

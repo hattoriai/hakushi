@@ -379,6 +379,108 @@ defmodule Hakushi.CanvasTest do
     end
   end
 
+  describe "marks" do
+    defp mark(view, fun, ids, mark),
+      do: render_click(view, "app_mark", %{"fun" => fun, "ids" => ids, "mark" => mark})
+
+    test "the app marks nodes, adds to their marks, and takes them away" do
+      {view, _html} = open()
+      mark(view, "nodes", "users", %{"status" => "running", "badge" => 3, "progress" => 0.25})
+
+      assert %{nodes: %{"users" => %{status: "running", badge: "3", progress: 0.25}}} =
+               marks(view, "schema")
+
+      html = render(view)
+      assert html =~ ~s(data-mark-status="running")
+      assert html =~ ~s(role="progressbar")
+
+      # A mark adds to the node's; a key given nil goes.
+      mark(view, "nodes", ["users", "orders"], %{"status" => "done", "progress" => nil})
+
+      assert %{nodes: %{"users" => users, "orders" => %{status: "done"}}} = marks(view, "schema")
+      assert users == %{status: "done", badge: "3"}
+
+      mark(view, "nodes", "users", nil)
+      assert %{nodes: nodes} = marks(view, "schema")
+      assert Map.keys(nodes) == ["orders"]
+    end
+
+    test "a highlight of a colour, dim, words and classes" do
+      {view, _html} = open()
+
+      mark(view, "nodes", "note", %{
+        "highlight" => "#e5484d",
+        "dim" => true,
+        "title" => "Late",
+        "class" => "late"
+      })
+
+      assert %{nodes: %{"note" => %{highlight: "#e5484d", dim: true, title: "Late"}}} =
+               marks(view, "schema")
+
+      assert render(view) =~ ~r/class="hakushi-node late"/
+    end
+
+    test "edges are marked, and the marks are not the graph's" do
+      {view, _html} = open("?notify=true")
+      mark(view, "edges", "fk", %{"status" => "running", "highlight" => true})
+      assert %{edges: %{"fk" => %{status: "running", highlight: true}}} = marks(view, "schema")
+      # Not a change: on_change and notify hear nothing of it.
+      refute_receive {:on_change, _change, _context}
+      refute_receive {Hakushi, "schema", {:changed, _change, _graph}}
+
+      # A node that moves keeps its mark.
+      mark(view, "nodes", "note", %{"badge" => "!"})
+      assert :ok = move(view, "schema", "note", {9, 9})
+      assert %{nodes: %{"note" => %{badge: "!"}}} = marks(view, "schema")
+    end
+
+    test "the spotlight fades the rest, and clear_marks takes every mark away" do
+      {view, _html} = open()
+
+      render_click(view, "app_mark", %{
+        "fun" => "spotlight",
+        "nodes" => ["users", "orders"],
+        "edges" => ["fk"]
+      })
+
+      assert render(view) =~ ~s(data-spotlight="true")
+
+      assert %{
+               nodes: %{"users" => %{lit: true}, "orders" => %{lit: true}},
+               edges: %{"fk" => %{lit: true}}
+             } =
+               marks(view, "schema")
+
+      mark(view, "nodes", "note", %{"status" => "failed"})
+      render_click(view, "app_mark", %{"fun" => "clear"})
+      assert marks(view, "schema") == %{nodes: %{}, edges: %{}}
+      refute render(view) =~ "data-spotlight"
+    end
+
+    test "a mark is checked" do
+      assert_raise ArgumentError, ~r/no :colour/, fn ->
+        Hakushi.Live.mark("c", "a", colour: "red")
+      end
+
+      assert_raise ArgumentError, ~r/status/, fn ->
+        Hakushi.Live.mark("c", "a", status: "Not OK")
+      end
+
+      assert_raise ArgumentError, ~r/progress/, fn -> Hakushi.Live.mark("c", "a", progress: 2) end
+
+      assert_raise ArgumentError, ~r/highlight/, fn ->
+        Hakushi.Live.mark("c", "a", highlight: "red; background: url(x)")
+      end
+
+      assert_raise ArgumentError, ~r/no \[:badge\]/, fn ->
+        Hakushi.Live.mark_edges("c", "e", badge: 1)
+      end
+
+      assert :ok = Hakushi.Live.mark("c", "a", highlight: "oklch(70% 0.1 200)")
+    end
+  end
+
   describe "the app and the view" do
     test "on_select hears what the person selects, of what the canvas has" do
       {view, _html} = open()

@@ -37,6 +37,7 @@ handles, the controls), and the default node.
 | `--hakushi-minimap-node`, `--hakushi-minimap-mask` | the nodes in the minimap, and the veil outside the view |
 | `--hakushi-radius`, `--hakushi-transition` | the controls' radius, and the speed of the small transitions |
 | `--hakushi-embed-height` | the height of an embed frame (`canvas_embed/1`) whose parent has none, `24rem` |
+| `--hakushi-mark-running`, `--hakushi-mark-done`, `--hakushi-mark-failed`, `--hakushi-mark-warning`, `--hakushi-mark-waiting`, `--hakushi-mark-highlight`, `--hakushi-mark-dim` | the marks of the app (see [Marks](marks.md)): the colour of each status and of a highlight, and how faded what is dim is |
 
 The kits have their own: Ink's `--hakushi-ink-<colour>` and
 `--hakushi-highlighter-opacity`; Shapes' `--hakushi-shape-<colour>` (ink,

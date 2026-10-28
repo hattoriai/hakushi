@@ -742,6 +742,14 @@ export class Canvas {
       label: element.dataset.label ?? null,
       marker: (element.dataset.marker as EdgeModel["marker"]) || "arrow",
       animated: element.dataset.animated === "true",
+      mark: {
+        status: element.dataset.markStatus ?? null,
+        highlight: element.dataset.markHighlight === "true",
+        color: element.dataset.markColor ?? null,
+        dim: element.dataset.markDim === "true",
+        title: element.dataset.markTitle ?? null,
+        lit: element.dataset.lit === "true",
+      },
     };
     this.edges.set(id, edge);
     this.index(edge);
@@ -1092,6 +1100,7 @@ export class Canvas {
       const g = this.gesture;
       toggle(view.g, "data-ui-gone", this.gone.has(id) || (g?.kind === "connect" && g.reconnect === id));
       toggle(view.g, "data-animated", edge.animated);
+      this.drawMark(view, edge);
       toggle(view.g, "data-ui-faint", !!(this.nodes.get(edge.source)?.faint || this.nodes.get(edge.target)?.faint));
       if (edge.label) {
         if (!view.label) {
@@ -1102,6 +1111,8 @@ export class Canvas {
         if (view.label.textContent !== edge.label) view.label.textContent = edge.label;
         view.label.style.translate = `${path.label.x}px ${path.label.y}px`;
         toggle(view.label, "data-ui-selected", this.selectedEdges.has(id));
+        toggle(view.label, "data-mark-dim", edge.mark.dim);
+        toggle(view.label, "data-lit", edge.mark.lit);
       } else if (view.label) {
         view.label.remove();
         view.label = null;
@@ -1190,6 +1201,26 @@ export class Canvas {
   /** A selected edge, or an edge of a selected node: drawn above the nodes. */
   private raisedEdge(edge: EdgeModel): boolean {
     return this.selectedEdges.has(edge.id) || this.selected.has(edge.source) || this.selected.has(edge.target);
+  }
+
+  // The app's mark of an edge: its status, highlight, dimness and words,
+  // and whether the spotlight is on it.
+  private drawMark(view: EdgeView, edge: EdgeModel) {
+    const mark = edge.mark;
+    if (mark.status) view.g.dataset.markStatus = mark.status;
+    else view.g.removeAttribute("data-mark-status");
+    toggle(view.g, "data-mark-highlight", mark.highlight);
+    toggle(view.g, "data-mark-dim", mark.dim);
+    toggle(view.g, "data-lit", mark.lit);
+    if (mark.color) view.g.style.setProperty("--hakushi-mark", mark.color);
+    else view.g.style.removeProperty("--hakushi-mark");
+    let title = view.g.querySelector(":scope > title");
+    if (mark.title) {
+      title ??= view.g.appendChild(svg("title", {}));
+      if (title.textContent !== mark.title) title.textContent = mark.title;
+    } else {
+      title?.remove();
+    }
   }
 
   private showEdge(view: EdgeView, shown: boolean) {

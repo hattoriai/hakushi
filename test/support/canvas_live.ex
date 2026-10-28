@@ -135,6 +135,37 @@ defmodule HakushiTest.CanvasLive do
     {:noreply, socket}
   end
 
+  # The app's marks: what the nodes and edges are now.
+  def handle_event("app_mark", %{"fun" => "clear"}, socket) do
+    Hakushi.Live.clear_marks("schema")
+    {:noreply, socket}
+  end
+
+  def handle_event("app_mark", %{"fun" => "spotlight"} = params, socket) do
+    lit =
+      if params["off"],
+        do: nil,
+        else: [nodes: params["nodes"] || [], edges: params["edges"] || []]
+
+    Hakushi.Live.spotlight("schema", lit)
+    {:noreply, socket}
+  end
+
+  def handle_event("app_mark", %{"fun" => fun, "ids" => ids} = params, socket) do
+    mark =
+      case params["mark"] do
+        nil -> nil
+        mark -> Map.new(mark, fn {key, value} -> {String.to_existing_atom(key), value} end)
+      end
+
+    case fun do
+      "nodes" -> Hakushi.Live.mark("schema", ids, mark)
+      "edges" -> Hakushi.Live.mark_edges("schema", ids, mark)
+    end
+
+    {:noreply, socket}
+  end
+
   def handle_event("app_change", _params, socket) do
     Hakushi.Live.change("schema", Hakushi.Change.move([{"note", 7, 7}]))
     {:noreply, socket}

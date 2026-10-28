@@ -13,6 +13,7 @@ const edge = (source: string, target: string, sourceHandle: string | null = null
   label: null,
   marker: "arrow",
   animated: false,
+  mark: { status: null, highlight: false, color: null, dim: false, title: null, lit: false },
 });
 
 const handle = (fields: Partial<Handle>): Handle =>

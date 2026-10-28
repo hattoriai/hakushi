@@ -339,6 +339,78 @@ defmodule Hakushi.Test do
   end
 
   @doc """
+  The marks of the canvas `id` (`Hakushi.Live.mark/3`), as it draws them:
+  `%{nodes: %{id => mark}, edges: %{id => mark}}`, each mark a map of the
+  keys it has (`:status`, `:badge`, `:progress`, `:highlight`, `:dim`,
+  `:title` and, under a spotlight, `:lit`), for the nodes and edges that
+  have one.
+  """
+  @spec marks(struct(), String.t()) :: %{nodes: map(), edges: map()}
+  def marks(view, id) do
+    nodes =
+      for node <- query(view, id, ".hakushi-nodes > .hakushi-node"),
+          mark = node_mark(node),
+          mark != %{},
+          into: %{},
+          do: {attribute(node, "data-id"), mark}
+
+    edges =
+      for edge <- query(view, id, "##{id}-edge-data > i"),
+          mark = edge_mark(edge),
+          mark != %{},
+          into: %{},
+          do: {attribute(edge, "data-id"), mark}
+
+    %{nodes: nodes, edges: edges}
+  end
+
+  defp node_mark(node) do
+    badge =
+      node |> LazyHTML.query(".hakushi-mark-badge") |> LazyHTML.text() |> String.trim()
+
+    progress =
+      case node
+           |> LazyHTML.query(".hakushi-mark-progress")
+           |> attribute("aria-valuenow") do
+        nil -> nil
+        percent -> String.to_integer(percent) / 100
+      end
+
+    %{
+      status: attribute(node, "data-mark-status"),
+      badge: if(badge != "", do: badge),
+      progress: progress,
+      highlight: highlight(attribute(node, "data-mark-highlight"), attribute(node, "style")),
+      dim: attribute(node, "data-mark-dim") == "true" || nil,
+      title: attribute(node, "title"),
+      lit: attribute(node, "data-lit") == "true" || nil
+    }
+    |> Map.reject(fn {_key, value} -> is_nil(value) end)
+  end
+
+  defp edge_mark(edge) do
+    %{
+      status: attribute(edge, "data-mark-status"),
+      highlight:
+        attribute(edge, "data-mark-color") ||
+          (attribute(edge, "data-mark-highlight") == "true" || nil),
+      dim: attribute(edge, "data-mark-dim") == "true" || nil,
+      title: attribute(edge, "data-mark-title"),
+      lit: attribute(edge, "data-lit") == "true" || nil
+    }
+    |> Map.reject(fn {_key, value} -> is_nil(value) end)
+  end
+
+  defp highlight("true", style) do
+    case Regex.run(~r/--hakushi-mark: ([^;]+);/, style || "") do
+      [_, color] -> color
+      nil -> true
+    end
+  end
+
+  defp highlight(_none, _style), do: nil
+
+  @doc """
   Selects nodes, and edges, as a person does with a click or a box: the
   canvas's `on_select` hears it. To select from the app, as
   `Hakushi.Live.select/3` does, assert its push of `"hakushi:select"`.
