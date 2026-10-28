@@ -1468,20 +1468,15 @@ defmodule HakushiDev.WorkflowLive do
     {:noreply, assign(socket, :run, run)}
   end
 
-  # The steps from the trigger on, each after the steps before it.
+  # The steps from the trigger on, each after the steps before it
+  # (Hakushi.Graph's order of a flow).
   defp run_order(graph) do
     starts = for node <- Hakushi.Graph.nodes(graph), node.type == "trigger", do: node.id
-    walk(graph, starts, [])
-  end
+    reached = MapSet.new(starts ++ Enum.flat_map(starts, &Hakushi.Graph.downstream(graph, &1)))
 
-  defp walk(_graph, [], seen), do: Enum.reverse(seen)
-
-  defp walk(graph, [id | rest], seen) do
-    if id in seen do
-      walk(graph, rest, seen)
-    else
-      next = for edge <- Hakushi.Graph.edges_of(graph, id), edge.source == id, do: edge.target
-      walk(graph, rest ++ next, [id | seen])
+    case Hakushi.Graph.topological_sort(graph) do
+      {:ok, order} -> Enum.filter(order, &MapSet.member?(reached, &1))
+      {:error, _cycle} -> MapSet.to_list(reached)
     end
   end
 

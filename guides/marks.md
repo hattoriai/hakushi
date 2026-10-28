@@ -45,7 +45,8 @@ from one node to another, a part of a flow, what a search found. The
 selection stays as it is. `nil` takes it away.
 
 ```elixir
-Hakushi.Live.spotlight("flow", nodes: ["start", "check", "send-receipt"], edges: ["e1", "e2"])
+way = Hakushi.Graph.path(graph, "start", "send-receipt")
+Hakushi.Live.spotlight("flow", nodes: way, edges: Hakushi.Graph.edges_along(graph, way))
 Hakushi.Live.spotlight("flow", nil)
 ```
 
