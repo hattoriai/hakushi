@@ -115,3 +115,23 @@ page's own origin are put in the image; a font, a style sheet or an
 image of another origin may not be, and a browser that will not draw
 such an image to a PNG gives the SVG instead (see
 [Known limits](limits.md)).
+
+## Lining up and spacing out
+
+The selected nodes line up by their left sides, middles or right sides,
+or their tops, middles or bottoms, on the box around them all (Alt and a
+letter, see [Navigation](navigation.md), or the menu's
+`:align_left`… items, `Hakushi.Menu`); three or more space out, with
+equal gaps between them, the first and the last staying where they are.
+A node in a group moves with it, a locked one stays, and the new places
+are one move: checked, shared, and undone with ⌘Z.
+
+From the LiveView, as the tidy up's `Hakushi.Live.layout/2`, the
+person's browser does it (it has the nodes' sizes):
+
+```elixir
+Hakushi.Live.align("schema", :top, nodes: ["users", "orders"])
+Hakushi.Live.distribute("schema", :horizontal)
+```
+
+Without `nodes`, it is the person's selection.

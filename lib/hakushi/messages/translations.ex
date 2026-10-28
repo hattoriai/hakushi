@@ -166,7 +166,17 @@ defmodule Hakushi.Messages.Translations do
     "menuDuplicate" => "Duplicate",
     "menuDelete" => "Delete",
     "menuSelectAll" => "Select all",
-    "menuLabel" => "Edit label"
+    "menuLabel" => "Edit label",
+    "aligned" => "Lined up {n} nodes.",
+    "distributed" => "Spaced out {n} nodes.",
+    "menuAlignLeft" => "Align left",
+    "menuAlignCenter" => "Align centres",
+    "menuAlignRight" => "Align right",
+    "menuAlignTop" => "Align top",
+    "menuAlignMiddle" => "Align middles",
+    "menuAlignBottom" => "Align bottom",
+    "menuDistributeHorizontal" => "Space out across",
+    "menuDistributeVertical" => "Space out down"
   }
 
   @all %{
@@ -333,7 +343,17 @@ defmodule Hakushi.Messages.Translations do
       "menuDuplicate" => "Duplicar",
       "menuDelete" => "Apagar",
       "menuSelectAll" => "Selecionar tudo",
-      "menuLabel" => "Editar rótulo"
+      "menuLabel" => "Editar rótulo",
+      "aligned" => "{n} nós alinhados.",
+      "distributed" => "{n} nós espaçados.",
+      "menuAlignLeft" => "Alinhar à esquerda",
+      "menuAlignCenter" => "Alinhar ao centro",
+      "menuAlignRight" => "Alinhar à direita",
+      "menuAlignTop" => "Alinhar em cima",
+      "menuAlignMiddle" => "Alinhar ao meio",
+      "menuAlignBottom" => "Alinhar em baixo",
+      "menuDistributeHorizontal" => "Espaçar na horizontal",
+      "menuDistributeVertical" => "Espaçar na vertical"
     },
     "es" => %{
       "canvas" => "Lienzo",
@@ -498,7 +518,17 @@ defmodule Hakushi.Messages.Translations do
       "menuDuplicate" => "Duplicar",
       "menuDelete" => "Eliminar",
       "menuSelectAll" => "Seleccionar todo",
-      "menuLabel" => "Editar etiqueta"
+      "menuLabel" => "Editar etiqueta",
+      "aligned" => "{n} nodos alineados.",
+      "distributed" => "{n} nodos espaciados.",
+      "menuAlignLeft" => "Alinear a la izquierda",
+      "menuAlignCenter" => "Alinear al centro",
+      "menuAlignRight" => "Alinear a la derecha",
+      "menuAlignTop" => "Alinear arriba",
+      "menuAlignMiddle" => "Alinear al medio",
+      "menuAlignBottom" => "Alinear abajo",
+      "menuDistributeHorizontal" => "Espaciar en horizontal",
+      "menuDistributeVertical" => "Espaciar en vertical"
     },
     "fr" => %{
       "canvas" => "Canevas",
@@ -660,7 +690,17 @@ defmodule Hakushi.Messages.Translations do
       "menuDuplicate" => "Dupliquer",
       "menuDelete" => "Supprimer",
       "menuSelectAll" => "Tout sélectionner",
-      "menuLabel" => "Modifier le libellé"
+      "menuLabel" => "Modifier le libellé",
+      "aligned" => "{n} nœuds alignés.",
+      "distributed" => "{n} nœuds espacés.",
+      "menuAlignLeft" => "Aligner à gauche",
+      "menuAlignCenter" => "Aligner au centre",
+      "menuAlignRight" => "Aligner à droite",
+      "menuAlignTop" => "Aligner en haut",
+      "menuAlignMiddle" => "Aligner au milieu",
+      "menuAlignBottom" => "Aligner en bas",
+      "menuDistributeHorizontal" => "Espacer horizontalement",
+      "menuDistributeVertical" => "Espacer verticalement"
     },
     "de" => %{
       "canvas" => "Leinwand",
@@ -823,7 +863,17 @@ defmodule Hakushi.Messages.Translations do
       "menuDuplicate" => "Duplizieren",
       "menuDelete" => "Löschen",
       "menuSelectAll" => "Alles auswählen",
-      "menuLabel" => "Beschriftung bearbeiten"
+      "menuLabel" => "Beschriftung bearbeiten",
+      "aligned" => "{n} Knoten ausgerichtet.",
+      "distributed" => "{n} Knoten verteilt.",
+      "menuAlignLeft" => "Links ausrichten",
+      "menuAlignCenter" => "Mittig ausrichten",
+      "menuAlignRight" => "Rechts ausrichten",
+      "menuAlignTop" => "Oben ausrichten",
+      "menuAlignMiddle" => "Vertikal mittig ausrichten",
+      "menuAlignBottom" => "Unten ausrichten",
+      "menuDistributeHorizontal" => "Horizontal verteilen",
+      "menuDistributeVertical" => "Vertikal verteilen"
     },
     "ja" => %{
       "canvas" => "キャンバス",
@@ -984,7 +1034,17 @@ defmodule Hakushi.Messages.Translations do
       "menuDuplicate" => "複製",
       "menuDelete" => "削除",
       "menuSelectAll" => "すべて選択",
-      "menuLabel" => "ラベルを編集"
+      "menuLabel" => "ラベルを編集",
+      "aligned" => "{n}個のノードを揃えました。",
+      "distributed" => "{n}個のノードを等間隔にしました。",
+      "menuAlignLeft" => "左揃え",
+      "menuAlignCenter" => "左右中央揃え",
+      "menuAlignRight" => "右揃え",
+      "menuAlignTop" => "上揃え",
+      "menuAlignMiddle" => "上下中央揃え",
+      "menuAlignBottom" => "下揃え",
+      "menuDistributeHorizontal" => "左右に等間隔",
+      "menuDistributeVertical" => "上下に等間隔"
     }
   }
 

@@ -28,7 +28,10 @@ defmodule Hakushi.Menu do
     * an atom, an action of the canvas's own, which the canvas runs and
       names in its language: `:copy`, `:cut`, `:paste`, `:duplicate`,
       `:delete`, `:select_all`, `:label` (an edge's), `:fit`, `:tidy`,
-      `:undo`, `:redo`; and `:separator`, a line between items. A person
+      `:undo`, `:redo`, `:align_left`, `:align_center`, `:align_right`,
+      `:align_top`, `:align_middle`, `:align_bottom`,
+      `:distribute_horizontal`, `:distribute_vertical`; and `:separator`,
+      a line between items. A person
       who may not change the canvas is not offered those that change it.
     * a map of the app's own: `:id` and `:label` (required), `:icon` (a
       name of `Hakushi.Icons`), `:shortcut` (the words of its keys, shown
@@ -49,13 +52,33 @@ defmodule Hakushi.Menu do
     :fit,
     :tidy,
     :undo,
-    :redo
+    :redo,
+    :align_left,
+    :align_center,
+    :align_right,
+    :align_top,
+    :align_middle,
+    :align_bottom,
+    :distribute_horizontal,
+    :distribute_vertical
   ]
 
   # What a person who changes nothing (readonly) may still do, and one who
   # only arranges the nodes (readonly: :arrange).
   @viewing [:select_all, :fit]
-  @arranging [:tidy, :undo, :redo]
+  @arranging [
+    :tidy,
+    :undo,
+    :redo,
+    :align_left,
+    :align_center,
+    :align_right,
+    :align_top,
+    :align_middle,
+    :align_bottom,
+    :distribute_horizontal,
+    :distribute_vertical
+  ]
 
   @typedoc "What the menu is of."
   @type target :: %{
@@ -75,10 +98,19 @@ defmodule Hakushi.Menu do
 
   @doc """
   Hakushi's own items for a target (a menu of `true`): for nodes, copy,
-  cut, duplicate and delete; for an edge, its label and delete; for the
-  paper, paste, select all, fit and tidy up.
+  cut, duplicate and delete, and for two or more, lining them up (and for
+  three or more, spacing them out); for an edge, its label and delete; for
+  the paper, paste, select all, fit and tidy up.
   """
   @spec defaults(target()) :: [item()]
+  def defaults(%{kind: :node, nodes: [_, _ | _] = nodes}) do
+    spread = if length(nodes) >= 3, do: [:distribute_horizontal, :distribute_vertical], else: []
+
+    [:copy, :cut, :duplicate, :separator] ++
+      [:align_left, :align_center, :align_right, :align_top, :align_middle, :align_bottom] ++
+      spread ++ [:separator, :delete]
+  end
+
   def defaults(%{kind: :node}), do: [:copy, :cut, :duplicate, :separator, :delete]
   def defaults(%{kind: :edge}), do: [:label, :separator, :delete]
   def defaults(%{kind: :canvas}), do: [:paste, :select_all, :separator, :fit, :tidy]

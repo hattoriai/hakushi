@@ -191,6 +191,20 @@ defmodule HakushiTest.CanvasLive do
     {:noreply, socket}
   end
 
+  def handle_event("app_arrange", %{"how" => how} = params, socket) do
+    opts = if params["nodes"], do: [nodes: params["nodes"]], else: []
+
+    case String.to_existing_atom(how) do
+      spread when spread in [:horizontal, :vertical] ->
+        Hakushi.Live.distribute("schema", spread, opts)
+
+      line ->
+        Hakushi.Live.align("schema", line, opts)
+    end
+
+    {:noreply, socket}
+  end
+
   def handle_event("app_change", _params, socket) do
     Hakushi.Live.change("schema", Hakushi.Change.move([{"note", 7, 7}]))
     {:noreply, socket}

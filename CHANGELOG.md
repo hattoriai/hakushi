@@ -60,6 +60,13 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   who made each change and when, gives any version back, and goes to
   JSON (`dump/1`, `load/1`), as does a change (`Hakushi.Change.dump/1`,
   `load/1`). See the Versions guide.
+- Lining up and spacing out: the selected nodes line up by their left
+  sides, middles or right sides, or tops, middles or bottoms (Alt and A,
+  H, D, W, V, S), and three or more space out with equal gaps
+  (Alt+Shift+H, Alt+Shift+V); from the menu (`:align_left`…,
+  `:distribute_horizontal`, `:distribute_vertical`, in Hakushi's own menu
+  of two or more nodes), and from the app (`Hakushi.Live.align/3`,
+  `distribute/3`). One move, undone with ⌘Z. See the Layout guide.
 
 ### Changed
 

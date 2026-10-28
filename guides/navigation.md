@@ -34,6 +34,8 @@ Escape nothing.
 | Move an end | select an edge, and drag one of its ends to another handle |
 | Group | drop a node on a group to put it in; drag it off to take it out |
 | Tidy up | ⇧L, or the button of the controls: the selection when two or more nodes are selected, else every node |
+| Line up | Alt and A, H or D: the left sides, the middles or the right sides of the selected nodes; Alt and W, V or S: their tops, middles or bottoms (⌥ on a Mac); or the menu |
+| Space out | Alt+Shift+H across, Alt+Shift+V down: equal gaps between three or more selected nodes; or the menu |
 | Download | the button of the controls: the canvas as a PNG |
 | Resize | the corners of a selected node of a `resizable` slot |
 | Delete | Delete or Backspace |
