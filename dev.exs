@@ -1041,6 +1041,8 @@ defmodule HakushiDev.Layouts do
 
           .people-strip { display: flex; align-items: center; }
           .people-strip span { display: grid; place-items: center; width: 1.75rem; height: 1.75rem; margin-left: -6px; border: 2px solid var(--atelier-bg); border-radius: 99px; color: #fff; font-size: 0.625rem; font-weight: 600; }
+          .ruler-line { stroke: var(--atelier-accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
+          .ruler-text { fill: var(--atelier-accent); font: 600 13px system-ui; text-anchor: middle; }
           .scale-node { padding: 0.5rem 0.75rem; border: 1px solid var(--atelier-line); border-radius: 8px; background: var(--atelier-card); font-size: 0.8125rem; width: 9rem; position: relative; }
         </style>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -1059,7 +1061,48 @@ defmodule HakushiDev.Layouts do
           import { Socket } from "phoenix"
           import { LiveSocket } from "phoenix_live_view"
           import { Hooks as Issho } from "issho"
-          import { Hakushi, canvasOf } from "hakushi"
+          import { Hakushi, canvasOf, registerTool } from "hakushi"
+
+          // Tools of the app's own (registerTool), on the canvases whose
+          // client_tools name them: a ruler, which changes nothing, and a
+          // stamp, which drops a note where it is pressed.
+          registerTool({
+            name: "ruler",
+            label: "Ruler",
+            key: "m",
+            cursor: "crosshair",
+            readonly: true,
+            icon: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 17 17 3l4 4L7 21z"/><path d="m7 13 2 2m1-5 2 2m1-5 2 2"/></svg>',
+            down(ctx, _event, at) {
+              ctx.layer.replaceChildren()
+              this.from = at
+              this.line = ctx.svg("line", { x1: at.x, y1: at.y, x2: at.x, y2: at.y, class: "ruler-line" })
+              this.text = ctx.svg("text", { x: at.x, y: at.y - 8, class: "ruler-text" })
+              ctx.layer.append(this.line, this.text)
+            },
+            move(_ctx, _event, at) {
+              this.line.setAttribute("x2", at.x)
+              this.line.setAttribute("y2", at.y)
+              this.text.setAttribute("x", (this.from.x + at.x) / 2)
+              this.text.setAttribute("y", (this.from.y + at.y) / 2 - 8)
+              this.text.textContent = `${Math.round(Math.hypot(at.x - this.from.x, at.y - this.from.y))} px`
+            },
+            up(ctx) {
+              ctx.layer.dataset.measured = this.text.textContent
+              ctx.announce(this.text.textContent)
+            },
+            cancel(ctx) {
+              ctx.layer.replaceChildren()
+            }
+          })
+          registerTool({
+            name: "stamp",
+            label: "Stamp a note",
+            key: "s",
+            up(ctx, _event, at) {
+              ctx.drop("note", at)
+            }
+          })
 
           const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
           const liveSocket = new LiveSocket("/live", Socket, {
@@ -1805,6 +1848,7 @@ defmodule HakushiDev.BoardLive do
         graph={@graph}
         on_change={&on_change(&1, &2, @room)}
         on_open={&send(self(), {:open, &1.node})}
+        client_tools={["ruler", "stamp"]}
         new_node={&new_node/2}
         kits={@kits}
         issho={[instance: HakushiDev.Issho, document: topic("board", @room), follow: @follow]}

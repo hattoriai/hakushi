@@ -7,7 +7,7 @@ defmodule Mix.Tasks.Hakushi.BuildTest do
   @root Path.expand("../..", __DIR__)
   @static Path.join(@root, "priv/static")
   @files ~w(hakushi.esm.js hakushi.cjs.js hakushi.css hakushi-sumi.css)
-  @exports ~w(Hakushi canvasOf)
+  @exports ~w(Hakushi canvasOf registerTool)
 
   @moduletag :build
   @moduletag timeout: 600_000
@@ -52,7 +52,7 @@ defmodule Mix.Tasks.Hakushi.BuildTest do
     assert @static |> File.ls!() |> Enum.sort() == Enum.sort(@files)
   end
 
-  test "the ESM bundle exports the hook and canvasOf" do
+  test "the ESM bundle exports the hook, canvasOf and registerTool" do
     esm = File.read!(Path.join(@static, "hakushi.esm.js"))
     [exports] = Regex.run(~r/export\{([^}]*)\}/, esm, capture: :all_but_first)
     names = exports |> String.split(",") |> Enum.map(&(&1 |> String.split(" as ") |> List.last()))
@@ -112,7 +112,7 @@ defmodule Mix.Tasks.Hakushi.BuildTest do
       @describetag skip: "node is not on the path, so the CJS bundle cannot be required"
     end
 
-    test "require() of the package entry point gives the hook and canvasOf" do
+    test "require() of the package entry point gives the hook, canvasOf and registerTool" do
       script = """
       const hakushi = require("./priv/static/hakushi.cjs.js");
       process.stdout.write(JSON.stringify(Object.keys(hakushi).sort()));

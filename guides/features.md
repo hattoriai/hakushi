@@ -28,6 +28,7 @@ Everything the canvas does, in one table. Each guide tells more.
 | The graph | read along its edges (`Hakushi.Graph`): successors and predecessors, downstream and upstream, roots and leaves, a topological order or a cycle, the shortest way between two nodes and its edges, the parts edges join |
 | Versions | what changed from one graph to another (`Hakushi.Graph.compare/2`); a canvas that shows its graph against an older one (`compare`), what was added, changed and moved marked, what was removed a ghost; the versions of a canvas, who made each and when, any of them again, kept as JSON (`Hakushi.History`) |
 | Drill-down | nodes that open (a slot that `opens`): a double click, ⌘↓ or an `opener/1`, the view going into it, then the app's `on_open`; ⌘↑ up (`on_up`); the path of canvases (`canvas_path/1`); a group's inside as a canvas of its own, and back (`Hakushi.Graph.subgraph/2`, `put_subgraph/3`, `Hakushi.Change.lift/2`) |
+| JavaScript | a canvas from a page's script (`canvasOf`): its nodes, edges, selection and view, and what happens on it (`on`: select, view, change, tool); tools of the app's own (`registerTool`, `client_tools`), with a layer to draw on and changes as a person's |
 | Storage | `Hakushi.Graph.Type`, a whole canvas in one column (`jsonb`); or your own tables, with `on_change` |
 | Theming | CSS custom properties, the Sumi theme, dark mode, forced colours, reduced motion |
 | Words | the canvas's own words in English, Portuguese, Spanish, French, German and Japanese |

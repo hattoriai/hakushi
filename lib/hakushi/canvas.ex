@@ -1801,6 +1801,7 @@ defmodule Hakushi.Canvas do
       "reportView" => assigns.on_viewport != nil or assigns.notify != nil,
       "menu" => assigns.menu != nil and assigns.menu != false,
       "up" => assigns.on_up != nil,
+      "clientTools" => Enum.map(assigns.client_tools, &to_string/1),
       "live" => assigns.join != nil,
       "user" => own_id(%{assigns: assigns}),
       "tools" => Kit.tools(assigns.kits, assigns.messages),
