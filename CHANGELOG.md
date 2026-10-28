@@ -75,6 +75,11 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   changes are the outer graph's with `Hakushi.Change.lift/2`.
   `Hakushi.Test.open_node/3` and `go_up/2`. The development app's frames
   open. See the Drill-down guide.
+- `Hakushi.Kits.Schema.from_ecto/2`: the graph of an app's Ecto schemas
+  (a list of them, or an OTP app's), a table for each with its columns,
+  types and keys, a foreign key for each `belongs_to`, the join tables
+  of `many_to_many`, and stubs of the tables of schemas not given. See
+  the Kits guide.
 
 ### Changed
 
