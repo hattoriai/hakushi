@@ -67,6 +67,14 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `:distribute_horizontal`, `:distribute_vertical`, in Hakushi's own menu
   of two or more nodes), and from the app (`Hakushi.Live.align/3`,
   `distribute/3`). One move, undone with ⌘Z. See the Layout guide.
+- Drill-down: the nodes of a slot that `opens` open (a double click, ⌘↓,
+  an `opener/1`): the view goes into the node, and the canvas calls
+  `on_open`; `on_up` makes ⌘↑ go back up; `canvas_path/1` shows where a
+  canvas is among canvases. A group's inside is a graph of its own
+  (`Hakushi.Graph.subgraph/2`), put back with `put_subgraph/3`, and its
+  changes are the outer graph's with `Hakushi.Change.lift/2`.
+  `Hakushi.Test.open_node/3` and `go_up/2`. The development app's frames
+  open. See the Drill-down guide.
 
 ### Changed
 

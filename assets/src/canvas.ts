@@ -551,6 +551,7 @@ export class Canvas {
       resizable: element.dataset.resizable === "true",
       parent: element.dataset.parent || null,
       group: element.dataset.group === "true",
+      opens: element.dataset.opens === "true",
       label: element.getAttribute("aria-label") || id,
       handles: old && old.el === element ? old.handles : [],
       faint: element.querySelector("[data-hakushi-faint]") !== null,
@@ -2708,16 +2709,45 @@ export class Canvas {
   }
 
   // The view on its way to another, or there at once (without motion).
-  private glideTo(to: View, animate: boolean) {
+  // How long it takes, in milliseconds.
+  private glideTo(to: View, animate: boolean): number {
     const from = this.view;
     const distance = Math.hypot(to.x - from.x, to.y - from.y) + Math.abs(Math.log(to.zoom / from.zoom)) * this.size.width;
+    let duration = 0;
     if (!animate || reducedMotion() || distance < 1) {
       this.viewGlide = null;
       this.view = to;
     } else {
-      this.viewGlide = { from, to, start: performance.now(), duration: Math.min(GLIDE_MAX, 160 + distance / 4), last: from };
+      duration = Math.min(GLIDE_MAX, 160 + distance / 4);
+      this.viewGlide = { from, to, start: performance.now(), duration, last: from };
     }
     this.schedule();
+    return duration;
+  }
+
+  // -- Opening a node -------------------------------------------------------------
+  //
+  // A node of a slot that `opens` (a double click, ⌘↓, its opener): the
+  // view goes into it, then the app shows what is in it (on_open), most
+  // often a canvas of its own. ⌘↑ goes back up (on_up).
+
+  private opening = false;
+
+  openNode(id: string) {
+    const node = this.nodes.get(id);
+    if (!node?.opens || this.opening) return;
+    this.opening = true;
+    this.announce(this.messages.t("opening", { name: node.label }));
+    const box = this.rect(node);
+    const zoom = clamp(Math.min(this.size.width / Math.max(box.width, 1), this.size.height / Math.max(box.height, 1)) * 0.9, this.config.minZoom, this.config.maxZoom);
+    const wait = this.glideTo(centerOn({ x: 0, y: 0, zoom }, box.x + box.width / 2, box.y + box.height / 2, this.size.width, this.size.height), true);
+    window.setTimeout(() => {
+      this.live.push("hakushi:open", { node: id }, () => (this.opening = false));
+    }, wait);
+  }
+
+  up() {
+    if (this.config.up) this.live.push("hakushi:up", {});
   }
 
   // A frame of the way: the middle of the screen goes straight from one
@@ -2796,6 +2826,14 @@ export class Canvas {
     });
     on(this.root, "focusin", (e) => this.focusIn(e));
     on(this.root, "contextmenu", (e) => this.onContextMenu(e as MouseEvent));
+    // The opener of a node (Hakushi.Components.opener/1).
+    on(this.root, "click", (e) => {
+      const button = (e.target as Element).closest<HTMLElement>("[data-hakushi-open]");
+      const nodeEl = button?.closest<HTMLElement>(".hakushi-node");
+      if (!button || !nodeEl || !this.nodesEl.contains(nodeEl)) return;
+      e.preventDefault();
+      this.openNode(nodeEl.dataset.id || "");
+    });
     on(document, "pointerdown", (e) => this.itemDown(e as PointerEvent), { capture: true });
     on(document, "keydown", (e) => this.itemKey(e as KeyboardEvent));
     on(window, "scroll", () => (this.bounds = null), { capture: true, passive: true });
@@ -3308,6 +3346,15 @@ export class Canvas {
       this.editText(textNodeModel);
       return;
     }
+    // A node that opens, off its fields and buttons; a group by the part
+    // it is dragged by (its inside is paper, where a double click makes a node).
+    const opening = under.closest<HTMLElement>(".hakushi-node");
+    const openable = opening && this.nodesEl.contains(opening) ? this.nodes.get(opening.dataset.id || "") : undefined;
+    if (openable?.opens && !interactive(under, opening!) && (!openable.group || under.closest("[data-hakushi-drag]"))) {
+      event.preventDefault();
+      this.openNode(openable.id);
+      return;
+    }
     const edgeId = target.closest<SVGGElement>(".hakushi-edge")?.dataset.edge ?? target.closest<HTMLElement>(".hakushi-edge-label")?.dataset.edge;
     if (edgeId && !this.config.readonly) {
       this.editLabel(edgeId);
@@ -3769,6 +3816,21 @@ export class Canvas {
         void this.arrange(how);
         return;
       }
+    }
+
+    // Into the node (it opens), and up, out of the canvas.
+    if (mod && key === "ArrowDown") {
+      const node = this.focusedNode() ?? (this.selected.size === 1 ? this.nodes.get([...this.selected][0]) : undefined);
+      if (node?.opens) {
+        event.preventDefault();
+        this.openNode(node.id);
+        return;
+      }
+    }
+    if (mod && key === "ArrowUp" && this.config.up) {
+      event.preventDefault();
+      this.up();
+      return;
     }
 
     // The menu of what is selected, by the keyboard.

@@ -161,6 +161,76 @@ defmodule Hakushi.GraphTest do
     end
   end
 
+  describe "the inside of a group" do
+    defp framed do
+      Graph.new(
+        nodes: [
+          %{id: "frame", x: 100, y: 100, width: 500, height: 400},
+          %{id: "a", x: 120, y: 140, parent: "frame"},
+          %{id: "inner", x: 200, y: 200, width: 100, height: 100, parent: "frame"},
+          %{id: "b", x: 210, y: 220, parent: "inner"},
+          %{id: "out", x: 0, y: 0}
+        ],
+        edges: [
+          %{id: "ab", source: "a", target: "b"},
+          %{id: "a-out", source: "a", target: "out"},
+          %{id: "frame-out", source: "frame", target: "out"}
+        ]
+      )
+    end
+
+    test "is a graph of its own, from its corner, with the edges inside it" do
+      inside = Graph.subgraph(framed(), "frame")
+
+      assert Enum.map(Graph.nodes(inside), &{&1.id, &1.x, &1.y, &1.parent}) ==
+               [{"a", 20, 40, nil}, {"inner", 100, 100, nil}, {"b", 110, 120, "inner"}]
+
+      assert Enum.map(Graph.edges(inside), & &1.id) == ["ab"]
+    end
+
+    test "goes back as it changed, with the edges to the outside that still have both ends" do
+      graph = framed()
+      inside = Graph.subgraph(graph, "frame")
+      {:ok, inside, _, _} = Graph.apply(inside, Change.move([{"a", 30, 50}]))
+
+      {:ok, inside, _, _} =
+        Graph.apply(
+          inside,
+          Change.add([%{id: "c", x: 0, y: 0}], [%{id: "ac", source: "a", target: "c"}])
+        )
+
+      {:ok, inside, _, _} = Graph.apply(inside, Change.delete(nodes: ["inner"]))
+
+      back = Graph.put_subgraph(graph, "frame", inside)
+      assert %{x: 130, y: 150, parent: "frame"} = Graph.node(back, "a")
+      assert %{x: 100, y: 100, parent: "frame"} = Graph.node(back, "c")
+      refute Graph.node(back, "inner")
+      refute Graph.node(back, "b")
+      assert Enum.sort(Enum.map(Graph.edges(back), & &1.id)) == ["a-out", "ac", "frame-out"]
+
+      # The same changes, lifted into the graph the frame is in, give it.
+      lifted =
+        [
+          Change.move([{"a", 30, 50}]),
+          Change.add([%{id: "c", x: 0, y: 0}], [%{id: "ac", source: "a", target: "c"}]),
+          Change.delete(nodes: ["inner"])
+        ]
+        |> Enum.reduce(graph, fn change, outer ->
+          {:ok, outer, _, _} = Graph.apply(outer, Change.lift(change, Graph.node(graph, "frame")))
+          outer
+        end)
+
+      assert Graph.compare(back, lifted) == Graph.compare(back, back)
+
+      # Taken out and put back as it was, nothing changed.
+      assert Graph.compare(
+               graph,
+               Graph.put_subgraph(graph, "frame", Graph.subgraph(graph, "frame"))
+             ) ==
+               Graph.compare(graph, graph)
+    end
+  end
+
   describe "paths" do
     # start -> check -> (yes) pay -> receipt
     #                -> (no)  remind

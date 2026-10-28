@@ -773,6 +773,77 @@ defmodule Hakushi.Graph do
   end
 
   @doc """
+  The inside of a group, as a graph of its own: the nodes in the node
+  `id` (`descendants/2`), those directly in it in no group, and the edges
+  between them. The places are the group's: its top left corner is the
+  new graph's `{0, 0}`. For a group opened as a canvas of its own (see the
+  Drill-down guide); `put_subgraph/3` puts it back.
+
+      iex> graph = Hakushi.Graph.new(nodes: [%{id: "frame", x: 100, y: 100, width: 400, height: 300}, %{id: "a", x: 120, y: 140, parent: "frame"}, %{id: "out", x: 0, y: 0}], edges: [%{source: "a", target: "out"}])
+      iex> inside = Hakushi.Graph.subgraph(graph, "frame")
+      iex> Enum.map(Hakushi.Graph.nodes(inside), &{&1.id, &1.x, &1.y, &1.parent})
+      [{"a", 20, 40, nil}]
+      iex> Hakushi.Graph.edges(inside)
+      []
+  """
+  @spec subgraph(t(), Node.id()) :: t()
+  def subgraph(%__MODULE__{} = graph, id) do
+    group = Map.fetch!(graph.nodes, id)
+    inside = descendants(graph, id)
+    kept = MapSet.new(inside)
+
+    nodes =
+      for child <- inside do
+        node = Map.fetch!(graph.nodes, child)
+        parent = if node.parent == id, do: nil, else: node.parent
+        %{node | x: node.x - group.x, y: node.y - group.y, parent: parent}
+      end
+
+    edges =
+      for edge <- edges(graph),
+          MapSet.member?(kept, edge.source) and MapSet.member?(kept, edge.target),
+          do: edge
+
+    new(nodes: nodes, edges: edges)
+  end
+
+  @doc """
+  Puts the inside of a group back (`subgraph/2`'s, as it changed): the
+  nodes now in the node `id` are those of `inside`, at their places in
+  the group, and the edges between them are its edges. The edges from a
+  node inside to one outside stay when both are still there. Raises when
+  a node of `inside` has the id of a node outside the group.
+  """
+  @spec put_subgraph(t(), Node.id(), t()) :: t()
+  def put_subgraph(%__MODULE__{} = graph, id, %__MODULE__{} = inside) do
+    group = Map.fetch!(graph.nodes, id)
+    old = MapSet.new(descendants(graph, id))
+
+    outside = Enum.reject(nodes(graph), &MapSet.member?(old, &1.id))
+
+    placed =
+      for node <- nodes(inside) do
+        %{node | x: node.x + group.x, y: node.y + group.y, parent: node.parent || id}
+      end
+
+    ids = MapSet.new(Enum.map(outside, & &1.id) ++ Enum.map(placed, & &1.id))
+
+    crossing =
+      for edge <- edges(graph),
+          MapSet.member?(old, edge.source) != MapSet.member?(old, edge.target),
+          MapSet.member?(ids, edge.source) and MapSet.member?(ids, edge.target),
+          do: edge
+
+    others =
+      Enum.reject(
+        edges(graph),
+        &(MapSet.member?(old, &1.source) or MapSet.member?(old, &1.target))
+      )
+
+    new(nodes: outside ++ placed, edges: others ++ crossing ++ edges(inside), paper: graph.paper)
+  end
+
+  @doc """
   How one graph became another, for people to see (a visual diff, the
   versions of a canvas): the ids of the nodes and edges `added` and
   `removed`, those `moved` (a node's place or size), and those `changed`,

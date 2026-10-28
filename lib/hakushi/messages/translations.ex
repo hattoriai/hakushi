@@ -176,7 +176,10 @@ defmodule Hakushi.Messages.Translations do
     "menuAlignMiddle" => "Align middles",
     "menuAlignBottom" => "Align bottom",
     "menuDistributeHorizontal" => "Space out across",
-    "menuDistributeVertical" => "Space out down"
+    "menuDistributeVertical" => "Space out down",
+    "open" => "Open",
+    "path" => "Where you are",
+    "opening" => "Opening {name}."
   }
 
   @all %{
@@ -353,7 +356,10 @@ defmodule Hakushi.Messages.Translations do
       "menuAlignMiddle" => "Alinhar ao meio",
       "menuAlignBottom" => "Alinhar em baixo",
       "menuDistributeHorizontal" => "Espaçar na horizontal",
-      "menuDistributeVertical" => "Espaçar na vertical"
+      "menuDistributeVertical" => "Espaçar na vertical",
+      "open" => "Abrir",
+      "path" => "Onde está",
+      "opening" => "A abrir {name}."
     },
     "es" => %{
       "canvas" => "Lienzo",
@@ -528,7 +534,10 @@ defmodule Hakushi.Messages.Translations do
       "menuAlignMiddle" => "Alinear al medio",
       "menuAlignBottom" => "Alinear abajo",
       "menuDistributeHorizontal" => "Espaciar en horizontal",
-      "menuDistributeVertical" => "Espaciar en vertical"
+      "menuDistributeVertical" => "Espaciar en vertical",
+      "open" => "Abrir",
+      "path" => "Dónde estás",
+      "opening" => "Abriendo {name}."
     },
     "fr" => %{
       "canvas" => "Canevas",
@@ -700,7 +709,10 @@ defmodule Hakushi.Messages.Translations do
       "menuAlignMiddle" => "Aligner au milieu",
       "menuAlignBottom" => "Aligner en bas",
       "menuDistributeHorizontal" => "Espacer horizontalement",
-      "menuDistributeVertical" => "Espacer verticalement"
+      "menuDistributeVertical" => "Espacer verticalement",
+      "open" => "Ouvrir",
+      "path" => "Où vous êtes",
+      "opening" => "Ouverture de {name}."
     },
     "de" => %{
       "canvas" => "Leinwand",
@@ -873,7 +885,10 @@ defmodule Hakushi.Messages.Translations do
       "menuAlignMiddle" => "Vertikal mittig ausrichten",
       "menuAlignBottom" => "Unten ausrichten",
       "menuDistributeHorizontal" => "Horizontal verteilen",
-      "menuDistributeVertical" => "Vertikal verteilen"
+      "menuDistributeVertical" => "Vertikal verteilen",
+      "open" => "Öffnen",
+      "path" => "Wo du bist",
+      "opening" => "{name} wird geöffnet."
     },
     "ja" => %{
       "canvas" => "キャンバス",
@@ -1044,7 +1059,10 @@ defmodule Hakushi.Messages.Translations do
       "menuAlignMiddle" => "上下中央揃え",
       "menuAlignBottom" => "下揃え",
       "menuDistributeHorizontal" => "左右に等間隔",
-      "menuDistributeVertical" => "上下に等間隔"
+      "menuDistributeVertical" => "上下に等間隔",
+      "open" => "開く",
+      "path" => "現在の場所",
+      "opening" => "{name}を開いています。"
     }
   }
 

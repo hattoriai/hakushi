@@ -432,6 +432,17 @@ defmodule Hakushi.Test do
   end
 
   @doc """
+  Opens a node, as a double click or ⌘↓ does (its slot `opens`): the
+  canvas's `on_open`. `{:error, nil}` for a node that does not open.
+  """
+  @spec open_node(struct(), String.t(), String.t()) :: :ok | {:error, nil}
+  def open_node(view, id, node), do: result(event(view, id, "hakushi:open", %{"node" => node}))
+
+  @doc "Goes up, out of the canvas, as ⌘↑ does: the canvas's `on_up`."
+  @spec go_up(struct(), String.t()) :: :ok
+  def go_up(view, id), do: result(event(view, id, "hakushi:up", %{}))
+
+  @doc """
   The menu of the canvas `id` (`Hakushi.Menu`), as a right click opens
   it: `kind` (`:node`, `:edge` or `:canvas`), the `nodes` and `edges`
   selected and the point it is `at`. Gives its items as the person sees

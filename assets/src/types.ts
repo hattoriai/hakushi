@@ -45,6 +45,8 @@ export interface Config {
   reportView?: boolean;
   /** Whether a right click opens the canvas's menu (the canvas's `menu`, Hakushi.Menu), not the browser's. */
   menu?: boolean;
+  /** Whether ⌘↑ goes up, out of the canvas (the canvas's `on_up`). */
+  up?: boolean;
   live: boolean;
   user: string | null;
   /** The tools of the kits, for the bar of tools (Hakushi.Kit's `tools/1`). */
@@ -142,6 +144,8 @@ export interface NodeModel {
   parent: string | null;
   /** Whether it holds other nodes (a `group` slot). */
   group: boolean;
+  /** Whether people open it (a slot that `opens`): the canvas's `on_open`. */
+  opens: boolean;
   label: string;
   handles: Handle[];
   /** Whether it is drawn faint, and its edges too: its content has `data-hakushi-faint` (a table of another schema). */

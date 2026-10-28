@@ -39,6 +39,9 @@ defmodule Hakushi.Canvas do
     * `"hakushi:menu"` with `kind`, `nodes`, `edges` and `at`: the items
       of the canvas's `menu` for them (`Hakushi.Menu`), and
       `"hakushi:menu-pick"` with an item's `id` too: the person chose it.
+    * `"hakushi:open"` with `node`: the person opened it (its slot
+      `opens`), for the canvas's `on_open`; `"hakushi:up"`: they went
+      up, for its `on_up`.
     * `"hakushi:viewport"` with `box` (`[x, y, width, height]`) and `zoom`:
       where the person's view came to rest, for the canvas's
       `on_viewport`.
@@ -691,6 +694,25 @@ defmodule Hakushi.Canvas do
     else
       {:reply, %{"ok" => false}, socket}
     end
+  end
+
+  # A node opened (its slot `opens`): the app's on_open, and notify.
+  def handle_event("hakushi:open", %{"node" => id}, socket) when is_binary(id) do
+    %{graph: graph, on_open: on_open, node_slots: slots, kits: kits} = socket.assigns
+    node = Graph.node(graph, id)
+
+    if node && node_flag?(slots, kits, node, :opens) do
+      if on_open, do: on_open.(%{canvas: socket.assigns.id, node: id})
+      {:reply, %{"ok" => true}, notify(socket, {:opened, id})}
+    else
+      {:reply, %{"ok" => false}, socket}
+    end
+  end
+
+  # Up, out of the canvas: the app's on_up, and notify.
+  def handle_event("hakushi:up", _params, socket) do
+    if socket.assigns.on_up, do: socket.assigns.on_up.(%{canvas: socket.assigns.id})
+    {:reply, %{"ok" => true}, notify(socket, :up)}
   end
 
   def handle_event(event, params, %{assigns: %{readonly: true}} = socket)
@@ -1455,6 +1477,7 @@ defmodule Hakushi.Canvas do
             data-locked={node.locked && "true"}
             data-resizable={node_flag?(@node_slots, @kits, node, :resizable) && "true"}
             data-group={node_flag?(@node_slots, @kits, node, :group) && "true"}
+            data-opens={node_flag?(@node_slots, @kits, node, :opens) && "true"}
             data-parent={node.parent}
             data-mark-status={mark(@marks.nodes, node.id, :status)}
             data-mark-highlight={mark(@marks.nodes, node.id, :highlight) && "true"}
@@ -1777,6 +1800,7 @@ defmodule Hakushi.Canvas do
       "reportSelect" => assigns.on_select != nil or assigns.notify != nil,
       "reportView" => assigns.on_viewport != nil or assigns.notify != nil,
       "menu" => assigns.menu != nil and assigns.menu != false,
+      "up" => assigns.on_up != nil,
       "live" => assigns.join != nil,
       "user" => own_id(%{assigns: assigns}),
       "tools" => Kit.tools(assigns.kits, assigns.messages),

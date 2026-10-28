@@ -12,6 +12,8 @@ a touch screen and the keyboard. (⌘ is Ctrl outside Apple's systems.)
 | Fit | ⇧1, or the fit button: every node on the screen, at 100% at most |
 | 100% | ⇧0, ⌘0, or a click on the zoom in the controls |
 | Overview | a click or a drag on the minimap moves the view there |
+| Into a node | a double click, ⌘↓ or its opener, on a node that opens: what is in it (see [Drill-down](drill-down.md)) |
+| Up | ⌘↑, on a canvas the app opened from another |
 
 `wheel={:zoom}` makes the wheel zoom, as a map does. `wheel={:scroll}`
 leaves the wheel to the page, for a canvas in a page that scrolls: ⌘ or

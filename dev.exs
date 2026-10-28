@@ -1670,22 +1670,75 @@ defmodule HakushiDev.BoardLive do
   A moodboard: notes that resize, swatches, a specimen, labelled arrows,
   ink (Hakushi.Kits.Ink): people draw on it with a pen, and an agent
   circles a node; and images (Hakushi.Kits.Images), dropped, pasted or
-  picked.
+  picked. A frame opens (a double click on its title, its opener, ⌘↓) as
+  a canvas of its own, its inside (`?frame=`), and ⌘↑ goes back.
   """
   use Phoenix.LiveView
 
   import Hakushi.Components
   import HakushiDev.Icons
-  import HakushiDev.Layouts, only: [app: 1]
+  import HakushiDev.Layouts, only: [app: 1, qs: 2]
   import HakushiDev.Page, only: [topic: 2]
+
+  alias Hakushi.Graph
+
+  @kits [Hakushi.Kits.Ink, Hakushi.Kits.Images]
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok, assign(socket, graph: HakushiDev.Store.get("board", socket.assigns.room))}
+    {:ok,
+     assign(socket,
+       graph: HakushiDev.Store.get("board", socket.assigns.room),
+       frame: nil,
+       kits: @kits
+     )}
   end
+
+  # A frame opened: its inside, as a canvas of its own.
+  @impl true
+  def handle_params(%{"frame" => id}, _uri, socket) do
+    graph = HakushiDev.Store.get("board", socket.assigns.room)
+
+    case Graph.node(graph, id) do
+      %{type: "frame"} = frame ->
+        {:noreply, assign(socket, frame: frame, inside: Graph.subgraph(graph, id))}
+
+      _other ->
+        {:noreply, push_patch(socket, to: "/board" <> qs(socket.assigns.query, %{}))}
+    end
+  end
+
+  def handle_params(_params, _uri, socket) do
+    {:noreply,
+     assign(socket, frame: nil, graph: HakushiDev.Store.get("board", socket.assigns.room))}
+  end
+
+  @impl true
+  def handle_info({:open, id}, socket),
+    do: {:noreply, push_patch(socket, to: "/board" <> qs(socket.assigns.query, %{"frame" => id}))}
+
+  def handle_info(:up, socket),
+    do: {:noreply, push_patch(socket, to: "/board" <> qs(socket.assigns.query, %{}))}
 
   def on_change(_change, %{result: result}, room) do
     HakushiDev.Store.put("board", room, result)
+    :ok
+  end
+
+  # A change of a frame's inside: the board with that inside, and the
+  # change, as the board's (Hakushi.Change.lift/2), in its room when someone
+  # has it open.
+  def on_inside(change, %{result: inside}, room, frame) do
+    board = HakushiDev.Store.get("board", room)
+    HakushiDev.Store.put("board", room, Graph.put_subgraph(board, frame.id, inside))
+
+    _ =
+      Hakushi.Issho.change(
+        HakushiDev.Issho,
+        topic("board", room),
+        Hakushi.Change.lift(change, frame)
+      )
+
     :ok
   end
 
@@ -1703,6 +1756,42 @@ defmodule HakushiDev.BoardLive do
     }
 
   @impl true
+  def render(%{frame: %{} = frame} = assigns) do
+    assigns = assign(assigns, :title, frame.data.title)
+
+    ~H"""
+    <.app page={:board} me={@me} query={@query} title="Moodboard" crumb="Harbour Museum rebrand">
+      <:actions>
+        <.canvas_path>
+          <:step patch={"/board" <> qs(@query, %{})}>Moodboard</:step>
+          <:step>{@title}</:step>
+        </.canvas_path>
+        <span class="hint">⌘↑ goes back to the board.</span>
+      </:actions>
+      <.canvas
+        id={"frame-" <> @frame.id}
+        graph={@inside}
+        on_change={&on_inside(&1, &2, @room, @frame)}
+        on_up={fn _ -> send(self(), :up) end}
+        new_node={&new_node/2}
+        kits={@kits}
+        readonly={@readonly}
+        background={:cross}
+        grid={20}
+        snap
+        rules={[loops: false]}
+        label={@title}
+      >
+        <:node type="note" resizable :let={node}><.note node={node} /></:node>
+        <:node type="frame" group resizable opens :let={node}><.frame node={node} /></:node>
+        <:node type="title" :let={node}><.board_title node={node} /></:node>
+        <:node type="swatches" :let={node}><.swatches node={node} /></:node>
+        <:node type="specimen" :let={node}><.specimen node={node} /></:node>
+      </.canvas>
+    </.app>
+    """
+  end
+
   def render(assigns) do
     ~H"""
     <.app page={:board} me={@me} query={@query} title="Moodboard" crumb="Harbour Museum rebrand">
@@ -1715,8 +1804,9 @@ defmodule HakushiDev.BoardLive do
         id="board"
         graph={@graph}
         on_change={&on_change(&1, &2, @room)}
+        on_open={&send(self(), {:open, &1.node})}
         new_node={&new_node/2}
-        kits={[Hakushi.Kits.Ink, Hakushi.Kits.Images]}
+        kits={@kits}
         issho={[instance: HakushiDev.Issho, document: topic("board", @room), follow: @follow]}
         user={@me}
         readonly={@readonly}
@@ -1727,37 +1817,57 @@ defmodule HakushiDev.BoardLive do
         rules={[loops: false]}
         label="The moodboard"
       >
-        <:node type="note" resizable :let={node}>
-          <div class="note" data-tone={node.data.tone}>
-            <.handle kind={:both} side={:right} /><.handle kind={:both} side={:left} />
-            {node.data.text}
-          </div>
-        </:node>
-        <:node type="frame" group resizable :let={node}>
-          <div class="frame"><span data-hakushi-drag>{node.data.title}</span></div>
-        </:node>
-        <:node type="title" :let={node}>
-          <div class="board-title"><strong>{node.data.text}</strong><span>{node.data.sub}</span></div>
-        </:node>
-        <:node type="swatches" :let={node}>
-          <div class="swatches">
-            <.handle kind={:both} side={:left} /><.handle kind={:both} side={:right} />
-            <small>{node.data.title}</small>
-            <ul>
-              <li :for={{name, color} <- node.data.colors}><span style={"--swatch: #{color}"}></span><em>{name}</em></li>
-            </ul>
-          </div>
-        </:node>
-        <:node type="specimen" :let={node}>
-          <div class="specimen">
-            <.handle kind={:both} side={:left} /><.handle kind={:both} side={:right} /><.handle kind={:both} side={:bottom} />
-            <small>Type</small>
-            <b>{node.data.sample}</b>
-            <span>{node.data.family} · {node.data.note}</span>
-          </div>
-        </:node>
+        <:node type="note" resizable :let={node}><.note node={node} /></:node>
+        <:node type="frame" group resizable opens :let={node}><.frame node={node} /></:node>
+        <:node type="title" :let={node}><.board_title node={node} /></:node>
+        <:node type="swatches" :let={node}><.swatches node={node} /></:node>
+        <:node type="specimen" :let={node}><.specimen node={node} /></:node>
       </.canvas>
     </.app>
+    """
+  end
+
+  defp note(assigns) do
+    ~H"""
+    <div class="note" data-tone={@node.data.tone}>
+      <.handle kind={:both} side={:right} /><.handle kind={:both} side={:left} />
+      {@node.data.text}
+    </div>
+    """
+  end
+
+  defp frame(assigns) do
+    ~H"""
+    <div class="frame"><span data-hakushi-drag>{@node.data.title} <.opener /></span></div>
+    """
+  end
+
+  defp board_title(assigns) do
+    ~H"""
+    <div class="board-title"><strong>{@node.data.text}</strong><span>{@node.data.sub}</span></div>
+    """
+  end
+
+  defp swatches(assigns) do
+    ~H"""
+    <div class="swatches">
+      <.handle kind={:both} side={:left} /><.handle kind={:both} side={:right} />
+      <small>{@node.data.title}</small>
+      <ul>
+        <li :for={{name, color} <- @node.data.colors}><span style={"--swatch: #{color}"}></span><em>{name}</em></li>
+      </ul>
+    </div>
+    """
+  end
+
+  defp specimen(assigns) do
+    ~H"""
+    <div class="specimen">
+      <.handle kind={:both} side={:left} /><.handle kind={:both} side={:right} /><.handle kind={:both} side={:bottom} />
+      <small>Type</small>
+      <b>{@node.data.sample}</b>
+      <span>{@node.data.family} · {@node.data.note}</span>
+    </div>
     """
   end
 end
