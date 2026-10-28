@@ -923,6 +923,7 @@ defmodule HakushiDev.Layouts do
           .top .crumb { color: var(--atelier-muted); font-size: 0.875rem; }
           .top .spacer { flex: 1; }
           .top .hint { color: var(--atelier-muted); font-size: 0.8125rem; }
+          .top .find input { font: inherit; font-size: 0.8125rem; padding: 0.3rem 0.5rem; border: 1px solid var(--atelier-line, #ddd); border-radius: 6px; background: transparent; color: inherit; width: 9rem; }
           .button { display: inline-flex; align-items: center; gap: 0.375rem; height: 2rem; padding: 0 0.75rem; border: 1px solid var(--atelier-line); border-radius: 7px; background: var(--atelier-card); color: var(--atelier-ink); font: inherit; font-size: 0.8125rem; font-weight: 500; }
           .button.primary { background: var(--atelier-accent); border-color: transparent; color: #fff; }
           .stage { position: relative; flex: 1; min-height: 0; display: flex; }
@@ -1199,10 +1200,18 @@ defmodule HakushiDev.SchemaLive do
       Issho.Live.subscribe(doc, :self, events: ["canvas.*"])
     end
 
-    {:ok, assign(socket, graph: graph, now: graph, doc: doc)}
+    {:ok, assign(socket, graph: graph, now: graph, doc: doc, selected: [], zoom: nil)}
   end
 
   @impl true
+  # What the person selects and sees (on_select, on_viewport): the canvas
+  # calls them in this process, which sends itself the news.
+  def handle_info({:selected, %{nodes: nodes}}, socket),
+    do: {:noreply, assign(socket, :selected, nodes)}
+
+  def handle_info({:viewport, %{zoom: zoom}}, socket),
+    do: {:noreply, assign(socket, :zoom, zoom)}
+
   def handle_info({Issho.Live, "event", _room, %Issho.Event{}}, socket) do
     {:noreply, assign(socket, :now, Hakushi.Issho.graph(HakushiDev.Issho, socket.assigns.doc))}
   end
@@ -1211,6 +1220,23 @@ defmodule HakushiDev.SchemaLive do
   def handle_info({Issho.Live, _event, _room, _payload}, socket), do: {:noreply, socket}
 
   @impl true
+  # A table found by name: the view goes to it, and selects it.
+  def handle_event("find", %{"name" => name}, socket) do
+    graph = Hakushi.Issho.graph(HakushiDev.Issho, socket.assigns.doc) || socket.assigns.graph
+    name = String.downcase(String.trim(name))
+
+    with %{id: id} <-
+           Enum.find(Graph.nodes(graph), &String.contains?(String.downcase(&1.data.name), name)),
+         do: Hakushi.Live.focus("schema", id)
+
+    {:noreply, socket}
+  end
+
+  def handle_event("show_all", _params, socket) do
+    Hakushi.Live.fit("schema")
+    {:noreply, socket}
+  end
+
   def handle_event("add_column", %{"table" => table}, socket) do
     case Hakushi.Issho.graph(HakushiDev.Issho, topic("schema", socket.assigns.room))
          |> Kernel.||(socket.assigns.graph)
@@ -1278,7 +1304,13 @@ defmodule HakushiDev.SchemaLive do
     ~H"""
     <.app page={:schema} me={@me} query={@query} title="Schema" crumb="atelier_prod · 6 tables">
       <:actions>
-        <span class="hint">Drag from a column's dot to a column of another table.</span>
+        <span class="hint" data-selected={Enum.join(@selected, " ")} data-zoom={@zoom}>
+          {if @selected == [], do: "Drag from a column's dot to a column of another table.", else: "Selected: " <> Enum.join(@selected, ", ")}
+        </span>
+        <form id="find" phx-submit="find" class="find">
+          <input type="search" name="name" placeholder="Find a table" aria-label="Find a table" />
+        </form>
+        <button type="button" class="button" phx-click="show_all">Show all</button>
         <.link
           class="button"
           href={"/" <> HakushiDev.Layouts.qs(@query, if(@comments, do: %{}, else: %{"comments" => "1"}))}
@@ -1293,6 +1325,8 @@ defmodule HakushiDev.SchemaLive do
         id="schema"
         graph={@graph}
         on_change={&on_change(&1, &2, @room)}
+        on_select={&send(self(), {:selected, &1})}
+        on_viewport={&send(self(), {:viewport, &1})}
         new_node={&new_node/2}
         issho={[instance: HakushiDev.Issho, document: @doc, follow: @follow]}
         user={@me}

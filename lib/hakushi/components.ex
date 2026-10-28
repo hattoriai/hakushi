@@ -68,6 +68,23 @@ defmodule Hakushi.Components do
     [Changes](changes.md) guide.\
     """
 
+  attr :on_select, :any,
+    default: nil,
+    doc: """
+    `fn selection -> any end`: called when the person selects other nodes or edges, with a map \
+    of the `canvas`, the `nodes` and the `edges` selected (ids, `[]` for none), in the \
+    LiveView's process. See [Navigation](navigation.md#the-app-and-the-view)\
+    """
+
+  attr :on_viewport, :any,
+    default: nil,
+    doc: """
+    `fn viewport -> any end`: called when the person's view comes to rest after a pan or a \
+    zoom, with a map of the `canvas`, the part of the canvas on the screen (`x`, `y`, `width`, \
+    `height`, in the canvas's terms) and the `zoom`. See \
+    [Navigation](navigation.md#the-app-and-the-view)\
+    """
+
   attr :new_node, :any,
     default: nil,
     doc: """
@@ -241,6 +258,8 @@ defmodule Hakushi.Components do
       id={@id}
       graph={@graph}
       on_change={@on_change}
+      on_select={@on_select}
+      on_viewport={@on_viewport}
       new_node={@new_node}
       rules={@rules}
       kits={@kits}

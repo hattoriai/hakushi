@@ -39,6 +39,10 @@ export interface Config {
   /** How a tidy up places the nodes: in layers, by forces, or in a grid. */
   algorithm?: "layered" | "force" | "grid";
   exportable: boolean;
+  /** Whether the app hears what the person selects (the canvas's `on_select`). */
+  reportSelect?: boolean;
+  /** Whether the app hears where the person's view comes to rest (the canvas's `on_viewport`). */
+  reportView?: boolean;
   live: boolean;
   user: string | null;
   /** The tools of the kits, for the bar of tools (Hakushi.Kit's `tools/1`). */

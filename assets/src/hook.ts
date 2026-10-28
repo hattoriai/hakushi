@@ -48,6 +48,12 @@ export const Hakushi = {
       if (payload.canvas === canvas.id)
         void canvas.layout({ direction: payload.direction as "right" | "down" | undefined, algorithm: payload.algorithm as "layered" | "force" | "grid" | undefined });
     });
+    hook.handleEvent("hakushi:view", (payload) => {
+      if (payload.canvas === canvas.id) canvas.moveView(payload);
+    });
+    hook.handleEvent("hakushi:select", (payload) => {
+      if (payload.canvas === canvas.id) canvas.selectFor(payload);
+    });
     hook.handleEvent("hakushi:export", (payload) => {
       if (payload.canvas === canvas.id) void canvas.download({ format: payload.format as "png" | "svg" | undefined, filename: payload.filename as string | undefined, paper: payload.paper === true });
     });

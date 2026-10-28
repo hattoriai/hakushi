@@ -252,6 +252,126 @@ defmodule Hakushi.CanvasTest do
     end
   end
 
+  describe "the app and the view" do
+    test "on_select hears what the person selects, of what the canvas has" do
+      {view, _html} = open()
+      assert :ok = select(view, "schema", ["users", "gone"], ["fk"])
+      assert_receive {:on_select, %{canvas: "schema", nodes: ["users"], edges: ["fk"]}}
+
+      assert :ok = select(view, "schema", [])
+      assert_receive {:on_select, %{nodes: [], edges: []}}
+    end
+
+    test "on_viewport hears where the view came to rest, checked" do
+      {view, _html} = open()
+      assert :ok = viewport(view, "schema", {-20, 10.5, 800, 600}, 1.25)
+
+      assert_receive {:on_viewport,
+                      %{canvas: "schema", x: -20, y: 10.5, width: 800, height: 600, zoom: 1.25}}
+
+      assert :ok = viewport(view, "schema", {0, 0, 0, 600}, 1)
+      assert :ok = viewport(view, "schema", {0, 0, 800, 600}, -1)
+      refute_receive {:on_viewport, _}
+    end
+
+    test "a read-only canvas tells the app what is selected and seen too" do
+      {view, _html} = open("?readonly=true")
+      assert :ok = select(view, "schema", ["orders"])
+      assert_receive {:on_select, %{nodes: ["orders"]}}
+      assert :ok = viewport(view, "schema", {0, 0, 100, 100}, 1)
+      assert_receive {:on_viewport, %{width: 100}}
+    end
+
+    test "the browser reports only to a canvas that listens" do
+      {_view, html} = open()
+      assert html =~ "&quot;reportSelect&quot;:true"
+      assert html =~ "&quot;reportView&quot;:true"
+
+      html =
+        render_component(&Hakushi.Components.canvas/1, id: "quiet", graph: Hakushi.Graph.new())
+
+      assert html =~ "&quot;reportSelect&quot;:false"
+      assert html =~ "&quot;reportView&quot;:false"
+    end
+
+    test "fit/2 shows every node, some, or a box" do
+      {view, _html} = open()
+      render_click(view, "app_view", %{"fun" => "fit"})
+
+      assert_push_event(
+        view,
+        "hakushi:view",
+        %{
+          "canvas" => "schema",
+          "padding" => 48,
+          "animate" => true
+        } = payload
+      )
+
+      refute Map.has_key?(payload, "nodes")
+
+      render_click(view, "app_view", %{"fun" => "fit", "nodes" => ["users"], "padding" => 0})
+      assert_push_event(view, "hakushi:view", %{"nodes" => ["users"], "padding" => 0})
+
+      render_click(view, "app_view", %{
+        "fun" => "fit",
+        "box" => [0, 0, 400, 300],
+        "animate" => false
+      })
+
+      assert_push_event(view, "hakushi:view", %{"box" => [0, 0, 400, 300], "animate" => false})
+    end
+
+    test "focus/3 goes to nodes and selects them, unless told not to" do
+      {view, _html} = open()
+      render_click(view, "app_view", %{"fun" => "focus", "ids" => "orders"})
+
+      assert_push_event(
+        view,
+        "hakushi:view",
+        %{"focus" => ["orders"], "select" => true} = payload
+      )
+
+      refute Map.has_key?(payload, "zoom")
+
+      render_click(view, "app_view", %{
+        "fun" => "focus",
+        "ids" => ["users", "orders"],
+        "select" => false,
+        "zoom" => 2
+      })
+
+      assert_push_event(view, "hakushi:view", %{
+        "focus" => ["users", "orders"],
+        "select" => false,
+        "zoom" => 2
+      })
+    end
+
+    test "select/3 selects nodes and edges in the browser" do
+      {view, _html} = open()
+      render_click(view, "app_view", %{"fun" => "select", "ids" => ["users"], "edges" => ["fk"]})
+
+      assert_push_event(view, "hakushi:select", %{
+        "nodes" => ["users"],
+        "edges" => ["fk"],
+        "reveal" => false
+      })
+
+      render_click(view, "app_view", %{"fun" => "select", "ids" => [], "reveal" => true})
+      assert_push_event(view, "hakushi:select", %{"nodes" => [], "reveal" => true})
+    end
+
+    test "the view's functions refuse what they cannot do" do
+      assert_raise ArgumentError, fn -> Hakushi.Live.fit("c", nodes: ["a"], box: {0, 0, 1, 1}) end
+      assert_raise ArgumentError, fn -> Hakushi.Live.fit("c", box: {0, 0, 0, 1}) end
+      assert_raise ArgumentError, fn -> Hakushi.Live.fit("c", padding: -1) end
+      assert_raise ArgumentError, fn -> Hakushi.Live.focus("c", [:a]) end
+      assert_raise ArgumentError, fn -> Hakushi.Live.focus("c", "a", zoom: 0) end
+      assert_raise ArgumentError, fn -> Hakushi.Live.select("c", nil) end
+    end
+  end
+
   describe "tidy as it opens" do
     test "the canvas says so, and hides its nodes until the browser has laid them out" do
       {_view, html} = open("?tidy=true")

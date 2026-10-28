@@ -338,7 +338,36 @@ defmodule Hakushi.Test do
     |> Enum.map(&attribute(&1, "data-person"))
   end
 
+  @doc """
+  Selects nodes, and edges, as a person does with a click or a box: the
+  canvas's `on_select` hears it. To select from the app, as
+  `Hakushi.Live.select/3` does, assert its push of `"hakushi:select"`.
+  """
+  @spec select(struct(), String.t(), [String.t()], [String.t()]) :: :ok
+  def select(view, id, nodes, edges \\ []) do
+    tell(view, id, "hakushi:select", %{"nodes" => nodes, "edges" => edges})
+  end
+
+  @doc """
+  Moves the person's view to show the part `{x, y, width, height}` of the
+  canvas at `zoom`, as a pan or a zoom that comes to rest does: the
+  canvas's `on_viewport` hears it.
+  """
+  @spec viewport(struct(), String.t(), {number(), number(), number(), number()}, number()) :: :ok
+  def viewport(view, id, {x, y, width, height}, zoom) do
+    tell(view, id, "hakushi:viewport", %{"box" => [x, y, width, height], "zoom" => zoom})
+  end
+
   defp change(view, id, params), do: result(event(view, id, "hakushi:change", params))
+
+  # An event the browser sends without waiting for a reply.
+  defp tell(view, id, name, payload) do
+    view
+    |> LiveViewTest.element("##{id}-hook")
+    |> LiveViewTest.render_hook(name, payload)
+
+    :ok
+  end
 
   defp result(%{"ok" => true}), do: :ok
   defp result(%{"ok" => false}), do: {:error, nil}

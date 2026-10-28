@@ -7,6 +7,21 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- The app hears what the person selects and sees: `on_select` with the
+  nodes and edges selected, and `on_viewport` with the part of the
+  canvas on the screen and the zoom when the view comes to rest, both in
+  the LiveView's process. A canvas without them sends neither. For an
+  inspector beside the selection, a search, a view kept in the URL.
+- The app moves the person's view and selection: `Hakushi.Live.fit/2`
+  (every node, `nodes: ids`, or `box: {x, y, width, height}`, an
+  `on_viewport`'s), `Hakushi.Live.focus/3` (nodes in the middle, and
+  selected) and `Hakushi.Live.select/3`. The view glides there, and a
+  pan or a zoom on the way stops it. See the Navigation guide.
+- `Hakushi.Test.select/4` and `Hakushi.Test.viewport/4`, as the person
+  selects and pans.
+
 ## [0.7.0] - 2026-10-26
 
 A shared canvas's commands are Issho's actions: one for a person's canvas

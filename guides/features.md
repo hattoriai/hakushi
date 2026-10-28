@@ -5,7 +5,7 @@ Everything the canvas does, in one table. Each guide tells more.
 | | |
 | --- | --- |
 | Paper | dots, lines (graph paper, with a stronger line every five squares), crosses, none, or a paper of your own; the size of a square; snap to the grid; a picker for people (`papers`), whose choice is the graph's, shared and undone as any change |
-| View | pan with the wheel or a trackpad, Space and a drag, the middle button, one finger; zoom with ⌘ or Ctrl and the wheel, a pinch, the controls, + and -; fit (⇧1), 100% (⇧0); an overview (minimap) to click and drag |
+| View | pan with the wheel or a trackpad, Space and a drag, the middle button, one finger; zoom with ⌘ or Ctrl and the wheel, a pinch, the controls, + and -; fit (⇧1), 100% (⇧0); an overview (minimap) to click and drag; the app hears where the view comes to rest (`on_viewport`) and moves it (`Hakushi.Live.fit/2`, `focus/3`), gliding there |
 | Nodes | your own HEEx, a `:node` slot for each type; drawn from the node's data, on the server; locked nodes; resized by their corners (`resizable`); a part of a node to drag it by (`data-hakushi-drag`), and fields and buttons in it that are theirs |
 | Handles | sources, targets or both, on any side of the node or of any element in it (a row of a table); several with one id, of which an edge takes the nearest; `type`, `accepts` and `max` |
 | Edges | bezier, smooth, step, straight; an arrow, a dot or no end; a label, set with a double click; animated; selected and deleted |
@@ -15,7 +15,7 @@ Everything the canvas does, in one table. Each guide tells more.
 | In a page | an embed frame (`canvas_embed/1`) with a title, the kits' items and full screen; `wheel={:scroll}` for a page that scrolls, `refit` for a box that changes size; a canvas in a Kotoba document |
 | Layout | a tidy up (⇧L, the controls, `Hakushi.Live.layout/2`): in layers from left to right or top to bottom (fewer crossings, each node level with its neighbours), spread out by forces, or in a grid, chosen in a menu; parts packed to the screen's shape; of the selection or of every node; animated; one change. A canvas that tidies as it opens (`tidy`), opens at a readable zoom (`fit={:readable}`), and that people only arrange (`readonly={:arrange}`) |
 | Export | the whole canvas as a PNG or an SVG, the nodes as the page draws them (the controls, `Hakushi.Live.export/2`, `exportImage()`) |
-| Selection | a click, Shift or ⌘ and a click, a box on the paper, ⌘A, Escape |
+| Selection | a click, Shift or ⌘ and a click, a box on the paper, ⌘A, Escape; the app hears it (`on_select`) and selects (`Hakushi.Live.select/3`) |
 | Moving | a drag, of every selected node; helper lines that line a node up with the others (Alt to drag freely); the arrow keys, Shift for ten |
 | Changes | moves, resizes, edges, deletes (with their edges), labels, copy and paste, duplicate, items dragged from outside the canvas (`canvas_item/1`) or a double click on the paper (`new_node`); undo and redo of each person's own changes, checked again |
 | Server | `on_change` for each change, with the graph before and after it and the person; the rules (`loops`, `duplicates`, `cycles`); a refused change taken back, its reason shown; the app's own changes (`Hakushi.Live.change/2`, `Hakushi.Issho.change/4`) |

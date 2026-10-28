@@ -74,6 +74,18 @@ defmodule HakushiTest.CanvasLive do
      )}
   end
 
+  defp view_opts(params) do
+    for {key, value} <- Map.drop(params, ["fun", "ids"]) do
+      value =
+        case {key, value} do
+          {"box", [x, y, w, h]} -> {x, y, w, h}
+          {_key, value} -> value
+        end
+
+      {String.to_existing_atom(key), value}
+    end
+  end
+
   defp readonly("true"), do: true
   defp readonly("arrange"), do: :arrange
   defp readonly(_other), do: false
@@ -105,6 +117,22 @@ defmodule HakushiTest.CanvasLive do
     {:noreply, socket}
   end
 
+  # The app's view of the canvas: what it shows, and what is selected.
+  def handle_event("app_view", %{"fun" => "fit"} = params, socket) do
+    Hakushi.Live.fit("schema", view_opts(params))
+    {:noreply, socket}
+  end
+
+  def handle_event("app_view", %{"fun" => "focus", "ids" => ids} = params, socket) do
+    Hakushi.Live.focus("schema", ids, view_opts(params))
+    {:noreply, socket}
+  end
+
+  def handle_event("app_view", %{"fun" => "select", "ids" => ids} = params, socket) do
+    Hakushi.Live.select("schema", ids, view_opts(params))
+    {:noreply, socket}
+  end
+
   def handle_event("app_change", _params, socket) do
     Hakushi.Live.change("schema", Hakushi.Change.move([{"note", 7, 7}]))
     {:noreply, socket}
@@ -117,6 +145,8 @@ defmodule HakushiTest.CanvasLive do
       id="schema"
       graph={@graph}
       on_change={&on_change(&1, &2, @test)}
+      on_select={@test && (&send(@test, {:on_select, &1}))}
+      on_viewport={@test && (&send(@test, {:on_viewport, &1}))}
       new_node={&new_node/2}
       issho={@issho}
       user={@user}

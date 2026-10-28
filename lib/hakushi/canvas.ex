@@ -34,6 +34,11 @@ defmodule Hakushi.Canvas do
       the kit gives.
     * `"hakushi:undo"` and `"hakushi:redo"`: the person's own changes,
       undone and done again as new changes, which the server checks again.
+    * `"hakushi:select"` with `nodes` and `edges`: what the person
+      selected, for the canvas's `on_select`.
+    * `"hakushi:viewport"` with `box` (`[x, y, width, height]`) and `zoom`:
+      where the person's view came to rest, for the canvas's
+      `on_viewport`.
     * `"hakushi:peer"`, on a shared canvas: the person's cursor, the nodes
       they selected, the nodes they drag and the line they draw (`ink`),
       for the others.
@@ -477,7 +482,33 @@ defmodule Hakushi.Canvas do
 
   # -- Events of the browser -----------------------------------------------
 
+  # What the person selected, for the app's on_select: the ids the canvas
+  # has, no more of them than a canvas has.
   @impl true
+  def handle_event("hakushi:select", params, socket) when is_map(params) do
+    %{graph: graph, on_select: on_select, id: id} = socket.assigns
+
+    if on_select do
+      nodes = params |> Map.get("nodes") |> ids_only() |> Enum.filter(&Graph.node(graph, &1))
+      edges = params |> Map.get("edges") |> ids_only() |> Enum.filter(&Graph.edge(graph, &1))
+      on_select.(%{canvas: id, nodes: nodes, edges: edges})
+    end
+
+    {:noreply, socket}
+  end
+
+  # Where the person's view came to rest, for the app's on_viewport: the
+  # part of the canvas on their screen, and the zoom.
+  def handle_event("hakushi:viewport", params, socket) when is_map(params) do
+    with %{on_viewport: on_viewport, id: id} when on_viewport != nil <- socket.assigns,
+         [x, y, width, height] when width > 0 and height > 0 <- numbers(params["box"], 4),
+         zoom when is_number(zoom) and zoom > 0 <- params["zoom"] do
+      on_viewport.(%{canvas: id, x: x, y: y, width: width, height: height, zoom: zoom})
+    end
+
+    {:noreply, socket}
+  end
+
   def handle_event(event, params, %{assigns: %{readonly: true}} = socket)
       when event not in ["hakushi:peer", "hakushi:seen"] do
     if socket.assigns[:arrange] and arrangement?(event, params, socket),
@@ -1464,6 +1495,8 @@ defmodule Hakushi.Canvas do
       "layout" => Atom.to_string(elem(assigns.layout, 1)),
       "algorithm" => Atom.to_string(elem(assigns.layout, 0)),
       "exportable" => assigns.export,
+      "reportSelect" => assigns.on_select != nil,
+      "reportView" => assigns.on_viewport != nil,
       "live" => assigns.join != nil,
       "user" => own_id(%{assigns: assigns}),
       "tools" => Kit.tools(assigns.kits, assigns.messages),
