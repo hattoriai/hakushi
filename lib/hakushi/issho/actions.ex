@@ -69,7 +69,8 @@ if Code.ensure_loaded?(Issho.Action) do
     def commit(room, canvas, %Change{op: :delete, nodes: nodes, edges: edges}),
       do: act(room, __MODULE__.Delete, %{canvas: canvas, nodes: nodes, edges: edges})
 
-    def commit(room, canvas, %Change{} = change), do: Issho.Live.transact(room, canvas, [change])
+    def commit(room, canvas, %Change{} = change),
+      do: Hakushi.Issho.rewritable([change], &Issho.Live.transact(room, canvas, &1))
 
     defp act(_room, action, args) do
       args = Map.reject(args, fn {_key, value} -> is_nil(value) end)
@@ -118,7 +119,11 @@ if Code.ensure_loaded?(Issho.Action) do
     # The change, as whoever runs the invocation.
     def change(invocation, canvas, %Change{} = change) do
       who = %{id: invocation.by.key, name: invocation.by.name}
-      Issho.Action.transact(invocation, canvas, [%{change | by: who}])
+
+      Hakushi.Issho.rewritable(
+        [%{change | by: who}],
+        &Issho.Action.transact(invocation, canvas, &1)
+      )
     end
 
     @doc false

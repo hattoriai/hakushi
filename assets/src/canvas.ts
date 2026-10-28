@@ -3217,6 +3217,9 @@ export class Canvas {
 
   private push(event: string, payload: object, onReply?: (reply: Record<string, unknown>) => void) {
     this.live.push(event, payload, (reply) => {
+      // The app made another change of it (on_change): what this canvas
+      // showed of it goes, and the server's shows.
+      if (reply.rewritten === true && event === "hakushi:change") this.resync(payload as { nodes?: unknown[]; edges?: unknown[] });
       onReply?.(reply);
       if (Array.isArray(reply.select)) {
         // The new nodes may come after the reply: they are selected as
@@ -3225,6 +3228,23 @@ export class Canvas {
         this.selectPending();
       }
     });
+  }
+
+  // The nodes and edges of a change, as the server has them: their places,
+  // read again from their elements; those hidden on their way out, back.
+  private resync(change: { nodes?: unknown[]; edges?: unknown[] }) {
+    const idOf = (item: unknown): string | null => (typeof item === "string" ? item : typeof (item as { id?: unknown })?.id === "string" ? (item as { id: string }).id : null);
+    const nodes = (change.nodes ?? []).map(idOf).filter((id): id is string => id !== null);
+    const edges = (change.edges ?? []).map(idOf).filter((id): id is string => id !== null);
+    const gone = new Set([...this.withDescendants(nodes), ...edges]);
+    for (const id of [...gone]) for (const e of this.byNode.get(id) ?? []) gone.add(e);
+    for (const id of gone) this.gone.delete(id);
+    for (const id of this.withDescendants(nodes)) {
+      const node = this.nodes.get(id);
+      if (node?.el.isConnected) this.readNode(node.el);
+    }
+    this.pending = null;
+    this.refresh(gone);
   }
 
   private selectPending() {

@@ -68,6 +68,7 @@ defmodule HakushiTest.CanvasLive do
            ]
          ),
        user: user(params),
+       rewrite: params["rewrite"],
        readonly: readonly(params["readonly"]),
        way: params["layout"] && String.to_existing_atom(params["layout"]),
        tidy: params["tidy"] == "true"
@@ -144,7 +145,7 @@ defmodule HakushiTest.CanvasLive do
     <.canvas
       id="schema"
       graph={@graph}
-      on_change={&on_change(&1, &2, @test)}
+      on_change={&on_change(&1, &2, @test, @rewrite)}
       on_select={@test && (&send(@test, {:on_select, &1}))}
       on_viewport={@test && (&send(@test, {:on_viewport, &1}))}
       new_node={&new_node/2}
@@ -173,14 +174,30 @@ defmodule HakushiTest.CanvasLive do
     """
   end
 
-  defp on_change(change, context, test) do
+  defp on_change(change, context, test, rewrite) do
     if test, do: send(test, {:on_change, change, context})
 
-    case change do
-      %{op: :delete, nodes: ["users"]} -> {:error, "The users table stays."}
-      _other -> :ok
+    case {change, rewrite} do
+      {%{op: :delete, nodes: ["users"]}, _rewrite} ->
+        {:error, "The users table stays."}
+
+      {%{op: op}, "snap"} when op in [:move, :update] ->
+        {:ok, %{change | nodes: Enum.map(change.nodes, &snap/1)}}
+
+      {%{op: :move}, "never"} ->
+        {:ok, Hakushi.Change.move([{"note", :rand.uniform(1000), 0}])}
+
+      {%{op: :connect, edges: [edge]}, "loop"} ->
+        {:ok, Hakushi.Change.connect(%{edge | source: edge.target})}
+
+      _other ->
+        :ok
     end
   end
+
+  # ?rewrite=snap: the app's grid, of tens.
+  defp snap(%{x: x, y: y} = place), do: %{place | x: round(x / 10) * 10, y: round(y / 10) * 10}
+  defp snap(update), do: update
 
   defp new_node("table", {x, y}),
     do: %{type: "table", x: x, y: y, data: %{name: "new", columns: ["id"]}}

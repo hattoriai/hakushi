@@ -21,6 +21,18 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   pan or a zoom on the way stops it. See the Navigation guide.
 - `Hakushi.Test.select/4` and `Hakushi.Test.viewport/4`, as the person
   selects and pans.
+- `on_change` may give back another change to happen in place of the
+  one it was given (`{:ok, %Hakushi.Change{}}`): a move put on the app's
+  grid, a node kept in its frame, a delete that takes more with it. It
+  goes by the rules and `on_change` again, the person sees it and undoes
+  it, and on a shared canvas everyone sees it, whoever made the first. See
+  the Changes guide.
+
+### Changed
+
+- `on_change` returning `{:ok, %Hakushi.Change{}}` makes that change
+  happen in place of the one it was given; any other `{:ok, term}` takes
+  the change, as before.
 
 ## [0.7.0] - 2026-10-26
 

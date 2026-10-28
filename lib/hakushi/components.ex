@@ -61,8 +61,8 @@ defmodule Hakushi.Components do
   attr :on_change, :any,
     default: nil,
     doc: """
-    `fn change, context -> :ok | {:error, reason} end`: the app's own check of each change, and \
-    where it saves it. `context` has the `graph` before the change and the `result` after it, \
+    `fn change, context -> :ok | {:ok, change} | {:error, reason} end`: the app's own check of \
+    each change, and where it saves it; another change it gives back happens in its place. `context` has the `graph` before the change and the `result` after it, \
     `by`, who made it (on a shared canvas an `Issho.Identity`: a person, an agent and whom it \
     acts for, or the server; alone, the canvas's `user`), and the `canvas`. See the \
     [Changes](changes.md) guide.\
