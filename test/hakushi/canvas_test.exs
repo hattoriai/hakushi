@@ -379,6 +379,86 @@ defmodule Hakushi.CanvasTest do
     end
   end
 
+  describe "the menu" do
+    test "the app's items for a node, an edge and the paper" do
+      {view, _html} = open("?menu=app")
+
+      assert menu(view, "schema", kind: :node, nodes: ["users"]) ==
+               ["inspect", :separator, :copy, :delete]
+
+      # Separators at the ends, or two together, go.
+      assert menu(view, "schema", kind: :node, nodes: ["users", "orders"]) == [:copy, :delete]
+      assert menu(view, "schema", kind: :edge, edges: ["fk"]) == [:label, "explain", "cut"]
+      assert menu(view, "schema", kind: :canvas, at: {10, 20}) == []
+    end
+
+    test "an item of the app's own calls on_menu with the target, checked" do
+      {view, _html} = open("?menu=app&notify=true")
+
+      assert :ok =
+               pick(view, "schema", "inspect", kind: :node, nodes: ["users", "gone"], at: {4, 5})
+
+      assert_receive {:on_menu, "inspect",
+                      %{canvas: "schema", kind: :node, nodes: ["users"], edges: [], at: {4, 5}}}
+
+      assert_receive {Hakushi, "schema", {:menu, "inspect", %{kind: :node}}}
+
+      # Only an item the menu offered.
+      assert {:error, nil} =
+               pick(view, "schema", "delete-everything", kind: :node, nodes: ["users"])
+
+      refute_receive {:on_menu, _id, _target}
+    end
+
+    test "Hakushi's own items, and none that change a read-only canvas" do
+      {view, html} = open("?menu=default")
+      assert html =~ "&quot;menu&quot;:true"
+
+      assert menu(view, "schema", kind: :node, nodes: ["users"]) == [
+               :copy,
+               :cut,
+               :duplicate,
+               :separator,
+               :delete
+             ]
+
+      assert menu(view, "schema", kind: :edge, edges: ["fk"]) == [:label, :separator, :delete]
+      assert menu(view, "schema", kind: :canvas) == [:paste, :select_all, :separator, :fit, :tidy]
+
+      {view, _html} = open("?menu=default&readonly=true")
+      assert menu(view, "schema", kind: :node, nodes: ["users"]) == []
+      assert menu(view, "schema", kind: :canvas) == [:select_all, :separator, :fit]
+
+      {view, _html} = open("?menu=default&readonly=arrange")
+      assert menu(view, "schema", kind: :canvas) == [:select_all, :separator, :fit, :tidy]
+    end
+
+    test "no menu: the browser's" do
+      {view, html} = open()
+      assert html =~ "&quot;menu&quot;:false"
+      assert menu(view, "schema", kind: :canvas) == []
+    end
+
+    test "the items are drawn in the canvas's words, with their icons" do
+      can = %{messages: Hakushi.Messages.for_locale("fr", %{}), readonly: false, arrange: false}
+
+      assert {[%{"action" => "copy", "label" => "Copier"}, %{"icon" => "<svg" <> _}], ids} =
+               Hakushi.Menu.to_client([:copy, %{id: "a", label: "A", icon: "table"}], can)
+
+      assert MapSet.to_list(ids) == ["a"]
+
+      assert_raise ArgumentError, ~r/menu item/, fn -> Hakushi.Menu.to_client([:explode], can) end
+
+      assert_raise ArgumentError, ~r/no \[:colour\]/, fn ->
+        Hakushi.Menu.to_client([%{id: "a", label: "A", colour: 1}], can)
+      end
+
+      assert_raise ArgumentError, ~r/icon/, fn ->
+        Hakushi.Menu.to_client([%{id: "a", label: "A", icon: "nope"}], can)
+      end
+    end
+  end
+
   describe "marks" do
     defp mark(view, fun, ids, mark),
       do: render_click(view, "app_mark", %{"fun" => fun, "ids" => ids, "mark" => mark})

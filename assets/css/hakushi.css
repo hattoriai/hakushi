@@ -299,6 +299,49 @@
   color: var(--hakushi-accent);
 }
 
+/* The canvas's menu (Hakushi.Menu): by the pointer, its items with an
+   icon, their words and their keys. */
+.hakushi-context-menu {
+  bottom: auto;
+  min-width: 13rem;
+}
+
+.hakushi-menu-item {
+  display: grid;
+  grid-template-columns: 16px 1fr auto;
+}
+
+.hakushi-menu-icon {
+  display: flex;
+  color: var(--hakushi-muted);
+}
+
+.hakushi-menu-keys {
+  padding-left: 16px;
+  color: var(--hakushi-muted);
+  font: inherit;
+  font-size: 0.75rem;
+}
+
+.hakushi-menu-item[data-danger] {
+  color: var(--hakushi-mark-failed, #e5484d);
+}
+
+.hakushi-menu-item[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.hakushi-menu-item[aria-disabled="true"]:hover {
+  background: transparent;
+}
+
+.hakushi-menu-separator {
+  height: 1px;
+  margin: 3px 4px;
+  background: var(--hakushi-border);
+}
+
 .hakushi-paper-frame {
   display: block;
   flex: none;

@@ -36,6 +36,9 @@ defmodule Hakushi.Canvas do
       undone and done again as new changes, which the server checks again.
     * `"hakushi:select"` with `nodes` and `edges`: what the person
       selected, for the canvas's `on_select`.
+    * `"hakushi:menu"` with `kind`, `nodes`, `edges` and `at`: the items
+      of the canvas's `menu` for them (`Hakushi.Menu`), and
+      `"hakushi:menu-pick"` with an item's `id` too: the person chose it.
     * `"hakushi:viewport"` with `box` (`[x, y, width, height]`) and `zoom`:
       where the person's view came to rest, for the canvas's
       `on_viewport`.
@@ -585,6 +588,43 @@ defmodule Hakushi.Canvas do
       {:noreply, notify(socket, {:viewport, viewport})}
     else
       _other -> {:noreply, socket}
+    end
+  end
+
+  # The menu of a right click (Hakushi.Menu): the app's items for what is
+  # under the pointer, as the person may choose them; the ids of the app's
+  # own are kept, which a choice must be one of.
+  def handle_event("hakushi:menu", params, socket) when is_map(params) do
+    %{menu: menu, id: id, graph: graph} = socket.assigns
+    target = Hakushi.Menu.target(params, id, graph)
+
+    items =
+      case menu do
+        none when none in [nil, false] -> []
+        true -> Hakushi.Menu.defaults(target)
+        fun when is_function(fun, 1) -> fun.(target)
+      end
+
+    can = %{
+      messages: socket.assigns.messages,
+      readonly: socket.assigns.readonly,
+      arrange: socket.assigns[:arrange] == true
+    }
+
+    {items, offered} = Hakushi.Menu.to_client(items, can)
+    {:reply, %{"items" => items}, assign(socket, :menu_offered, offered)}
+  end
+
+  # An item of the app's own, chosen: its on_menu, and notify.
+  def handle_event("hakushi:menu-pick", %{"id" => item} = params, socket) when is_binary(item) do
+    if MapSet.member?(socket.assigns[:menu_offered] || MapSet.new(), item) do
+      target = Hakushi.Menu.target(params, socket.assigns.id, socket.assigns.graph)
+      if socket.assigns.on_menu, do: socket.assigns.on_menu.(item, target)
+
+      {:reply, %{"ok" => true},
+       socket |> assign(:menu_offered, MapSet.new()) |> notify({:menu, item, target})}
+    else
+      {:reply, %{"ok" => false}, socket}
     end
   end
 
@@ -1668,6 +1708,7 @@ defmodule Hakushi.Canvas do
       "exportable" => assigns.export,
       "reportSelect" => assigns.on_select != nil or assigns.notify != nil,
       "reportView" => assigns.on_viewport != nil or assigns.notify != nil,
+      "menu" => assigns.menu != nil and assigns.menu != false,
       "live" => assigns.join != nil,
       "user" => own_id(%{assigns: assigns}),
       "tools" => Kit.tools(assigns.kits, assigns.messages),

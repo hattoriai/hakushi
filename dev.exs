@@ -1222,6 +1222,12 @@ defmodule HakushiDev.SchemaLive do
   def handle_info({:viewport, %{zoom: zoom}}, socket),
     do: {:noreply, assign(socket, :zoom, zoom)}
 
+  # An item of the canvas's menu (Hakushi.Menu): a column for the table.
+  def handle_info({:menu, "add_column", %{nodes: [table]}}, socket),
+    do: handle_event("add_column", %{"table" => table}, socket)
+
+  def handle_info({:menu, _item, _target}, socket), do: {:noreply, socket}
+
   def handle_info({Issho.Live, "event", _room, %Issho.Event{}}, socket) do
     {:noreply, assign(socket, :now, Hakushi.Issho.graph(HakushiDev.Issho, socket.assigns.doc))}
   end
@@ -1305,6 +1311,19 @@ defmodule HakushiDev.SchemaLive do
          do: Enum.find(columns, &(&1.name == name))
   end
 
+  # The canvas's menu: the app's own item for one table, and the canvas's own.
+  def menu(%{kind: :node, nodes: [_table]}),
+    do: [
+      %{id: "add_column", label: "Add a column", icon: "plus"},
+      :separator,
+      :copy,
+      :duplicate,
+      :separator,
+      :delete
+    ]
+
+  def menu(target), do: Hakushi.Menu.defaults(target)
+
   def new_node("table", {x, y}) do
     %{
       type: "table",
@@ -1349,6 +1368,8 @@ defmodule HakushiDev.SchemaLive do
         on_change={if @app_grid, do: &on_grid(&1, &2, @room), else: &on_change(&1, &2, @room)}
         on_select={&send(self(), {:selected, &1})}
         on_viewport={&send(self(), {:viewport, &1})}
+        menu={&menu/1}
+        on_menu={&send(self(), {:menu, &1, &2})}
         new_node={&new_node/2}
         issho={[instance: HakushiDev.Issho, document: @doc, follow: @follow]}
         user={@me}

@@ -66,6 +66,16 @@ defmodule Hakushi.Icons do
   @spec names() :: [String.t()]
   def names, do: @shapes |> Map.keys() |> Enum.sort()
 
+  @doc false
+  # An icon as the markup of its SVG, for the browser to put in place (an
+  # item of the canvas's menu).
+  @spec svg(String.t(), pos_integer()) :: String.t()
+  def svg(name, size \\ 16) do
+    ~s(<svg class="hakushi-icon" viewBox="0 0 24 24" width="#{size}" height="#{size}" fill="none" ) <>
+      ~s(stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ) <>
+      ~s(aria-hidden="true">#{Map.fetch!(@shapes, name)}</svg>)
+  end
+
   @doc "Renders an icon of this set."
   attr :name, :string, required: true, doc: "a name of `names/0`"
   attr :size, :integer, default: 16

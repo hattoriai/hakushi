@@ -158,7 +158,15 @@ defmodule Hakushi.Messages.Translations do
     "placeNode" => "The node “{name}”",
     "placeNodes" => "The node “{name}” and {n} more",
     "placeLabelNodes" => "{n} nodes",
-    "placePoint" => "A point on the canvas"
+    "placePoint" => "A point on the canvas",
+    "menu" => "Menu",
+    "menuCopy" => "Copy",
+    "menuCut" => "Cut",
+    "menuPaste" => "Paste",
+    "menuDuplicate" => "Duplicate",
+    "menuDelete" => "Delete",
+    "menuSelectAll" => "Select all",
+    "menuLabel" => "Edit label"
   }
 
   @all %{
@@ -317,7 +325,15 @@ defmodule Hakushi.Messages.Translations do
       "placeNode" => "O nó “{name}”",
       "placeNodes" => "O nó “{name}” e mais {n}",
       "placeLabelNodes" => "{n} nós",
-      "placePoint" => "Um ponto da tela"
+      "placePoint" => "Um ponto da tela",
+      "menu" => "Menu",
+      "menuCopy" => "Copiar",
+      "menuCut" => "Cortar",
+      "menuPaste" => "Colar",
+      "menuDuplicate" => "Duplicar",
+      "menuDelete" => "Apagar",
+      "menuSelectAll" => "Selecionar tudo",
+      "menuLabel" => "Editar rótulo"
     },
     "es" => %{
       "canvas" => "Lienzo",
@@ -474,7 +490,15 @@ defmodule Hakushi.Messages.Translations do
       "placeNode" => "El nodo «{name}»",
       "placeNodes" => "El nodo «{name}» y {n} más",
       "placeLabelNodes" => "{n} nodos",
-      "placePoint" => "Un punto del lienzo"
+      "placePoint" => "Un punto del lienzo",
+      "menu" => "Menú",
+      "menuCopy" => "Copiar",
+      "menuCut" => "Cortar",
+      "menuPaste" => "Pegar",
+      "menuDuplicate" => "Duplicar",
+      "menuDelete" => "Eliminar",
+      "menuSelectAll" => "Seleccionar todo",
+      "menuLabel" => "Editar etiqueta"
     },
     "fr" => %{
       "canvas" => "Canevas",
@@ -628,7 +652,15 @@ defmodule Hakushi.Messages.Translations do
       "placeNode" => "Le nœud « {name} »",
       "placeNodes" => "Le nœud « {name} » et {n} de plus",
       "placeLabelNodes" => "{n} nœuds",
-      "placePoint" => "Un point du canevas"
+      "placePoint" => "Un point du canevas",
+      "menu" => "Menu",
+      "menuCopy" => "Copier",
+      "menuCut" => "Couper",
+      "menuPaste" => "Coller",
+      "menuDuplicate" => "Dupliquer",
+      "menuDelete" => "Supprimer",
+      "menuSelectAll" => "Tout sélectionner",
+      "menuLabel" => "Modifier le libellé"
     },
     "de" => %{
       "canvas" => "Leinwand",
@@ -783,7 +815,15 @@ defmodule Hakushi.Messages.Translations do
       "placeNode" => "Der Knoten „{name}“",
       "placeNodes" => "Der Knoten „{name}“ und {n} weitere",
       "placeLabelNodes" => "{n} Knoten",
-      "placePoint" => "Ein Punkt der Leinwand"
+      "placePoint" => "Ein Punkt der Leinwand",
+      "menu" => "Menü",
+      "menuCopy" => "Kopieren",
+      "menuCut" => "Ausschneiden",
+      "menuPaste" => "Einfügen",
+      "menuDuplicate" => "Duplizieren",
+      "menuDelete" => "Löschen",
+      "menuSelectAll" => "Alles auswählen",
+      "menuLabel" => "Beschriftung bearbeiten"
     },
     "ja" => %{
       "canvas" => "キャンバス",
@@ -936,7 +976,15 @@ defmodule Hakushi.Messages.Translations do
       "placeNode" => "ノード「{name}」",
       "placeNodes" => "ノード「{name}」ほか{n}件",
       "placeLabelNodes" => "ノード{n}件",
-      "placePoint" => "キャンバス上の点"
+      "placePoint" => "キャンバス上の点",
+      "menu" => "メニュー",
+      "menuCopy" => "コピー",
+      "menuCut" => "切り取り",
+      "menuPaste" => "貼り付け",
+      "menuDuplicate" => "複製",
+      "menuDelete" => "削除",
+      "menuSelectAll" => "すべて選択",
+      "menuLabel" => "ラベルを編集"
     }
   }
 

@@ -57,6 +57,36 @@ The canvas is one stop of Tab. From there:
   the nodes it may end on, nearest first, Enter makes it, Escape does
   not.
 
+## The menu
+
+A canvas with `menu` opens its own menu on a right click, in place of
+the browser's: on a node (selected with it), an edge, or the paper. The
+menu key, or Shift+F10, opens the menu of the focused node or of what
+is selected; the arrows go through its items, Enter chooses one, and
+Escape closes it.
+
+```heex
+<.canvas id="flow" graph={@graph} menu={&menu/1} on_menu={&send(self(), {:menu, &1, &2})}>
+```
+
+```elixir
+def menu(%{kind: :node, nodes: [_one]}),
+  do: [%{id: "inspect", label: "Inspect", icon: "table"}, :separator, :copy, :duplicate, :delete]
+
+def menu(target), do: Hakushi.Menu.defaults(target)
+
+def handle_info({:menu, "inspect", %{nodes: [id]}}, socket),
+  do: {:noreply, assign(socket, :inspected, id)}
+```
+
+`menu` gives the items for a target (what is under the pointer, what is
+selected, and where): the canvas's own actions, as atoms, which it runs
+itself (`:copy`, `:paste`, `:delete`, `:fit`, `:tidy`…), and items of
+the app's own, maps with an `id` and a `label`, whose choice calls
+`on_menu`. `menu={true}` gives Hakushi's own items. A person who may not
+change the canvas is not offered the actions that change it. See
+`Hakushi.Menu`.
+
 ## The app and the view
 
 What the person selects and sees is theirs, in their browser. The app
