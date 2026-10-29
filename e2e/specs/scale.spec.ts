@@ -2,8 +2,13 @@ import { expect, test } from "@playwright/test";
 import { node, openCanvas } from "./support";
 
 test("two thousand nodes: only those near the screen are laid out", async ({ page }) => {
-  await openCanvas(page, "/scale");
-  await expect(page.locator("#scale .hakushi-node")).toHaveCount(2000);
+  // A megabyte of nodes, twice (the page, then the LiveView's): CI's
+  // WebKit takes more than an expect's 5 seconds to connect at times.
+  await page.goto(`/scale?room=t${Date.now()}`, { timeout: 60_000 });
+  await expect(page.locator("[data-phx-main].phx-connected")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("#scale .hakushi-node")).toHaveCount(2000, { timeout: 15_000 });
+  // The first frame: the view is fitted, and the nodes far off it culled.
+  await page.waitForFunction(() => document.querySelectorAll("#scale .hakushi-edge-line[d]").length > 0, null, { timeout: 15_000 });
   const laidOut = await page.locator("#scale .hakushi-node:not([data-ui-culled])").count();
   expect(laidOut).toBeLessThan(300);
 
