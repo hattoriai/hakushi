@@ -410,8 +410,11 @@ defmodule Hakushi.Canvas do
   defp apply_changes(socket, changes) do
     Enum.reduce_while(changes, socket, fn change, socket ->
       case Graph.apply(socket.assigns.graph, change) do
-        {:ok, graph, change, _inverse} -> {:cont, show(socket, graph, change)}
-        {:error, _reason, _id} -> {:halt, resync(socket)}
+        {:ok, graph, change, _inverse} ->
+          {:cont, socket |> show(graph, change) |> notify({:changed, change, graph})}
+
+        {:error, _reason, _id} ->
+          {:halt, resync(socket)}
       end
     end)
   end
@@ -488,25 +491,33 @@ defmodule Hakushi.Canvas do
   def handle_event("hakushi:select", params, socket) when is_map(params) do
     %{graph: graph, on_select: on_select, id: id} = socket.assigns
 
-    if on_select do
-      nodes = params |> Map.get("nodes") |> ids_only() |> Enum.filter(&Graph.node(graph, &1))
-      edges = params |> Map.get("edges") |> ids_only() |> Enum.filter(&Graph.edge(graph, &1))
-      on_select.(%{canvas: id, nodes: nodes, edges: edges})
-    end
+    nodes = params |> Map.get("nodes") |> ids_only() |> Enum.filter(&Graph.node(graph, &1))
+    edges = params |> Map.get("edges") |> ids_only() |> Enum.filter(&Graph.edge(graph, &1))
+    selection = %{canvas: id, nodes: nodes, edges: edges}
+    if on_select, do: on_select.(selection)
 
-    {:noreply, socket}
+    {:noreply, notify(socket, {:selected, selection})}
   end
 
   # Where the person's view came to rest, for the app's on_viewport: the
   # part of the canvas on their screen, and the zoom.
   def handle_event("hakushi:viewport", params, socket) when is_map(params) do
-    with %{on_viewport: on_viewport, id: id} when on_viewport != nil <- socket.assigns,
-         [x, y, width, height] when width > 0 and height > 0 <- numbers(params["box"], 4),
+    with [x, y, width, height] when width > 0 and height > 0 <- numbers(params["box"], 4),
          zoom when is_number(zoom) and zoom > 0 <- params["zoom"] do
-      on_viewport.(%{canvas: id, x: x, y: y, width: width, height: height, zoom: zoom})
-    end
+      viewport = %{
+        canvas: socket.assigns.id,
+        x: x,
+        y: y,
+        width: width,
+        height: height,
+        zoom: zoom
+      }
 
-    {:noreply, socket}
+      if socket.assigns.on_viewport, do: socket.assigns.on_viewport.(viewport)
+      {:noreply, notify(socket, {:viewport, viewport})}
+    else
+      _other -> {:noreply, socket}
+    end
   end
 
   def handle_event(event, params, %{assigns: %{readonly: true}} = socket)
@@ -915,6 +926,19 @@ defmodule Hakushi.Canvas do
 
   defp reply({socket, {:error, message}}, _extra), do: {:reply, %{"error" => message}, socket}
 
+  # What the canvas tells the app's process (`notify`): `{Hakushi, id,
+  # event}`, when it is there.
+  defp notify(%{assigns: %{notify: nil}} = socket, _event), do: socket
+
+  defp notify(socket, event) do
+    case GenServer.whereis(socket.assigns.notify) do
+      nil -> :ok
+      to -> send(to, {Hakushi, socket.assigns.id, event})
+    end
+
+    socket
+  end
+
   # A change on_change gave back another for: the browser reads again what
   # it showed of the person's.
   defp rewritten(reply, true), do: Map.put(reply, "rewritten", true)
@@ -951,7 +975,13 @@ defmodule Hakushi.Canvas do
 
     case result do
       {:ok, graph, change, inverse, rewritten} ->
-        socket = socket |> show(graph, change) |> clear_notice() |> remember(record, inverse)
+        socket =
+          socket
+          |> show(graph, change)
+          |> clear_notice()
+          |> remember(record, inverse)
+          |> notify({:changed, change, graph})
+
         {socket, {:ok, inverse, rewritten}}
 
       {:ok, inverse, rewritten} ->
@@ -1518,8 +1548,8 @@ defmodule Hakushi.Canvas do
       "layout" => Atom.to_string(elem(assigns.layout, 1)),
       "algorithm" => Atom.to_string(elem(assigns.layout, 0)),
       "exportable" => assigns.export,
-      "reportSelect" => assigns.on_select != nil,
-      "reportView" => assigns.on_viewport != nil,
+      "reportSelect" => assigns.on_select != nil or assigns.notify != nil,
+      "reportView" => assigns.on_viewport != nil or assigns.notify != nil,
       "live" => assigns.join != nil,
       "user" => own_id(%{assigns: assigns}),
       "tools" => Kit.tools(assigns.kits, assigns.messages),

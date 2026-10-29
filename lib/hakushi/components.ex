@@ -85,6 +85,17 @@ defmodule Hakushi.Components do
     [Navigation](navigation.md#the-app-and-the-view)\
     """
 
+  attr :notify, :any,
+    default: nil,
+    doc: """
+    a process that hears of the canvas: a pid (`self()` for the LiveView), or a name \
+    (`MyApp.Flows`, `{:global, name}`, `{:via, module, name}`). It gets `{Hakushi, id, event}`, \
+    where `event` is `{:changed, change, graph}` for each change that applied (the person's, \
+    the app's, and on a shared canvas everyone's), `{:selected, selection}` and \
+    `{:viewport, viewport}` (as `on_select` and `on_viewport` get them). See \
+    [Changes](changes.md#hearing-of-the-changes)\
+    """
+
   attr :new_node, :any,
     default: nil,
     doc: """
@@ -260,6 +271,7 @@ defmodule Hakushi.Components do
       on_change={@on_change}
       on_select={@on_select}
       on_viewport={@on_viewport}
+      notify={@notify}
       new_node={@new_node}
       rules={@rules}
       kits={@kits}

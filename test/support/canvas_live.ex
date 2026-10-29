@@ -69,6 +69,7 @@ defmodule HakushiTest.CanvasLive do
          ),
        user: user(params),
        rewrite: params["rewrite"],
+       notify: params["notify"] == "true",
        readonly: readonly(params["readonly"]),
        way: params["layout"] && String.to_existing_atom(params["layout"]),
        tidy: params["tidy"] == "true"
@@ -148,6 +149,7 @@ defmodule HakushiTest.CanvasLive do
       on_change={&on_change(&1, &2, @test, @rewrite)}
       on_select={@test && (&send(@test, {:on_select, &1}))}
       on_viewport={@test && (&send(@test, {:on_viewport, &1}))}
+      notify={@notify && @test}
       new_node={&new_node/2}
       issho={@issho}
       user={@user}
