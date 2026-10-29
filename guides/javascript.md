@@ -36,6 +36,7 @@ canvas.fitAll()
 | `"view"` | `{x, y, zoom}`, as the view moves |
 | `"change"` | `{change, ok, error, rewritten}`, a change of the person's as the server answered it |
 | `"tool"` | the tool chosen (`"ink:pen"`, `"app:ruler"`), or `null` for the pointer |
+| `"out"` | `{node, text, dropped}`, a part of a node dragged out onto the page (`data-hakushi-out`), and whether something took it |
 
 ```js
 const stop = canvas.on("select", ({nodes}) => panel.show(nodes))

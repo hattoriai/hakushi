@@ -205,6 +205,8 @@ export interface Live {
   push(event: string, payload: object, onReply?: (reply: Record<string, unknown>) => void): void;
   /** An event to the canvas's LiveView itself, not its component. */
   pushView?(event: string, payload: object, onReply?: (reply: Record<string, unknown>) => void): void;
+  /** An event to a `phx-target` of the page (a selector, or a component's id). */
+  pushTo?(target: string, event: string, payload: object): void;
 }
 
 /**
@@ -257,4 +259,6 @@ export interface CanvasEvents {
   change: { change: Record<string, unknown>; ok: boolean; error: string | null; rewritten: boolean };
   /** Another tool was chosen (`"ink:pen"`, `"app:ruler"`), or the pointer (null). */
   tool: string | null;
+  /** A part of a node was dragged out of the canvas (`data-hakushi-out`): its text, and whether it was dropped somewhere that took it. */
+  out: { node: string; text: string; dropped: boolean };
 }

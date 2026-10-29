@@ -127,6 +127,16 @@ defmodule Hakushi.Components do
     with it. See [JavaScript](javascript.md)\
     """
 
+  attr :drag_out, :boolean,
+    default: false,
+    doc: """
+    when `true`, the parts of the kits' nodes that name something (the Schema kit's tables, by \
+    their icons, and columns) drag out of the canvas onto the page: dropped in a field or an editor, their name \
+    goes in; dropped on an element with `data-hakushi-drop`, the LiveView hears it. A `:node` \
+    slot marks its own parts (`data-hakushi-out` and `draggable="true"`), with or without it. See \
+    [Nodes](nodes.md)\
+    """
+
   attr :menu, :any,
     default: nil,
     doc: """
@@ -331,6 +341,7 @@ defmodule Hakushi.Components do
       menu={@menu}
       on_menu={@on_menu}
       client_tools={@client_tools}
+      drag_out={@drag_out}
       on_open={@on_open}
       on_up={@on_up}
       new_node={@new_node}

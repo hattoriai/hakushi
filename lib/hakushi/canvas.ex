@@ -1496,6 +1496,7 @@ defmodule Hakushi.Canvas do
               kits={@kits}
               node={node}
               readonly={@readonly}
+              drag_out={@drag_out}
               canvas={@id}
               target={@myself}
               messages={@messages}
@@ -1708,6 +1709,7 @@ defmodule Hakushi.Canvas do
           node={@node}
           canvas={@canvas}
           readonly={@readonly}
+          drag_out={@drag_out}
           target={@target}
           messages={@messages}
         />
@@ -1723,7 +1725,7 @@ defmodule Hakushi.Canvas do
   defp kit_node(assigns) do
     TagEngine.component(
       Function.capture(assigns.kit, :node, 1),
-      Map.take(assigns, [:node, :canvas, :readonly, :target, :messages]),
+      Map.take(assigns, [:node, :canvas, :readonly, :drag_out, :target, :messages]),
       {__MODULE__, __ENV__.function, __ENV__.file, __ENV__.line}
     )
   end

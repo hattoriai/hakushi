@@ -110,6 +110,18 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as it is dragged). Through its `points`, when people bent it, as
   `"smooth"`. The development app's workflow is routed. See the Edges
   guide.
+- A part of a node drags out of the canvas onto the page
+  (`data-hakushi-out` and `draggable="true"`, or a canvas's `drag_out`
+  for the kits' parts), as the browser drags text: dropped in a field or
+  an editor, its text goes in; dropped on an element of the page with
+  `data-hakushi-drop`, the LiveView hears that event, with the canvas,
+  the node and the text (and the element's `phx-value-*`, to its
+  `phx-target`). A click on such a part selects its node; a press moves
+  nothing. The Schema kit's tables drag out by their icons (their names,
+  a stub's qualified: `billing.invoices`), and columns by their names; in
+  the browser, the canvas's
+  `"out"` event. For a query tool: a table dragged from the diagram into
+  the query. See the Nodes guide.
 
 ### Changed
 
