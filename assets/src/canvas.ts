@@ -21,6 +21,7 @@ import { Messages } from "./messages";
 import { Minimap } from "./minimap";
 import { check } from "./rules";
 import { align, snapToGrid, type Guide } from "./snap";
+import { SpatialIndex } from "./spatial";
 import { clientTool, type ClientTool, type ToolContext } from "./tools";
 import type { CanvasEvents, Config, EdgeInfo, EdgeModel, End, Handle, HandleKind, Live, MenuItem, NodeInfo, NodeModel, Person, Point, Rect, Side, Tool, View } from "./types";
 import { centerOn, clamp, fit, readableView, reveal, toCanvas, visible, zoomAt } from "./view";
@@ -187,6 +188,12 @@ export class Canvas {
   private selectedEdges = new Set<string>();
   private gone = new Set<string>();
   private culled = new Set<string>();
+  // Where the nodes and the edges are (their boxes), to find what is near a
+  // place without looking at each; the nodes laid out, and the edges shown.
+  private nodeIndex = new SpatialIndex();
+  private edgeIndex = new SpatialIndex();
+  private laidOut = new Set<string>();
+  private shownEdges = new Set<string>();
   private dirty = new Set<string>();
   private allDirty = true;
   private guides: Guide[] = [];
@@ -571,7 +578,10 @@ export class Canvas {
       el: element,
     };
     this.nodes.set(id, node);
-    if (!old) this.order.push(id);
+    if (!old) {
+      this.order.push(id);
+      if (!this.culled.has(id)) this.laidOut.add(id);
+    }
     // A file's node, which its placeholder waits for.
     const wait = old ? undefined : this.nodeWaits.get(id);
     if (wait) {
@@ -690,9 +700,9 @@ export class Canvas {
   private groupAt(p: Point, except: Set<string>): NodeModel | null {
     let best: NodeModel | null = null;
     let bestDepth = -1;
-    for (const node of this.nodes.values()) {
-      if (!node.group || except.has(node.id) || this.gone.has(node.id)) continue;
-      if (!contains(this.rect(node), p)) continue;
+    for (const id of this.nodeIndex.at(p)) {
+      const node = this.nodes.get(id);
+      if (!node?.group || except.has(node.id) || this.gone.has(node.id)) continue;
       const depth = this.depth(node);
       if (depth > bestDepth) {
         best = node;
@@ -796,6 +806,8 @@ export class Canvas {
 
   private touchNode(id: string) {
     this.layoutVersion++;
+    const node = this.nodes.get(id);
+    if (node) this.nodeIndex.set(id, this.rect(node));
     for (const edge of this.byNode.get(id) ?? []) this.dirty.add(edge);
   }
 
@@ -867,6 +879,9 @@ export class Canvas {
       const node = target?.closest<HTMLElement>(".hakushi-node");
       if (node && this.nodesEl.contains(node)) touched.add(node);
     }
+    // Only what the browser set (a node culled, selected): nothing changed,
+    // and nothing is drawn again (the next cull would be this one's echo).
+    if (!removed && touched.size === 0) return;
 
     if (removed) {
       // A node that had the focus went: the focus stays in the canvas.
@@ -877,6 +892,8 @@ export class Canvas {
           this.selected.delete(id);
           this.gone.delete(id);
           this.culled.delete(id);
+          this.laidOut.delete(id);
+          this.nodeIndex.delete(id);
           this.sizes.unobserve(node.el);
         }
       }
@@ -1044,38 +1061,46 @@ export class Canvas {
         for (const id of was) {
           const node = this.nodes.get(id);
           if (node) node.el.removeAttribute("data-ui-culled");
+          this.laidOut.add(id);
         }
       }
       return;
     }
+    // Laid out: the nodes near the screen (by the index), the selected ones,
+    // the focused one, and those someone drags; no other.
     const area = grow(visible(this.view, this.size.width, this.size.height), CULL_MARGIN / this.view.zoom);
-    const focused = document.activeElement;
+    const near = this.nodeIndex.query(area);
+    for (const id of this.selected) near.add(id);
+    const focused = (document.activeElement as Element | null)?.closest?.<HTMLElement>(".hakushi-node");
+    if (focused?.dataset.id && this.nodesEl.contains(focused)) near.add(focused.dataset.id);
+    for (const peer of this.peers.values()) for (const id of peer.dragging.keys()) near.add(id);
     const unmeasured: NodeModel[] = [];
-    for (const node of this.nodes.values()) {
-      const shown =
-        intersects(area, { ...this.placeOf(node), width: node.width, height: node.height }) ||
-        this.selected.has(node.id) ||
-        node.el.contains(focused);
-      if (shown === !this.culled.has(node.id)) continue;
-      if (shown) {
-        this.culled.delete(node.id);
-        node.el.removeAttribute("data-ui-culled");
-        // The handles keep their places while a node is culled: a node
-        // measured once is not measured again, which would lay out the page
-        // for each node that comes into view. Nor is it news: its place,
-        // size and edges are as they were, and a change of the layout here
-        // would cull all of them again on the next frame, and the next.
-        if (!node.measured) unmeasured.push(node);
-      } else {
-        this.culled.add(node.id);
-        node.el.setAttribute("data-ui-culled", "");
-      }
+    for (const id of [...this.laidOut]) {
+      const node = this.nodes.get(id);
+      if (!node || near.has(id)) continue;
+      this.laidOut.delete(id);
+      this.culled.add(id);
+      node.el.setAttribute("data-ui-culled", "");
+    }
+    for (const id of near) {
+      const node = this.nodes.get(id);
+      if (!node || this.laidOut.has(id)) continue;
+      this.laidOut.add(id);
+      this.culled.delete(id);
+      node.el.removeAttribute("data-ui-culled");
+      // The handles keep their places while a node is culled: a node
+      // measured once is not measured again, which would lay out the page
+      // for each node that comes into view. Nor is it news: its place,
+      // size and edges are as they were, and a change of the layout here
+      // would cull all of them again on the next frame, and the next.
+      if (!node.measured) unmeasured.push(node);
     }
     for (const node of unmeasured) {
       this.measureHandles(node);
       this.touchNode(node.id);
     }
   }
+
 
   // The edges that changed get their paths again; with a new view, every
   // edge is shown or hidden by its box, so that the edges far off the screen
@@ -1095,6 +1120,7 @@ export class Canvas {
       const view = this.edgeView(edge);
       const path = edgePathThrough(edge.path, geometry.from, geometry.fromSide, edge.points, geometry.to, geometry.toSide);
       view.box = grow(union([fromCorners(geometry.from, geometry.to), ...edge.points.map((p) => ({ ...p, width: 0, height: 0 }))])!, 80);
+      this.edgeIndex.set(id, view.box);
       // Written only when they change: a path written again is laid out and painted again.
       if (view.d !== path.d) {
         view.d = path.d;
@@ -1148,10 +1174,18 @@ export class Canvas {
       }
       if (!viewChanged) this.showEdge(view, all || intersects(view.box, area) || raised);
     }
-    if (viewChanged) {
-      for (const [id, view] of this.edgeViews) {
-        const edge = this.edges.get(id);
-        this.showEdge(view, all || intersects(view.box, area) || (!!edge && this.raisedEdge(edge)));
+    if (viewChanged && all) {
+      for (const view of this.edgeViews.values()) this.showEdge(view, true);
+    } else if (viewChanged) {
+      // Shown: the edges near the screen (by the index), and those above the
+      // nodes (a selected edge, the edges of the selected nodes); no other.
+      const near = this.edgeIndex.query(area);
+      for (const id of this.selectedEdges) near.add(id);
+      for (const node of this.selected) for (const id of this.byNode.get(node) ?? []) near.add(id);
+      for (const id of [...this.shownEdges]) if (!near.has(id)) this.showEdge(this.edgeViews.get(id)!, false);
+      for (const id of near) {
+        const view = this.edgeViews.get(id);
+        if (view) this.showEdge(view, true);
       }
     }
     this.dirty.clear();
@@ -1255,6 +1289,9 @@ export class Canvas {
   }
 
   private showEdge(view: EdgeView, shown: boolean) {
+    const id = view.g.dataset.edge!;
+    if (shown) this.shownEdges.add(id);
+    else this.shownEdges.delete(id);
     if (shown === view.shown) return;
     view.shown = shown;
     view.g.style.display = shown ? "" : "none";
@@ -1271,6 +1308,7 @@ export class Canvas {
       this.edgesG.append(g);
       view = { g, line, hit, label: null, own: false, shown: true, box: { x: 0, y: 0, width: 0, height: 0 }, d: "", marker: null };
       this.edgeViews.set(edge.id, view);
+      this.shownEdges.add(edge.id);
     }
     return view;
   }
@@ -1281,6 +1319,8 @@ export class Canvas {
     view.g.remove();
     if (!view.own) view.label?.remove();
     this.edgeViews.delete(id);
+    this.shownEdges.delete(id);
+    this.edgeIndex.delete(id);
   }
 
   private geometry(edge: EdgeModel): { from: Point; fromSide: Side; to: Point; toSide: Side } | null {
@@ -2839,10 +2879,7 @@ export class Canvas {
 
   /** The ids of the nodes under a point of the canvas, the topmost first. */
   nodesAt(point: Point): string[] {
-    const under = this.order.filter((id) => {
-      const node = this.nodes.get(id);
-      return node && !this.gone.has(id) && contains(this.rect(node), point);
-    });
+    const under = this.nodeIndex.at(point).filter((id) => this.nodes.has(id) && !this.gone.has(id));
     return under.sort((a, b) => Number(this.nodes.get(b)!.el.style.zIndex || 0) - Number(this.nodes.get(a)!.el.style.zIndex || 0));
   }
 
@@ -3177,10 +3214,9 @@ export class Canvas {
     const origin = new Map(ids.map((id) => [id, { x: this.nodes.get(id)!.x, y: this.nodes.get(id)!.y }]));
     const area = grow(visible(this.view, this.size.width, this.size.height), 200 / this.view.zoom);
     const others: Rect[] = [];
-    for (const node of this.nodes.values()) {
-      if (origin.has(node.id)) continue;
-      const r = this.rect(node);
-      if (intersects(r, area)) others.push(r);
+    for (const id of this.nodeIndex.query(area)) {
+      const node = this.nodes.get(id);
+      if (node && !origin.has(id)) others.push(this.rect(node));
     }
     this.capture(event);
     this.gesture = { kind: "drag", pointer: event.pointerId, start: at, moved: false, primary, origin, others };
@@ -3308,7 +3344,7 @@ export class Canvas {
         g.end = at;
         const box = fromCorners(g.start, g.end);
         const ids = new Set(g.base);
-        for (const node of this.nodes.values()) if (!g.within.has(node.id) && intersects(box, this.rect(node))) ids.add(node.id);
+        for (const id of this.nodeIndex.query(box)) if (!g.within.has(id)) ids.add(id);
         this.setSelection(ids);
         const tl = { x: box.x * this.view.zoom + this.view.x, y: box.y * this.view.zoom + this.view.y };
         Object.assign(this.boxEl.style, { left: `${tl.x}px`, top: `${tl.y}px`, width: `${box.width * this.view.zoom}px`, height: `${box.height * this.view.zoom}px` });

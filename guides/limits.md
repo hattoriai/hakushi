@@ -13,20 +13,20 @@ Chromium, Firefox and WebKit.
 The nodes are your HEEx in the page, which is what lets them be anything
 (a form, a table, your components). The canvas lays out only the nodes
 near the screen (from 150 nodes on), paints only the edges near it, and
-moves the edges as one layer, so a pan does not repaint them.
+moves the edges as one layer, so a pan does not repaint them. It finds
+the nodes and edges near the screen in a grid of the canvas (a spatial
+index), so the work of a pan is that of what is on the screen, however
+many there are.
 
-Measured with the development app's `/scale` page, in headless Chromium with software rendering on a cloud machine (a laptop with a GPU does better):
+Measured with the development app's `/scale` page, a fast pan (60 by 35
+pixels a frame), in headless Chromium with software rendering on a
+cloud machine (a laptop with a GPU does better):
 
 | | 300 nodes | 2,000 nodes | 10,000 nodes |
 | --- | --- | --- | --- |
-| The canvas's own work in a frame of a pan, the median | 0.8 ms | 0.3 ms | 0.3 ms |
+| The canvas's own work in a frame of a pan, the median | 0.4 ms | 0.9 ms | 0.8 ms |
 | Frames of a pan, the median | 16.7 ms | 16.7 ms | 16.7 ms |
-| The slowest frames of a pan (the 95th percentile) | 17 ms | 85 ms | 300 to 450 ms |
-
-The slow frames are the frames where the canvas lays out the nodes that
-come into view, every half a screen of a pan: at 10,000 nodes it looks
-at each node to find them. A spatial index will make them cheaper (see
-the backlog).
+| The slowest frames of a pan (the 95th percentile) | 16.8 ms | 16.7 ms | 16.7 ms |
 
 The server sends every node when the canvas opens, in the page and again
 when the LiveView connects, as LiveView does: the 10,000 nodes of
