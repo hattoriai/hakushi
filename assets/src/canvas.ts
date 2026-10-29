@@ -130,6 +130,8 @@ const activeIn = new Map<string, Canvas>();
 
 // The way to a new place: longer the farther it goes, never longer than this.
 const GLIDE_MAX = 400;
+// A view still for this long has come to rest, and the app hears of it (`on_viewport`).
+const VIEW_REST = 300;
 const ease = (t: number): number => 1 - (1 - t) ** 3;
 
 export class Canvas {
@@ -157,6 +159,15 @@ export class Canvas {
   private minimap: Minimap | null = null;
 
   private view: View = { x: 0, y: 0, zoom: 1 };
+  // The way the view goes to where the app sent it (`Hakushi.Live.fit/2`, `focus/3`).
+  // It gives way when anything else moves the view (`last` is the view it set).
+  private viewGlide: { from: View; to: View; start: number; duration: number; last: View } | null = null;
+  // A move of the view the app sent before the canvas had a size, made when it has one.
+  private pendingMove: Record<string, unknown> | null = null;
+  // What the app last heard of the selection and of the view (`on_select`, `on_viewport`).
+  private reportedSelection = JSON.stringify([[], []]);
+  private reportedView = "";
+  private viewTimer = 0;
   private size = { width: 0, height: 0 };
   private bounds: DOMRect | null = null;
   private nodes = new Map<string, NodeModel>();
@@ -846,6 +857,8 @@ export class Canvas {
         }
       }
       this.order = [...this.nodesEl.children].map((n) => (n as HTMLElement).dataset.id!).filter((id) => this.nodes.has(id));
+      // A selected node that went is no longer selected, for the app too.
+      this.reportSelection();
     }
     const read: NodeModel[] = [];
     let added = false;
@@ -900,6 +913,7 @@ export class Canvas {
           this.dropEdgeView(id);
         }
       }
+      this.reportSelection();
     }
     this.schedule();
   }
@@ -920,6 +934,12 @@ export class Canvas {
       this.fitted = true;
       this.view = this.config.fit && this.nodes.size ? this.openingView() : { x: 40, y: 40, zoom: 1 };
     }
+    if (this.pendingMove && this.size.width > 0) {
+      const move = this.pendingMove;
+      this.pendingMove = null;
+      this.moveView({ ...move, animate: false });
+    }
+    if (this.viewGlide) this.stepGlide();
     const viewChanged = this.view !== this.drawnView;
     if (viewChanged) {
       // While a pan goes on, the world is a layer of its own, whose pixels
@@ -940,6 +960,10 @@ export class Canvas {
       bg.setProperty("--hakushi-grid-size", `${size}px`);
       bg.setProperty("--hakushi-grid-x", `${((this.view.x % period) + period) % period}px`);
       bg.setProperty("--hakushi-grid-y", `${((this.view.y % period) + period) % period}px`);
+      if (this.config.reportView && !this.viewGlide) {
+        clearTimeout(this.viewTimer);
+        this.viewTimer = window.setTimeout(() => this.reportView(), VIEW_REST);
+      }
       const far = this.view.zoom < 0.5 ? "far" : "near";
       if (this.root.dataset.uiZoom !== far) {
         this.root.dataset.uiZoom = far;
@@ -2444,6 +2468,96 @@ export class Canvas {
     this.schedule();
   }
 
+  /**
+   * A move of the view the app sent (`Hakushi.Live.fit/2` and `focus/3`):
+   * to `nodes`, a `box` of the canvas, or every node; or `focus` on nodes,
+   * at the view's zoom unless they do not fit (or at `zoom`), and selected
+   * unless `select` is false.
+   */
+  moveView(payload: Record<string, unknown>) {
+    if (!this.fitted || this.size.width <= 0) {
+      this.pendingMove = payload;
+      this.schedule();
+      return;
+    }
+    const padding = typeof payload.padding === "number" ? payload.padding : 48;
+    const known = (list: unknown): string[] => (Array.isArray(list) ? list.filter((id): id is string => typeof id === "string" && this.nodes.has(id)) : []);
+    const { width, height } = this.size;
+    const { minZoom, maxZoom } = this.config;
+    // The zoom that shows a box whole, with the padding around it.
+    const zoomFor = (box: Rect) => clamp(Math.min((width - padding * 2) / Math.max(box.width, 1), (height - padding * 2) / Math.max(box.height, 1)), minZoom, maxZoom);
+    let to: View;
+    if (Array.isArray(payload.focus)) {
+      const ids = known(payload.focus);
+      if (!ids.length) return;
+      const box = union(ids.map((id) => this.rect(this.nodes.get(id)!)))!;
+      const zoom = typeof payload.zoom === "number" ? clamp(payload.zoom, minZoom, maxZoom) : Math.min(this.view.zoom, zoomFor(box));
+      to = centerOn({ x: 0, y: 0, zoom }, box.x + box.width / 2, box.y + box.height / 2, width, height);
+      if (payload.select !== false) this.selectFor({ nodes: ids, edges: [] });
+    } else if (Array.isArray(payload.box) && payload.box.length === 4 && payload.box.every((n) => typeof n === "number")) {
+      const [x, y, w, h] = payload.box as number[];
+      const box = { x, y, width: w, height: h };
+      to = centerOn({ x: 0, y: 0, zoom: zoomFor(box) }, x + w / 2, y + h / 2, width, height);
+    } else {
+      const ids = Array.isArray(payload.nodes) ? known(payload.nodes) : [...this.nodes.keys()];
+      if (!ids.length) return;
+      to = fit(union(ids.map((id) => this.rect(this.nodes.get(id)!))), width, height, padding, minZoom, maxZoom);
+    }
+    this.glideTo(to, payload.animate !== false);
+  }
+
+  // The view on its way to another, or there at once (without motion).
+  private glideTo(to: View, animate: boolean) {
+    const from = this.view;
+    const distance = Math.hypot(to.x - from.x, to.y - from.y) + Math.abs(Math.log(to.zoom / from.zoom)) * this.size.width;
+    if (!animate || reducedMotion() || distance < 1) {
+      this.viewGlide = null;
+      this.view = to;
+    } else {
+      this.viewGlide = { from, to, start: performance.now(), duration: Math.min(GLIDE_MAX, 160 + distance / 4), last: from };
+    }
+    this.schedule();
+  }
+
+  // A frame of the way: the middle of the screen goes straight from one
+  // point of the canvas to the other, and the zoom by equal factors.
+  private stepGlide() {
+    const glide = this.viewGlide!;
+    // The person panned or zoomed on the way: theirs is the view.
+    if (this.view !== glide.last) {
+      this.viewGlide = null;
+      return;
+    }
+    const t = Math.min(1, (performance.now() - glide.start) / glide.duration);
+    if (t >= 1) {
+      this.viewGlide = null;
+      this.view = glide.to;
+      return;
+    }
+    const e = ease(t);
+    const { width, height } = this.size;
+    const middle = (v: View) => toCanvas(v, width / 2, height / 2);
+    const a = middle(glide.from);
+    const b = middle(glide.to);
+    const zoom = glide.from.zoom * (glide.to.zoom / glide.from.zoom) ** e;
+    this.view = centerOn({ x: 0, y: 0, zoom }, a.x + (b.x - a.x) * e, a.y + (b.y - a.y) * e, width, height);
+    glide.last = this.view;
+    this.schedule();
+  }
+
+  // Where the view came to rest, for the app (`on_viewport`): the part of
+  // the canvas on the screen, and the zoom.
+  private reportView() {
+    if (!this.config.reportView || this.size.width <= 0 || !this.connected) return;
+    const area = visible(this.view, this.size.width, this.size.height);
+    const box = [area.x, area.y, area.width, area.height].map((n) => Math.round(n * 10) / 10);
+    const zoom = Math.round(this.view.zoom * 1000) / 1000;
+    const key = `${box.join(",")} ${zoom}`;
+    if (key === this.reportedView) return;
+    this.reportedView = key;
+    this.live.push("hakushi:viewport", { box, zoom });
+  }
+
   private local(event: { clientX: number; clientY: number }): Point {
     const rect = this.bounds ?? this.root.getBoundingClientRect();
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
@@ -3300,8 +3414,37 @@ export class Canvas {
     this.schedule();
   }
 
+  /**
+   * A selection the app sent (`Hakushi.Live.select/3`): the nodes and edges
+   * the canvas has, which the app does not hear of again; with `reveal`,
+   * brought into view.
+   */
+  selectFor(payload: Record<string, unknown>) {
+    const ids = (list: unknown, has: (id: string) => boolean): string[] => (Array.isArray(list) ? list.filter((id): id is string => typeof id === "string" && has(id)) : []);
+    const nodes = ids(payload.nodes, (id) => this.nodes.has(id));
+    const edges = ids(payload.edges, (id) => this.edges.has(id));
+    this.selectedEdges = new Set(edges);
+    this.setSelection(new Set(nodes));
+    this.reportedSelection = selectionKey(nodes, edges);
+    this.selectionChanged();
+    if (payload.reveal === true && nodes.length && !nodes.some((id) => this.isOnScreen(id))) this.revealNodes(nodes);
+  }
+
+  // What the person selected, for the app (`on_select`), when it is not
+  // what the app heard last.
+  private reportSelection() {
+    if (!this.config.reportSelect) return;
+    const nodes = [...this.selected];
+    const edges = [...this.selectedEdges];
+    const key = selectionKey(nodes, edges);
+    if (key === this.reportedSelection) return;
+    this.reportedSelection = key;
+    this.live.push("hakushi:select", { nodes, edges });
+  }
+
   private selectionChanged() {
     this.allDirty = true;
+    this.reportSelection();
     this.drawStylePanel();
     const n = this.selected.size + this.selectedEdges.size;
     if (n === 1 && this.selected.size === 1) {
@@ -4131,6 +4274,11 @@ function hitsStroke(aim: SVGGeometryElement, x: number, y: number, reach: number
     if (Math.hypot(p.x - x, p.y - y) <= reach) return true;
   }
   return false;
+}
+
+// A selection, the same whatever the order of its ids.
+function selectionKey(nodes: string[], edges: string[]): string {
+  return JSON.stringify([[...nodes].sort(), [...edges].sort()]);
 }
 
 function toggle(element: Element, name: string, on: boolean) {

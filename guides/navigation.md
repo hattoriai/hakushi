@@ -56,3 +56,63 @@ The canvas is one stop of Tab. From there:
 * C starts an edge from the focused node: the arrows (or Tab) go through
   the nodes it may end on, nearest first, Enter makes it, Escape does
   not.
+
+## The app and the view
+
+What the person selects and sees is theirs, in their browser. The app
+hears of it, and moves it, when it asks to.
+
+`on_select` is called when the person selects other nodes or edges (a
+click, Shift, a box, ⌘A, Escape, a node deleted), and `on_viewport`
+when their view comes to rest after a pan or a zoom. Both are called in
+the LiveView's process, so the simplest is a message to itself:
+
+```heex
+<.canvas
+  id="schema"
+  graph={@graph}
+  on_select={&send(self(), {:selected, &1})}
+  on_viewport={&send(self(), {:viewport, &1})}
+>
+```
+
+```elixir
+def handle_info({:selected, %{nodes: [id]}}, socket),
+  do: {:noreply, assign(socket, :inspected, id)}
+
+def handle_info({:selected, _selection}, socket),
+  do: {:noreply, assign(socket, :inspected, nil)}
+
+def handle_info({:viewport, viewport}, socket),
+  do: {:noreply, assign(socket, :viewport, viewport)}
+```
+
+A selection is a map of the `canvas`, and the ids of the `nodes` and the
+`edges` selected. A viewport is a map of the `canvas`, the part of the
+canvas on the screen (`x`, `y`, `width`, `height`, in the canvas's
+terms) and the `zoom`. A canvas without them sends neither, and on a
+shared canvas each person's are their own.
+
+From the LiveView, `Hakushi.Live` moves the view and the selection:
+
+| | |
+| --- | --- |
+| `fit(canvas)` | every node, as the fit button does |
+| `fit(canvas, nodes: ids)` | those nodes |
+| `fit(canvas, box: {x, y, width, height})` | that part of the canvas: an `on_viewport`'s, to come back to it |
+| `focus(canvas, ids)` | those nodes in the middle, at the zoom of the view unless they do not fit, and selected (`select: false` leaves the selection; `zoom: 1.5` at that zoom) |
+| `select(canvas, ids)` | those nodes selected, and `edges: ids`; `reveal: true` brings them into view |
+
+The view glides there (`animate: false` jumps, as reduced motion does),
+and a pan or a zoom on the way stops it. A selection of the app is not
+news to it: `select/3` and `focus/3` do not call `on_select`.
+
+```elixir
+# A search: the first table whose name has the words, in the middle.
+def handle_event("find", %{"name" => name}, socket) do
+  with %{id: id} <- Enum.find(Hakushi.Graph.nodes(socket.assigns.graph), &(&1.data.name =~ name)),
+       do: Hakushi.Live.focus("schema", id)
+
+  {:noreply, socket}
+end
+```

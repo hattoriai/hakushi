@@ -1,7 +1,8 @@
 defmodule Hakushi.Live do
   @moduledoc ~S"""
-  The `on_mount` hook of a LiveView with a shared canvas (`issho`), and the
-  app's own changes to a canvas.
+  The `on_mount` hook of a LiveView with a shared canvas (`issho`), the
+  app's own changes to a canvas, and the person's view of it: what it
+  shows (`fit/2`, `focus/3`) and what is selected (`select/3`).
 
       live_session :default, on_mount: [Hakushi.Live] do
 
@@ -101,6 +102,134 @@ defmodule Hakushi.Live do
     send_update(Hakushi.Canvas, id: canvas, hakushi_push: {"hakushi:export", payload})
     :ok
   end
+
+  @doc """
+  Moves the view of the canvas `canvas` of this LiveView, in the person's
+  browser, to show all of its nodes, as its fit button does; or:
+
+    * `nodes: ids` - those nodes;
+    * `box: {x, y, width, height}` - that part of the canvas, at the zoom
+      that shows it whole (an `on_viewport`'s, to come back to it).
+
+  `padding` is the room around them, in pixels of the screen (48 unless
+  given), and `animate: false` jumps there at once. Nodes are shown at
+  100% at most, so that a few are not blown up; a box at the zoom it
+  needs, between the canvas's `min_zoom` and `max_zoom`.
+
+      Hakushi.Live.fit("flow", nodes: ["start", "send-receipt"])
+      Hakushi.Live.fit("flow", box: {0, 0, 1200, 800}, animate: false)
+  """
+  @spec fit(String.t(), keyword()) :: :ok
+  def fit(canvas, opts \\ []) when is_binary(canvas) do
+    payload =
+      opts
+      |> view_opts()
+      |> put_target(opts)
+
+    send_update(Hakushi.Canvas, id: canvas, hakushi_push: {"hakushi:view", payload})
+    :ok
+  end
+
+  @doc """
+  Brings nodes into the middle of the view of the canvas `canvas` of this
+  LiveView, and selects them: a result of a search, a step an error names.
+  `ids` is a node's id or a list of them.
+
+  The view keeps its zoom, unless the nodes do not fit at it (then it shows
+  them whole) or `zoom` is given. `select: false` leaves the selection as
+  it is, and `animate: false` jumps there at once. A selection of the app
+  does not call `on_select`.
+
+      Hakushi.Live.focus("flow", "send-receipt")
+  """
+  @spec focus(String.t(), String.t() | [String.t()], keyword()) :: :ok
+  def focus(canvas, ids, opts \\ []) when is_binary(canvas) do
+    ids = ids!(ids)
+
+    payload =
+      opts
+      |> view_opts()
+      |> Map.merge(%{"focus" => ids, "select" => Keyword.get(opts, :select, true)})
+
+    payload =
+      case opts[:zoom] do
+        nil ->
+          payload
+
+        zoom when is_number(zoom) and zoom > 0 ->
+          Map.put(payload, "zoom", zoom)
+
+        other ->
+          raise ArgumentError, "a focus's zoom is a positive number, got: #{inspect(other)}"
+      end
+
+    send_update(Hakushi.Canvas, id: canvas, hakushi_push: {"hakushi:view", payload})
+    :ok
+  end
+
+  @doc """
+  Selects nodes on the canvas `canvas` of this LiveView, in the person's
+  browser, as a click does: `ids`, a node's id or a list of them (`[]`
+  selects nothing), and `edges: ids` for edges. The ids the canvas does
+  not have are left out. `reveal: true` brings them into view when they
+  are off the screen. A selection of the app does not call `on_select`.
+
+      Hakushi.Live.select("schema", ["users", "orders"])
+  """
+  @spec select(String.t(), String.t() | [String.t()], keyword()) :: :ok
+  def select(canvas, ids, opts \\ []) when is_binary(canvas) do
+    payload = %{
+      "nodes" => ids!(ids),
+      "edges" => ids!(Keyword.get(opts, :edges, [])),
+      "reveal" => Keyword.get(opts, :reveal, false) == true
+    }
+
+    send_update(Hakushi.Canvas, id: canvas, hakushi_push: {"hakushi:select", payload})
+    :ok
+  end
+
+  defp view_opts(opts) do
+    padding =
+      case Keyword.get(opts, :padding, 48) do
+        padding when is_number(padding) and padding >= 0 ->
+          padding
+
+        other ->
+          raise ArgumentError, "a view's padding is a number of pixels, got: #{inspect(other)}"
+      end
+
+    %{"padding" => padding, "animate" => Keyword.get(opts, :animate, true) != false}
+  end
+
+  defp put_target(payload, opts) do
+    case {opts[:nodes], opts[:box]} do
+      {nil, nil} ->
+        payload
+
+      {ids, nil} ->
+        Map.put(payload, "nodes", ids!(ids))
+
+      {nil, {x, y, w, h}} when is_number(x) and is_number(y) and w > 0 and h > 0 ->
+        Map.put(payload, "box", [x, y, w, h])
+
+      {nil, other} ->
+        raise ArgumentError,
+              "a fit's box is {x, y, width, height}, of a positive size, got: #{inspect(other)}"
+
+      _both ->
+        raise ArgumentError, "a fit takes nodes or a box, not both"
+    end
+  end
+
+  defp ids!(id) when is_binary(id), do: [id]
+
+  defp ids!(ids) when is_list(ids) do
+    if Enum.all?(ids, &is_binary/1),
+      do: ids,
+      else: raise(ArgumentError, "ids are strings, got: #{inspect(ids)}")
+  end
+
+  defp ids!(other), do: raise(ArgumentError, "ids are strings, got: #{inspect(other)}")
 
   @doc false
   @spec ensure_mounted!(String.t()) :: :ok
