@@ -76,6 +76,27 @@ the handles it may end on show. The edge keeps its id, its label and its
 data. On the server it is a `:reconnect` change, which the rules check
 with the edge's new ends and `on_change` sees; ⌘Z puts it back.
 
+## Bending an edge
+
+A selected edge shows a point between each two of the points it goes
+through (its ends first): drag one out of the line, and the edge goes
+through it. Drag a point to move it, and a double click takes it away.
+Each is a change (an `:update` of the edge's `points`), which the server
+checks, and undo takes back.
+
+An edge's `points` are `[x, y]` each, in the canvas's terms, in the
+order it goes through them. Its `path` draws the way through them: a
+straight line from point to point, steps along the axes by each
+(`"step"`, and `"smooth"` with round corners), or a curve through them
+that leaves and arrives square to its ends (`"bezier"`).
+
+```elixir
+Hakushi.Change.update(edges: [%{id: "e1", points: [[240, 80], [240, 300]]}])
+```
+
+The points stay where they are when the nodes move: they are places of
+the canvas, not of its nodes.
+
 ## Selecting and deleting
 
 A click on an edge or its label selects it; Shift adds it. Delete

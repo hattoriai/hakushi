@@ -105,7 +105,7 @@ defmodule Hakushi.MarkdownTest do
           data: %{"text" => "Taxes per line", "color" => "mint"}
         }
       ],
-      edges: [%{source: "q1", target: "q2", path: :straight}]
+      edges: [%{source: "q1", target: "q2", path: :straight, points: [[200, 300], [210.5, 40]]}]
     )
   end
 
@@ -122,7 +122,8 @@ defmodule Hakushi.MarkdownTest do
          :target_handle,
          :label,
          :path,
-         :animated
+         :animated,
+         :points
        ])
      )}
   end

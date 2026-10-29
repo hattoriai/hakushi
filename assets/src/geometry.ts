@@ -98,6 +98,75 @@ export function edgePath(kind: PathKind, s: Point, sSide: Side, t: Point, tSide:
   }
 }
 
+/**
+ * The path of an edge through `points` it was bent to, between its ends: a
+ * line through them (straight), lines along the axes by each (step, and
+ * smooth with round corners), or a curve through them that leaves and
+ * arrives square to its sides (bezier). Without points, edgePath's.
+ */
+export function edgePathThrough(kind: PathKind, s: Point, sSide: Side, points: Point[], t: Point, tSide: Side): EdgeGeometry {
+  if (points.length === 0) return edgePath(kind, s, sSide, t, tSide);
+  const all = [s, ...points, t];
+  switch (kind) {
+    case "straight":
+      return { d: all.map((p, i) => `${i === 0 ? "M" : "L"}${round(p.x)},${round(p.y)}`).join(""), label: middleOf(all) };
+    case "step":
+    case "smooth": {
+      const corners = elbows(s, sSide, points, t, tSide, 20);
+      return { d: roundedPath(corners, kind === "smooth" ? 8 : 0), label: middleOf(corners) };
+    }
+    default:
+      return spline(all, sSide, tSide);
+  }
+}
+
+// Out of the source's side, to each point along the axes, and into the
+// target's side. Of the two corners between two points, the one that does
+// not turn back on the way it came (nor, last, on the way into the target).
+function elbows(s: Point, sSide: Side, points: Point[], t: Point, tSide: Side, gap: number): Point[] {
+  const sn = normal(sSide);
+  const tn = normal(tSide);
+  const a = { x: s.x + sn.x * gap, y: s.y + sn.y * gap };
+  const b = { x: t.x + tn.x * gap, y: t.y + tn.y * gap };
+  const out: Point[] = [s, a];
+  const stops = [...points, b];
+  stops.forEach((p, i) => {
+    const from = out[out.length - 1];
+    const before = out[out.length - 2];
+    const came = { x: from.x - before.x, y: from.y - before.y };
+    const next = i === stops.length - 1 ? { x: t.x - b.x, y: t.y - b.y } : null;
+    const score = (corner: Point) => {
+      const first = { x: corner.x - from.x, y: corner.y - from.y };
+      const second = { x: p.x - corner.x, y: p.y - corner.y };
+      let total = Math.sign(first.x * came.x + first.y * came.y);
+      if (next) total += Math.sign(second.x * next.x + second.y * next.y);
+      return total;
+    };
+    const across = { x: p.x, y: from.y };
+    const along = { x: from.x, y: p.y };
+    out.push(score(along) > score(across) ? along : across, p);
+  });
+  out.push(t);
+  return simplify(out);
+}
+
+// A curve through the points (Catmull-Rom, as cubic pieces), square to the
+// sides at its ends.
+function spline(all: Point[], sSide: Side, tSide: Side): EdgeGeometry {
+  const sn = normal(sSide);
+  const tn = normal(tSide);
+  let d = `M${round(all[0].x)},${round(all[0].y)}`;
+  for (let i = 0; i < all.length - 1; i++) {
+    const p0 = all[i];
+    const p1 = all[i + 1];
+    const reach = distance(p0, p1) / 3;
+    const c1 = i === 0 ? { x: p0.x + sn.x * reach, y: p0.y + sn.y * reach } : { x: p0.x + (p1.x - all[i - 1].x) / 6, y: p0.y + (p1.y - all[i - 1].y) / 6 };
+    const c2 = i === all.length - 2 ? { x: p1.x + tn.x * reach, y: p1.y + tn.y * reach } : { x: p1.x - (all[i + 2].x - p0.x) / 6, y: p1.y - (all[i + 2].y - p0.y) / 6 };
+    d += `C${round(c1.x)},${round(c1.y)} ${round(c2.x)},${round(c2.y)} ${round(p1.x)},${round(p1.y)}`;
+  }
+  return { d, label: middleOf(all) };
+}
+
 // A cubic curve that leaves and arrives square to its sides, as far out as
 // a quarter of the distance (more when the target is behind the source).
 function bezier(s: Point, sSide: Side, t: Point, tSide: Side): EdgeGeometry {

@@ -208,6 +208,7 @@ defmodule Hakushi.Mermaid do
         |> put_present("path", if(edge.path != "bezier", do: edge.path))
         |> put_present("marker", if(edge.marker != "arrow", do: edge.marker))
         |> put_present("animated", if(edge.animated, do: true))
+        |> put_present("points", if(edge.points != [], do: edge.points))
 
       "%% hakushi edge " <> JSON.encode!(place)
     end)
@@ -231,6 +232,7 @@ defmodule Hakushi.Mermaid do
         |> put_present(:path, edge["path"])
         |> put_present(:marker, edge["marker"])
         |> put_present(:animated, edge["animated"])
+        |> put_present(:points, edge["points"])
       end
 
     if edges == [], do: nil, else: edges

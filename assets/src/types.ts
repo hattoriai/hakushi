@@ -169,6 +169,8 @@ export interface EdgeModel {
   label: string | null;
   marker: "arrow" | "dot" | "none";
   animated: boolean;
+  /** The points it goes through, where people bent it (in the canvas's terms). */
+  points: Point[];
   /** The app's mark of it (Hakushi.Live.mark_edges/3), and whether the spotlight is on it. */
   mark: EdgeMark;
 }

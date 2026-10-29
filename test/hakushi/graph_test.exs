@@ -161,6 +161,39 @@ defmodule Hakushi.GraphTest do
     end
   end
 
+  describe "an edge's points" do
+    test "are kept, checked, and go to JSON and back" do
+      edge =
+        Edge.new(%{
+          source: "a",
+          target: "b",
+          points: [{1, 2}, %{x: 3, y: 4}, %{"x" => 5, "y" => 6}]
+        })
+
+      assert edge.points == [[1, 2], [3, 4], [5, 6]]
+      assert Edge.new(%{source: "a", target: "b"}).points == []
+
+      assert_raise ArgumentError, ~r/points/, fn ->
+        Edge.new(%{source: "a", target: "b", points: [[1]]})
+      end
+
+      graph =
+        Graph.new(
+          nodes: [%{id: "a"}, %{id: "b"}],
+          edges: [edge, %{id: "plain", source: "b", target: "a"}]
+        )
+
+      dumped = Graph.dump(graph)
+      refute Map.has_key?(Enum.find(dumped["edges"], &(&1["id"] == "plain")), "points")
+      assert Graph.load(JSON.decode!(JSON.encode!(dumped))) == graph
+
+      {:ok, bent, _, _} =
+        Graph.apply(graph, Change.update(edges: [%{id: "plain", points: [[9, 9]]}]))
+
+      assert Graph.compare(graph, bent).changed.edges == %{"plain" => [:points]}
+    end
+  end
+
   describe "the inside of a group" do
     defp framed do
       Graph.new(

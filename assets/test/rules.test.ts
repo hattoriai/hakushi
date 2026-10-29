@@ -13,6 +13,7 @@ const edge = (source: string, target: string, sourceHandle: string | null = null
   label: null,
   marker: "arrow",
   animated: false,
+  points: [],
   mark: { status: null, highlight: false, color: null, dim: false, title: null, lit: false, diff: null },
 });
 

@@ -531,6 +531,43 @@ defmodule Hakushi.CanvasTest do
     end
   end
 
+  describe "the points an edge goes through" do
+    test "people bend an edge, and straighten it again" do
+      {view, _html} = open()
+      assert :ok = bend(view, "schema", "fk", [{100, 200}, {150.5, 220}])
+      assert [%{id: "fk", points: [[100, 200], [150.5, 220]]}] = edges(view, "schema")
+      assert render(view) =~ ~s(data-points="100,200 150.5,220")
+
+      assert_receive {:on_change,
+                      %Hakushi.Change{
+                        op: :update,
+                        edges: [%{id: "fk", points: [[100, 200], [150.5, 220]]}]
+                      }, _}
+
+      assert :ok = undo(view, "schema")
+      assert [%{points: []}] = edges(view, "schema")
+      assert :ok = redo(view, "schema")
+      assert :ok = bend(view, "schema", "fk", [])
+      assert [%{points: []}] = edges(view, "schema")
+    end
+
+    test "points that are not points are refused" do
+      {view, _html} = open()
+
+      assert {:error, _} =
+               view
+               |> element("#schema-hook")
+               |> render_hook("hakushi:change", %{
+                 "op" => "update",
+                 "edges" => [%{"id" => "fk", "points" => [[1, "x"]]}]
+               })
+               |> then(fn _ -> {:error, reply()["error"]} end)
+
+      too_many = for i <- 1..101, do: {i, i}
+      assert {:error, _} = bend(view, "schema", "fk", too_many)
+    end
+  end
+
   describe "align and distribute" do
     test "the app lines up and spaces out nodes, in the person's browser" do
       {view, _html} = open()
