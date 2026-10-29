@@ -58,7 +58,7 @@ defmodule Hakushi.Test do
   @doc """
   The edges of the canvas `id`: maps with `:id`, `:source`,
   `:source_handle`, `:target`, `:target_handle`, `:path`, `:label`,
-  `:marker` and `:animated`.
+  `:marker`, `:animated` and `:points` (`[[x, y]]`, `[]` for none).
   """
   @spec edges(struct(), String.t()) :: [map()]
   def edges(view, id) do
@@ -74,7 +74,8 @@ defmodule Hakushi.Test do
         path: attribute(edge, "data-path"),
         label: attribute(edge, "data-label"),
         marker: attribute(edge, "data-marker"),
-        animated: attribute(edge, "data-animated") == "true"
+        animated: attribute(edge, "data-animated") == "true",
+        points: edge |> attribute("data-points") |> points()
       }
     end)
   end
@@ -180,6 +181,19 @@ defmodule Hakushi.Test do
           "targetHandle" => target_handle
         }
       ]
+    })
+  end
+
+  @doc """
+  Bends an edge through points, as a person does who drags them out of
+  its line: `[{x, y}]`, or `[]` for none.
+  """
+  @spec bend(struct(), String.t(), String.t(), [{number(), number()}]) ::
+          :ok | {:error, String.t()}
+  def bend(view, id, edge, points) do
+    change(view, id, %{
+      "op" => "update",
+      "edges" => [%{"id" => edge, "points" => Enum.map(points, fn {x, y} -> [x, y] end)}]
     })
   end
 
@@ -561,6 +575,14 @@ defmodule Hakushi.Test do
       [] -> nil
     end
   end
+
+  defp points(nil), do: []
+
+  defp points(text),
+    do:
+      text
+      |> String.split()
+      |> Enum.map(fn pair -> pair |> String.split(",") |> Enum.map(&number/1) end)
 
   defp number(nil), do: nil
 

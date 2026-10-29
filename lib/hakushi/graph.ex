@@ -195,7 +195,14 @@ defmodule Hakushi.Graph do
              :height
            ]),
          {:ok, graph, edge_undo} <-
-           update_all(graph, :edges, change.edges, [:label, :path, :marker, :animated, :data]) do
+           update_all(graph, :edges, change.edges, [
+             :label,
+             :path,
+             :marker,
+             :animated,
+             :points,
+             :data
+           ]) do
       {:ok, graph, change,
        %Change{op: :update, nodes: node_undo, edges: edge_undo, by: change.by}}
     end
@@ -882,6 +889,7 @@ defmodule Hakushi.Graph do
       :path,
       :marker,
       :animated,
+      :points,
       :data
     ]
 
@@ -941,7 +949,10 @@ defmodule Hakushi.Graph do
         end),
       "edges" =>
         Enum.map(edges(graph), fn edge ->
-          edge |> Map.from_struct() |> Map.reject(fn {_k, v} -> is_nil(v) end) |> stringify()
+          edge
+          |> Map.from_struct()
+          |> Map.reject(fn {k, v} -> is_nil(v) or (k == :points and v == []) end)
+          |> stringify()
         end)
     }
     |> dump_paper(graph.paper)

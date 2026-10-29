@@ -34,6 +34,7 @@ Escape nothing.
 | Move | drag a node (and every selected node with it); the helper lines line it up with the nodes near it, and Alt drags without them; the arrow keys move the selection by one (ten with Shift, a square of the grid on a canvas that snaps) |
 | Connect | drag from a handle to a handle; or C, then the arrows, then Enter |
 | Move an end | select an edge, and drag one of its ends to another handle |
+| Bend an edge | select it, and drag a point out of its line; drag a point to move it, and double-click it to take it away |
 | Group | drop a node on a group to put it in; drag it off to take it out |
 | Tidy up | ⇧L, or the button of the controls: the selection when two or more nodes are selected, else every node |
 | Line up | Alt and A, H or D: the left sides, the middles or the right sides of the selected nodes; Alt and W, V or S: their tops, middles or bottoms (⌥ on a Mac); or the menu |

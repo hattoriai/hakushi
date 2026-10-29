@@ -494,6 +494,27 @@
   cursor: grab;
 }
 
+/* The points a selected edge goes through, and the places between them
+   to drag a new one from. */
+.hakushi-waypoint {
+  fill: var(--hakushi-edge-selected);
+  stroke: var(--hakushi-surface);
+  stroke-width: 1.5px;
+  vector-effect: non-scaling-stroke;
+  pointer-events: all;
+  cursor: move;
+}
+
+.hakushi-waypoint-new {
+  fill: var(--hakushi-surface);
+  stroke: var(--hakushi-edge-selected);
+  stroke-width: 1px;
+  vector-effect: non-scaling-stroke;
+  opacity: 0.7;
+  pointer-events: all;
+  cursor: copy;
+}
+
 .hakushi-guide {
   stroke: var(--hakushi-guide);
   stroke-width: 1px;

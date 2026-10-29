@@ -16,6 +16,9 @@ defmodule Hakushi.Edge do
     * `marker` - the end of the line at the target: `"arrow"` (the
       default), `"dot"` or `"none"`.
     * `animated` - a line that flows from the source to the target.
+    * `points` - the points it goes through on its way, `[x, y]` each,
+      in the canvas's terms: where people bent it (a waypoint dragged
+      out of its line); `[]` for none, the way its `path` takes.
     * `data` - anything of the app's; it stays on the server.
   """
 
@@ -32,6 +35,7 @@ defmodule Hakushi.Edge do
             label: nil,
             marker: "arrow",
             animated: false,
+            points: [],
             data: %{}
 
   @type id :: String.t()
@@ -46,6 +50,7 @@ defmodule Hakushi.Edge do
           label: String.t() | nil,
           marker: String.t(),
           animated: boolean(),
+          points: [[number()]],
           data: term()
         }
 
@@ -79,6 +84,7 @@ defmodule Hakushi.Edge do
       label: optional_string(get(fields, :label, nil)),
       marker: to_string(get(fields, :marker, "arrow")),
       animated: get(fields, :animated, false) == true,
+      points: points(get(fields, :points, [])),
       data: get(fields, :data, %{})
     }
 
@@ -93,6 +99,28 @@ defmodule Hakushi.Edge do
   def default_id(source, source_handle, target, target_handle) do
     "#{source}:#{source_handle}->#{target}:#{target_handle}"
   end
+
+  # The most points an edge goes through.
+  @max_points 100
+
+  @doc false
+  # Points as an edge keeps them, `[x, y]` each: of pairs, tuples or maps;
+  # :error for anything else.
+  @spec points(term()) :: [[number()]] | :error
+  def points(nil), do: []
+
+  def points(points) when is_list(points) and length(points) <= @max_points do
+    points = Enum.map(points, &point/1)
+    if Enum.member?(points, :error), do: :error, else: points
+  end
+
+  def points(_other), do: :error
+
+  defp point([x, y]) when is_number(x) and is_number(y), do: [x, y]
+  defp point({x, y}) when is_number(x) and is_number(y), do: [x, y]
+  defp point(%{x: x, y: y}) when is_number(x) and is_number(y), do: [x, y]
+  defp point(%{"x" => x, "y" => y}) when is_number(x) and is_number(y), do: [x, y]
+  defp point(_other), do: :error
 
   defp optional_string(nil), do: nil
   defp optional_string(""), do: nil
@@ -113,6 +141,13 @@ defmodule Hakushi.Edge do
         raise(
           ArgumentError,
           "an edge's path must be one of #{inspect(@paths)}, got: #{inspect(edge.path)}"
+        )
+
+    if edge.points == :error,
+      do:
+        raise(
+          ArgumentError,
+          "an edge's points are at most #{@max_points} of [x, y], got: #{inspect(edge.points)}"
         )
 
     unless edge.marker in @markers,

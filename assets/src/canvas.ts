@@ -10,7 +10,7 @@
 // them (the place of a node being dragged, its selection, its culling).
 
 import { editable, el, interactive, isApple, numberAttr, prefersReducedMotion, svg } from "./dom";
-import { contains, edgePath, facing, fromCorners, grow, intersects, sidePoint, union } from "./geometry";
+import { contains, edgePath, edgePathThrough, facing, fromCorners, grow, intersects, sidePoint, union } from "./geometry";
 import { arrange, type Arrangement } from "./arrange";
 import { exportImage, type ExportOptions } from "./export";
 import { icons } from "./icons";
@@ -87,6 +87,8 @@ type Gesture =
   // A node turned by its knob, about its middle.
   | { kind: "rotate"; pointer: number; id: string; center: Point; from: number; base: number; deg: number; el: HTMLElement }
   | { kind: "pinch"; distance: number; mid: Point; view: View }
+  // A point of the selected edge dragged, or one dragged out of its line.
+  | { kind: "bend"; pointer: number; edge: string; index: number; origin: Point[]; moved: boolean }
   // A tool of the app's own (registerTool): its handlers have the pointer.
   | { kind: "client"; pointer: number; tool: ClientTool };
 
@@ -752,6 +754,7 @@ export class Canvas {
       label: element.dataset.label ?? null,
       marker: (element.dataset.marker as EdgeModel["marker"]) || "arrow",
       animated: element.dataset.animated === "true",
+      points: readPoints(element.dataset.points),
       mark: {
         status: element.dataset.markStatus ?? null,
         highlight: element.dataset.markHighlight === "true",
@@ -1088,8 +1091,8 @@ export class Canvas {
         continue;
       }
       const view = this.edgeView(edge);
-      const path = edgePath(edge.path, geometry.from, geometry.fromSide, geometry.to, geometry.toSide);
-      view.box = grow(fromCorners(geometry.from, geometry.to), 80);
+      const path = edgePathThrough(edge.path, geometry.from, geometry.fromSide, edge.points, geometry.to, geometry.toSide);
+      view.box = grow(union([fromCorners(geometry.from, geometry.to), ...edge.points.map((p) => ({ ...p, width: 0, height: 0 }))])!, 80);
       // Written only when they change: a path written again is laid out and painted again.
       if (view.d !== path.d) {
         view.d = path.d;
@@ -1377,6 +1380,16 @@ export class Canvas {
         for (const [end, p] of [["source", geometry.from], ["target", geometry.to]] as const) {
           this.overlay.append(svg("circle", { class: "hakushi-knob", "data-edge": id, "data-end": end, cx: `${p.x}`, cy: `${p.y}`, r: `${6 / this.view.zoom}` }));
         }
+        // Its points, to drag (a double click takes one away), and between
+        // them the places to drag a new one out of the line from.
+        const all = [geometry.from, ...edge.points, geometry.to];
+        for (let i = 0; i < all.length - 1; i++) {
+          const m = { x: (all[i].x + all[i + 1].x) / 2, y: (all[i].y + all[i + 1].y) / 2 };
+          this.overlay.append(svg("circle", { class: "hakushi-waypoint-new", "data-edge": id, cx: `${m.x}`, cy: `${m.y}`, r: `${4 / this.view.zoom}` }));
+        }
+        edge.points.forEach((p, i) => {
+          this.overlay.append(svg("circle", { class: "hakushi-waypoint", "data-edge": id, "data-index": `${i}`, cx: `${p.x}`, cy: `${p.y}`, r: `${5 / this.view.zoom}` }));
+        });
       }
     }
     if (this.pending) {
@@ -3047,6 +3060,13 @@ export class Canvas {
       return;
     }
 
+    // The points of the selected edge, and the places to drag new ones from.
+    const bend = this.bendAt(event);
+    if (bend && !this.config.readonly) {
+      event.preventDefault();
+      this.startBend(event, bend.edge, bend.index, bend.inserted, at);
+      return;
+    }
     // The ends of the selected edge come first, over the handles they sit on.
     const knob = this.knobAt(event);
     if (knob && !this.config.readonly) {
@@ -3164,6 +3184,48 @@ export class Canvas {
       if (Math.hypot(screen.x - p.x, screen.y - p.y) <= 10) return { edge: id, end };
     }
     return null;
+  }
+
+  // A point of the one selected edge within reach of the pointer, or a
+  // place between two of its points to drag a new one from.
+  private bendAt(event: PointerEvent): { edge: string; index: number; inserted: boolean } | null {
+    if (this.selectedEdges.size !== 1) return null;
+    const id = [...this.selectedEdges][0];
+    const edge = this.edges.get(id);
+    const geometry = edge && this.geometry(edge);
+    if (!edge || !geometry) return null;
+    const p = this.local(event);
+    const near = (q: Point) => Math.hypot(q.x * this.view.zoom + this.view.x - p.x, q.y * this.view.zoom + this.view.y - p.y) <= 8;
+    const at = edge.points.findIndex(near);
+    if (at >= 0) return { edge: id, index: at, inserted: false };
+    const all = [geometry.from, ...edge.points, geometry.to];
+    for (let i = 0; i < all.length - 1; i++) {
+      if (near({ x: (all[i].x + all[i + 1].x) / 2, y: (all[i].y + all[i + 1].y) / 2 })) return { edge: id, index: i, inserted: true };
+    }
+    return null;
+  }
+
+  private startBend(event: PointerEvent, id: string, index: number, inserted: boolean, at: Point) {
+    const edge = this.edges.get(id)!;
+    const origin = edge.points.map((p) => ({ ...p }));
+    if (inserted) edge.points = [...edge.points.slice(0, index), at, ...edge.points.slice(index)];
+    this.capture(event);
+    this.gesture = { kind: "bend", pointer: event.pointerId, edge: id, index, origin, moved: inserted };
+    this.dirty.add(id);
+    this.schedule();
+  }
+
+  // The points of an edge, to the server: where it goes through now.
+  private commitBend(id: string, origin: Point[]) {
+    const edge = this.edges.get(id);
+    if (!edge) return;
+    const points = edge.points.map((p) => [round(p.x), round(p.y)]);
+    this.push("hakushi:change", { op: "update", edges: [{ id, points }] }, (reply) => {
+      if (!reply.error) return;
+      edge.points = origin;
+      this.dirty.add(id);
+      this.schedule();
+    });
   }
 
   // The end of a selected edge, dragged: the other end stays, and the
@@ -3349,6 +3411,17 @@ export class Canvas {
         g.tool.move?.(this.toolContext(), event, at);
         return;
       }
+      case "bend": {
+        if (event.pointerId !== g.pointer) return;
+        const edge = this.edges.get(g.edge);
+        if (!edge) return;
+        const p = this.config.snap ? { x: snapToGrid(at.x, this.config.grid), y: snapToGrid(at.y, this.config.grid) } : at;
+        edge.points = edge.points.map((q, i) => (i === g.index ? p : q));
+        g.moved = true;
+        this.dirty.add(g.edge);
+        this.schedule();
+        return;
+      }
       case "lasso": {
         if (event.pointerId !== g.pointer) return;
         const last = g.points[g.points.length - 1];
@@ -3419,6 +3492,13 @@ export class Canvas {
         this.root.querySelectorAll("[data-ui-target]").forEach((e) => e.removeAttribute("data-ui-target"));
         if (!cancelled) this.commitShape(g);
         break;
+      case "bend": {
+        const edge = this.edges.get(g.edge);
+        if (edge && (cancelled || !g.moved)) edge.points = g.origin;
+        else if (edge) this.commitBend(g.edge, g.origin);
+        this.dirty.add(g.edge);
+        break;
+      }
       case "client":
         if (cancelled) g.tool.cancel?.(this.toolContext());
         else g.tool.up?.(this.toolContext(), event, this.canvasPoint(event));
@@ -3448,6 +3528,11 @@ export class Canvas {
     if (g.kind === "erase") this.unerase(g.hit);
     if (g.kind === "rotate") g.el.style.removeProperty("--hakushi-rotation");
     if (g.kind === "client") g.tool.cancel?.(this.toolContext());
+    if (g.kind === "bend") {
+      const edge = this.edges.get(g.edge);
+      if (edge) edge.points = g.origin;
+      this.dirty.add(g.edge);
+    }
     if (g.kind === "shape") this.root.querySelectorAll("[data-ui-target]").forEach((e) => e.removeAttribute("data-ui-target"));
     if (g.kind === "ink" || g.kind === "erase" || g.kind === "lasso") this.sendPeer();
     if (g.kind === "resize") {
@@ -3494,6 +3579,22 @@ export class Canvas {
       event.preventDefault();
       this.editText(textNodeModel);
       return;
+    }
+    // A point of the selected edge, taken away.
+    if (!this.config.readonly && this.selectedEdges.size === 1) {
+      const id = [...this.selectedEdges][0];
+      const edge = this.edges.get(id);
+      const p = this.local(event);
+      const index = edge ? edge.points.findIndex((q) => Math.hypot(q.x * this.view.zoom + this.view.x - p.x, q.y * this.view.zoom + this.view.y - p.y) <= 8) : -1;
+      if (edge && index >= 0) {
+        event.preventDefault();
+        const origin = edge.points;
+        edge.points = edge.points.filter((_q, i) => i !== index);
+        this.dirty.add(id);
+        this.schedule();
+        this.commitBend(id, origin);
+        return;
+      }
     }
     // A node that opens, off its fields and buttons; a group by the part
     // it is dragged by (its inside is paper, where a double click makes a node).
@@ -3779,7 +3880,7 @@ export class Canvas {
     const edge = this.edges.get(id);
     const geometry = edge && this.geometry(edge);
     if (!edge || !geometry) return;
-    const middle = edgePath(edge.path, geometry.from, geometry.fromSide, geometry.to, geometry.toSide).label;
+    const middle = edgePathThrough(edge.path, geometry.from, geometry.fromSide, edge.points, geometry.to, geometry.toSide).label;
     const input = el("input", { class: "hakushi-edge-input", type: "text", "aria-label": this.messages.t("label"), value: edge.label ?? "" });
     input.style.translate = `${middle.x}px ${middle.y}px`;
     this.labelsEl.append(input);
@@ -4766,6 +4867,16 @@ function hitsStroke(aim: SVGGeometryElement, x: number, y: number, reach: number
     if (Math.hypot(p.x - x, p.y - y) <= reach) return true;
   }
   return false;
+}
+
+// The points of an edge's data-points ("x,y x,y").
+function readPoints(value: string | undefined): Point[] {
+  if (!value) return [];
+  return value
+    .split(" ")
+    .map((pair) => pair.split(",").map(Number))
+    .filter((p) => p.length === 2 && p.every(Number.isFinite))
+    .map(([x, y]) => ({ x, y }));
 }
 
 // The keys of an action of the canvas's own, as its menu shows them.

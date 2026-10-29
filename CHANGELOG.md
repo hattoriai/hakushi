@@ -87,6 +87,13 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`registerTool`, offered by a canvas's `client_tools`) are buttons of
   the bar of tools, whose handlers have the pointer, a layer to draw on
   and changes as a person's. See the JavaScript guide.
+- An edge goes through points people bend it to (`Hakushi.Edge`'s
+  `points`): a selected edge shows a point between each two, to drag out
+  of its line; a point drags, and a double click takes it away. Its
+  `path` draws the way through them (a line, steps along the axes, or a
+  curve square to its ends). A change as any (`:update` of `points`),
+  kept in JSON and in Markdown. `Hakushi.Test.bend/4`, and `:points` in
+  `Hakushi.Test.edges/2`. See the Edges guide.
 
 ### Changed
 

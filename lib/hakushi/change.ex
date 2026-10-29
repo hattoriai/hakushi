@@ -27,7 +27,7 @@ defmodule Hakushi.Change do
       change (`:data`, `:type`, `:locked`, and `:x`, `:y`, `:width` and
       `:height` for an edit that moves its node too), `edges` a list of maps with
       `:id` and the keys that change (`:label`, `:path`, `:marker`,
-      `:animated`, `:data`).
+      `:animated`, `:points`, `:data`).
     * `:delete` - `nodes` and `edges` are lists of ids. Deleting a node
       deletes the nodes in it and the edges of all of them: the change
       that `Hakushi.Graph.apply/2` gives back lists them.
@@ -177,6 +177,15 @@ defmodule Hakushi.Change do
        else: :error
   end
 
+  # Where people bent an edge: the points it goes through.
+  def from_client(%{"op" => "update", "edges" => [%{"id" => id, "points" => points}]})
+      when is_binary(id) do
+    case Edge.points(points) do
+      :error -> :error
+      points -> {:ok, %__MODULE__{op: :update, edges: [%{id: id, points: points}]}}
+    end
+  end
+
   def from_client(%{"op" => "update", "edges" => [%{"id" => id, "label" => label}]})
       when is_binary(id) and (is_binary(label) or is_nil(label)) do
     label = if label, do: label |> String.trim() |> String.slice(0, 500)
@@ -305,7 +314,7 @@ defmodule Hakushi.Change do
   end
 
   # The keys of the maps of a move, a reconnect and an update, and of `by`.
-  @item_keys ~w(id x y width height parent data type locked label path marker animated source source_handle target target_handle name)a
+  @item_keys ~w(id x y width height parent data type locked label path marker animated points source source_handle target target_handle name)a
 
   @doc "The change of `dump/1`'s maps."
   @spec load(map()) :: t()

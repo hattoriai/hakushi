@@ -1533,6 +1533,7 @@ defmodule Hakushi.Canvas do
           data-label={edge.label}
           data-marker={edge.marker}
           data-animated={edge.animated && "true"}
+          data-points={edge.points != [] && Enum.map_join(edge.points, " ", fn [x, y] -> "#{x},#{y}" end)}
           data-mark-status={mark(@marks.edges, edge.id, :status)}
           data-mark-highlight={mark(@marks.edges, edge.id, :highlight) && "true"}
           data-mark-color={mark_color_value(@marks.edges, edge.id)}
