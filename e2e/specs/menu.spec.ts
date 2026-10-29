@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { edgeCount, node, openCanvas } from "./support";
+import { alongEdge, edgeCount, node, openCanvas } from "./support";
 
 // The canvas's menu (Hakushi.Menu): the schema's own item for a table, and
 // the canvas's own actions.
@@ -27,11 +27,7 @@ test("the menu of an edge deletes it, and the paper's selects all", async ({ pag
   const edge = page.locator("#schema .hakushi-edge").first();
   const id = await edge.getAttribute("data-edge");
   // The middle of its line, where a click is the edge's.
-  const point = await page.locator(`#schema .hakushi-edge[data-edge="${id}"] .hakushi-edge-line`).evaluate((path) => {
-    const p = (path as SVGPathElement).getPointAtLength((path as SVGPathElement).getTotalLength() / 2);
-    const m = (path as SVGPathElement).getScreenCTM()!;
-    return { x: p.x * m.a + m.e, y: p.y * m.d + m.f };
-  });
+  const [point] = await alongEdge(page, "schema", id!);
   await page.mouse.click(point.x, point.y, { button: "right" });
   await expect(menu(page).getByRole("menuitem")).toHaveText([/Edit label/, /Delete/]);
   await menu(page).getByRole("menuitem", { name: /Delete/ }).click();
