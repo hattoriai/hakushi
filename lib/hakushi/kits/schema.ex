@@ -48,6 +48,9 @@ defmodule Hakushi.Kits.Schema do
 
   alias Hakushi.{Graph, Mermaid}
 
+  # Ecto is optional: from_ecto/2 reads schemas an app with Ecto has.
+  @compile {:no_warn_undefined, [Ecto.Type]}
+
   @types ~w(uuid text integer bigint decimal money boolean date timestamp json)
 
   @doc "The column types people pick from."
@@ -413,6 +416,215 @@ defmodule Hakushi.Kits.Schema do
     case text |> to_string() |> String.replace(~r/[^\w-]+/u, "_") |> String.trim("_") do
       "" -> "_"
       word -> word
+    end
+  end
+
+  @doc """
+  The graph of an app's Ecto schemas: a table for each (its `source`,
+  with its prefix as its `"schema"`), its fields as its columns (their
+  names in the table, their Ecto types, the primary keys `"pk"`), and a
+  foreign key for each `belongs_to`, from its column to the key it
+  refers to. A `many_to_many` through a table of no schema of its own
+  (`join_through: "projects_tags"`) has that table too, with its two
+  keys. `schemas` is a list of modules, or an OTP app, whose schemas are
+  read (not the embedded ones).
+
+      graph = Hakushi.Kits.Schema.from_ecto(:my_app)
+      graph = Hakushi.Kits.Schema.from_ecto([MyApp.Accounts.User, MyApp.Blog.Post])
+
+  A `belongs_to` a schema that is not among them points to a stub of its
+  table (`"external"`, with the one column it refers to), unless
+  `stubs: false`, which leaves it out. The tables are laid out in layers
+  along their keys; give the canvas `tidy` to lay them out as it opens.
+  """
+  @spec from_ecto([module()] | atom(), keyword()) :: Graph.t()
+  def from_ecto(schemas, opts \\ [])
+
+  def from_ecto(app, opts) when is_atom(app) and not is_nil(app) do
+    {:ok, modules} = :application.get_key(app, :modules)
+    modules |> Enum.filter(&ecto_table?/1) |> Enum.sort() |> from_ecto(opts)
+  end
+
+  def from_ecto(schemas, opts) when is_list(schemas) do
+    stubs = Keyword.get(opts, :stubs, true)
+
+    Enum.each(schemas, fn schema ->
+      unless ecto_table?(schema),
+        do: raise(ArgumentError, "#{inspect(schema)} is not an Ecto schema of a table")
+    end)
+
+    ids = Map.new(schemas, &{&1, ecto_id(&1)})
+    # A belongs_to a module that is no schema of a table: no table to point to.
+    keys = schemas |> Enum.flat_map(&ecto_keys(&1, ids)) |> Enum.filter(&ecto_table?(&1.related))
+    joins = schemas |> Enum.flat_map(&ecto_joins(&1, ids)) |> Enum.uniq_by(& &1.m)
+
+    stub_tables =
+      if stubs,
+        do: keys |> Enum.reject(&Map.has_key?(ids, &1.related)) |> ecto_stubs(),
+        else: []
+
+    keys = if stubs, do: keys, else: Enum.filter(keys, &Map.has_key?(ids, &1.related))
+    fks = MapSet.new(keys, &{&1.from, &1.column})
+
+    tables =
+      Enum.map(schemas, fn schema ->
+        %{m: ids[schema], type: "schema-table", data: ecto_table(schema, fks)}
+      end)
+
+    edges =
+      for key <- keys ++ Enum.flat_map(joins, & &1.keys) do
+        %{
+          from: key.from,
+          to: ids[key.related] || ecto_id(key.related),
+          source_handle: key.column,
+          target_handle: key.target,
+          path: "smooth"
+        }
+      end
+
+    Mermaid.graph(tables ++ Enum.map(joins, &Map.delete(&1, :keys)) ++ stub_tables, edges, %{})
+  end
+
+  defp ecto_table?(module) do
+    Code.ensure_loaded?(module) and function_exported?(module, :__schema__, 1) and
+      module.__schema__(:source) != nil
+  end
+
+  # A table's id: its name, with its prefix.
+  defp ecto_id(schema) do
+    case schema.__schema__(:prefix) do
+      nil -> schema.__schema__(:source)
+      prefix -> "#{prefix}.#{schema.__schema__(:source)}"
+    end
+  end
+
+  defp ecto_table(schema, fks) do
+    id = ecto_id(schema)
+    primary = schema.__schema__(:primary_key)
+
+    columns =
+      for field <- schema.__schema__(:fields) do
+        name = to_string(schema.__schema__(:field_source, field))
+
+        key =
+          cond do
+            field in primary -> "pk"
+            MapSet.member?(fks, {id, name}) -> "fk"
+            true -> nil
+          end
+
+        %{
+          "id" => name,
+          "name" => name,
+          "type" => ecto_type(schema.__schema__(:type, field)),
+          "key" => key
+        }
+      end
+
+    put_prefix(%{"name" => schema.__schema__(:source), "columns" => columns}, schema)
+  end
+
+  # A type as Ecto names it: its primitive for a type of its own (an enum
+  # is a string), an array's with [].
+  defp ecto_type({:array, type}), do: ecto_type(type) <> "[]"
+  defp ecto_type({:map, _type}), do: "map"
+  defp ecto_type(type) when is_atom(type) and type in [:id, :binary_id], do: Atom.to_string(type)
+
+  defp ecto_type(type) do
+    case Ecto.Type.type(type) do
+      primitive when is_atom(primitive) -> Atom.to_string(primitive)
+      other -> ecto_type(other)
+    end
+  end
+
+  # The foreign keys of a schema: its belongs_to, each from its column to
+  # the key of the schema it belongs to.
+  defp ecto_keys(schema, ids) do
+    for name <- schema.__schema__(:associations),
+        %{__struct__: Ecto.Association.BelongsTo} = assoc <- [
+          schema.__schema__(:association, name)
+        ] do
+      %{
+        from: ids[schema],
+        column: to_string(schema.__schema__(:field_source, assoc.owner_key)),
+        related: assoc.related,
+        target: ecto_key_source(assoc.related, assoc.related_key)
+      }
+    end
+  end
+
+  defp ecto_key_source(schema, key) do
+    if Code.ensure_loaded?(schema) and function_exported?(schema, :__schema__, 2),
+      do: to_string(schema.__schema__(:field_source, key) || key),
+      else: to_string(key)
+  end
+
+  # The tables of many_to_many through a table of no schema of their own:
+  # its two keys, each a foreign key.
+  defp ecto_joins(schema, ids) do
+    for name <- schema.__schema__(:associations),
+        %{__struct__: Ecto.Association.ManyToMany, join_through: through} = assoc <-
+          [schema.__schema__(:association, name)],
+        is_binary(through),
+        Map.has_key?(ids, assoc.related) do
+      [{owner_fk, owner_pk}, {related_fk, related_pk}] = assoc.join_keys
+      owner_type = ecto_type(schema.__schema__(:type, owner_pk))
+      related_type = ecto_type(assoc.related.__schema__(:type, related_pk))
+      owner_fk = to_string(owner_fk)
+      related_fk = to_string(related_fk)
+
+      %{
+        m: through,
+        type: "schema-table",
+        data: %{
+          "name" => through,
+          "columns" => [
+            %{"id" => owner_fk, "name" => owner_fk, "type" => owner_type, "key" => "fk"},
+            %{"id" => related_fk, "name" => related_fk, "type" => related_type, "key" => "fk"}
+          ]
+        },
+        keys: [
+          %{from: through, column: owner_fk, related: schema, target: to_string(owner_pk)},
+          %{
+            from: through,
+            column: related_fk,
+            related: assoc.related,
+            target: to_string(related_pk)
+          }
+        ]
+      }
+    end
+  end
+
+  # A table of a schema not among them: a stub, with the keys others refer to.
+  defp ecto_stubs(keys) do
+    keys
+    |> Enum.group_by(& &1.related)
+    |> Enum.sort_by(fn {related, _keys} -> ecto_id(related) end)
+    |> Enum.map(fn {related, keys} ->
+      columns =
+        keys |> Enum.map(& &1.target) |> Enum.uniq() |> Enum.map(&ecto_stub_column(related, &1))
+
+      data =
+        put_prefix(
+          %{"name" => related.__schema__(:source), "external" => true, "columns" => columns},
+          related
+        )
+
+      %{m: ecto_id(related), type: "schema-table", data: data}
+    end)
+  end
+
+  defp ecto_stub_column(related, column) do
+    field = Enum.find(related.__schema__(:fields), &(ecto_key_source(related, &1) == column))
+    type = if field, do: ecto_type(related.__schema__(:type, field)), else: "id"
+    %{"id" => column, "name" => column, "type" => type, "key" => "pk"}
+  end
+
+  defp put_prefix(data, schema) do
+    case schema.__schema__(:prefix) do
+      nil -> data
+      prefix -> Map.put(data, "schema", to_string(prefix))
     end
   end
 

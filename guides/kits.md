@@ -215,6 +215,29 @@ foreign keys use. It is drawn as a ghost, with its qualified name
 To show a database people read and arrange, not edit, see
 [A graph with no places of its own](layout.md#a-graph-with-no-places-of-its-own).
 
+### A schema read from your Ecto schemas
+
+`Hakushi.Kits.Schema.from_ecto/2` makes the graph of an app's Ecto
+schemas: a table for each (its source, its prefix as its schema), its
+fields as columns (their names in the table, their Ecto types, the
+primary keys), a foreign key for each `belongs_to`, and the join tables
+of `many_to_many` that have no schema of their own. A `belongs_to` a
+schema you did not give points to a stub of its table (`stubs: false`
+leaves it out).
+
+```elixir
+graph = Hakushi.Kits.Schema.from_ecto(:my_app)
+graph = Hakushi.Kits.Schema.from_ecto([MyApp.Accounts.User, MyApp.Blog.Post, MyApp.Blog.Comment])
+```
+
+```heex
+<.canvas id="model" graph={@graph} kits={[Hakushi.Kits.Schema]} readonly={:arrange} tidy />
+```
+
+A column's handles are its name, so the foreign keys stay as the
+schemas change: read them again, and keep the places people gave the
+tables (by id, the table's name) from the graph you had.
+
 ### The data of a kit's node
 
 A kit keeps its nodes' data with string keys, as a graph loaded from
