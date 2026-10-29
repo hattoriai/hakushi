@@ -215,6 +215,17 @@ foreign keys use. It is drawn as a ghost, with its qualified name
 To show a database people read and arrange, not edit, see
 [A graph with no places of its own](layout.md#a-graph-with-no-places-of-its-own).
 
+With `drag_out`, the tables and columns drag out of the canvas, into a
+query being written or onto a drop target of the page: a table by its
+icon, as its name with its schema when it has one (`billing.invoices`),
+so that its name and header still move it; a column by its name, as its
+name alone (a canvas people edit keeps its names as fields). See
+[Nodes](nodes.md#dragged-out-onto-the-page).
+
+```heex
+<.canvas id="db" graph={@graph} kits={[Hakushi.Kits.Schema]} readonly={:arrange} tidy drag_out />
+```
+
 ### A schema read from your Ecto schemas
 
 `Hakushi.Kits.Schema.from_ecto/2` makes the graph of an app's Ecto

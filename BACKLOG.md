@@ -4,9 +4,14 @@ Known gaps in Hakushi, each to become an issue. None is planned yet.
 
 ## Edges
 
-- Points of an edge of its own, which people drag.
 - Edges that take the focus, for the keyboard and screen readers.
-- An edge's label of HEEx (a `:edge_label` slot).
+
+## Nodes
+
+- A group folded to its title: its nodes hidden, its edges drawn to it.
+- A node that shows a node of another canvas, kept as that one changes.
+- A part of a node dragged out onto the page by the keyboard, not only
+  by a pointer.
 
 ## Scale
 
@@ -17,8 +22,6 @@ Known gaps in Hakushi, each to become an issue. None is planned yet.
 ## Collaboration
 
 - A lock on a node while someone drags it, as Masu locks a cell.
-- Comments on a node, in threads, with a store of the app's.
-- Following a person: the view moves with theirs.
 - Presence across the pages of an app, not only one canvas.
 
 ## Pages without LiveView
@@ -28,8 +31,6 @@ Known gaps in Hakushi, each to become an issue. None is planned yet.
 ## Layout
 
 - A layout of the nodes in a group, within it.
-- A force-directed layout, for graphs that do not flow (a mind map, a
-  network).
 
 ## Together with the family
 

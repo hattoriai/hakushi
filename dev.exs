@@ -945,6 +945,10 @@ defmodule HakushiDev.Layouts do
           .versions .version { display: grid; gap: 2px; width: 100%; text-align: left; font: inherit; padding: 0.5rem 0.6rem; border: 1px solid var(--atelier-line); border-radius: 8px; background: var(--atelier-card); color: inherit; cursor: pointer; }
           .versions .version small { color: var(--atelier-muted); font-size: 0.75rem; }
           .versions .version.chosen { border-color: var(--atelier-accent); }
+          .palette.query { order: 2; width: 16rem; border-right: 0; border-left: 1px solid var(--atelier-line); }
+          .query textarea { font: 0.8125rem ui-monospace, monospace; padding: 0.5rem; border: 1px solid var(--atelier-line); border-radius: 8px; background: var(--atelier-card); color: inherit; resize: vertical; }
+          .query .drop { display: grid; gap: 0.25rem; padding: 0.75rem; border: 1px dashed var(--atelier-line); border-radius: 8px; font-size: 0.8125rem; }
+          .query .drop span { color: var(--atelier-muted); }
           .top .find input { font: inherit; font-size: 0.8125rem; padding: 0.3rem 0.5rem; border: 1px solid var(--atelier-line, #ddd); border-radius: 6px; background: transparent; color: inherit; width: 9rem; }
           .button { display: inline-flex; align-items: center; gap: 0.375rem; height: 2rem; padding: 0 0.75rem; border: 1px solid var(--atelier-line); border-radius: 7px; background: var(--atelier-card); color: var(--atelier-ink); font: inherit; font-size: 0.8125rem; font-weight: 500; }
           .button.primary { background: var(--atelier-accent); border-color: transparent; color: #fff; }
@@ -2116,8 +2120,15 @@ defmodule HakushiDev.DatabaseLive do
         else: :force
 
     graph = HakushiDev.Seeds.database(n)
-    {:ok, assign(socket, n: n, way: layout, keys: map_size(graph.edges), graph: graph)}
+
+    {:ok,
+     assign(socket, n: n, way: layout, keys: map_size(graph.edges), graph: graph, described: nil)}
   end
+
+  # A table or a column dragged out of the canvas onto "Describe".
+  @impl true
+  def handle_event("describe", %{"text" => text, "node" => node}, socket),
+    do: {:noreply, assign(socket, described: %{text: text, node: node})}
 
   @impl true
   def render(assigns) do
@@ -2134,8 +2145,18 @@ defmodule HakushiDev.DatabaseLive do
         tidy
         fit={:readable}
         layout={@way}
+        drag_out
         label="The tables of the database"
       />
+      <aside class="palette query" aria-label="Query">
+        <p>Drag a table or a column out of the canvas, into the query or onto Describe.</p>
+        <textarea id="query" rows="6" spellcheck="false" placeholder="SELECT * FROM …"></textarea>
+        <div id="describe" class="drop" data-hakushi-drop="describe">
+          <strong>Describe</strong>
+          <span :if={!@described}>Drop a table or a column here.</span>
+          <span :if={@described} id="described">{@described.text} <small>({@described.node})</small></span>
+        </div>
+      </aside>
     </.app>
     """
   end

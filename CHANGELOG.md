@@ -7,6 +7,16 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-29
+
+The app hears and steers the canvas (the selection, the view, a change
+of its own in place of the person's, a process that hears it all), and
+shows what is happening on it without saving it (marks). Menus, versions
+and their differences, lining up, drill-down, a JavaScript API, edges
+bent through points, routed around nodes and labelled in HEEx, a schema
+read from Ecto schemas, parts of nodes dragged out onto the page, and a
+canvas of 10,000 nodes that pans at 60 frames a second.
+
 ### Added
 
 - The app hears what the person selects and sees: `on_select` with the
@@ -110,6 +120,18 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as it is dragged). Through its `points`, when people bent it, as
   `"smooth"`. The development app's workflow is routed. See the Edges
   guide.
+- A part of a node drags out of the canvas onto the page
+  (`data-hakushi-out` and `draggable="true"`, or a canvas's `drag_out`
+  for the kits' parts), as the browser drags text: dropped in a field or
+  an editor, its text goes in; dropped on an element of the page with
+  `data-hakushi-drop`, the LiveView hears that event, with the canvas,
+  the node and the text (and the element's `phx-value-*`, to its
+  `phx-target`). A click on such a part selects its node; a press moves
+  nothing. The Schema kit's tables drag out by their icons (their names,
+  a stub's qualified: `billing.invoices`), and columns by their names; in
+  the browser, the canvas's
+  `"out"` event. For a query tool: a table dragged from the diagram into
+  the query. See the Nodes guide.
 
 ### Changed
 
@@ -621,7 +643,10 @@ The first release.
   Japanese.
 - `hakushi.css` and the Sumi theme, `hakushi-sumi.css`.
 
-[Unreleased]: https://github.com/hattoriai/hakushi/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/hattoriai/hakushi/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/hattoriai/hakushi/releases/tag/v0.8.0
+[0.7.0]: https://github.com/hattoriai/hakushi/releases/tag/v0.7.0
+[0.6.0]: https://github.com/hattoriai/hakushi/releases/tag/v0.6.0
 [0.5.0]: https://github.com/hattoriai/hakushi/releases/tag/v0.5.0
 [0.4.0]: https://github.com/hattoriai/hakushi/releases/tag/v0.4.0
 [0.3.1]: https://github.com/hattoriai/hakushi/releases/tag/v0.3.1

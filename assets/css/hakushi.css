@@ -1268,6 +1268,24 @@
   font-weight: 600;
 }
 
+/* A part of a node that drags out of the canvas onto the page
+   (`data-hakushi-out`): a table's icon, a column's name. */
+.hakushi [data-hakushi-out][draggable="true"] {
+  cursor: grab;
+}
+
+.hakushi-kit-table-grip {
+  display: inline-flex;
+  flex: none;
+}
+
+/* A drop target of the page (`data-hakushi-drop`), a drag out of a canvas
+   over it. Outside the canvas: its accent, or Hakushi's. */
+[data-hakushi-drop][data-hakushi-over] {
+  outline: 2px dashed var(--hakushi-accent, #2f5bd3);
+  outline-offset: 2px;
+}
+
 .hakushi-kit-column {
   position: relative;
   display: flex;

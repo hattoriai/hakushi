@@ -54,6 +54,40 @@ the elements with `data-hakushi-nodrag`. To drag a node by one part only
 A `locked` node does not move, resize or go: in the browser, and on the
 server, which refuses a change that would.
 
+## Dragged out onto the page
+
+A part of a node that names something (a table, a column, a step) can
+drag out of the canvas onto the page, as the browser drags text: mark it
+with `data-hakushi-out`, its text, and `draggable="true"`.
+
+```heex
+<span data-hakushi-out={node.data.name} draggable="true">{node.data.name}</span>
+```
+
+Dropped in a field or an editor (a textarea, CodeMirror, Monaco), its
+text goes in where it lands, with nothing of yours. Dropped on an element
+of the page with `data-hakushi-drop`, the LiveView hears it as that event,
+with the canvas, the node and the text, and the element's `phx-value-*`;
+a `phx-target` sends it to a component:
+
+```heex
+<div data-hakushi-drop="describe" phx-value-panel="side">Drop a table here</div>
+```
+
+```elixir
+def handle_event("describe", %{"canvas" => "db", "node" => id, "text" => name}, socket) do
+  {:noreply, assign(socket, :described, describe(name))}
+end
+```
+
+The drop target is marked `data-hakushi-over` while a drag is over it, to
+style. A press on such a part does not move the node or pan, and a click
+on it selects the node. A canvas's `drag_out` makes the kits' parts drag
+out: the Schema kit's tables by their icons, and columns by their names. A drag out is
+the browser's drag, with a pointer: give the keyboard another way, such
+as an item of the canvas's menu (`Hakushi.Menu`). In the browser, the
+canvas's `"out"` event hears each drag (see [JavaScript](javascript.md)).
+
 ## Handles
 
 A handle is where edges start (`kind={:source}`), end

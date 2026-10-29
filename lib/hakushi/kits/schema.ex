@@ -166,6 +166,10 @@ defmodule Hakushi.Kits.Schema do
 
   defp handle_id(column), do: get(column, "id") || get(column, "name")
 
+  # A table's name as a query names it: with its schema, when it has one.
+  defp qualified(nil, name), do: name
+  defp qualified(schema, name), do: "#{schema}.#{name}"
+
   # A table of another schema than the canvas's: a stub, never edited.
   defp external?(data), do: get(data, "external") in [true, "true"]
 
@@ -179,13 +183,23 @@ defmodule Hakushi.Kits.Schema do
         schema: get(assigns.node.data, "schema"),
         external: external,
         readonly: assigns.readonly or external,
+        drag_out: assigns[:drag_out] == true,
         columns: Enum.with_index(get(assigns.node.data, "columns") || [])
       )
 
     ~H"""
     <div class="hakushi-kit-table" data-hakushi-faint={@external}>
       <div class="hakushi-kit-table-head">
-        <.icon name="database" size={13} />
+        <span
+          :if={@drag_out}
+          class="hakushi-kit-table-grip"
+          data-hakushi-out={qualified(@schema, @name)}
+          draggable="true"
+          title={word(@messages, "dragOutTitle", qualified(@schema, @name))}
+        >
+          <.icon name="database" size={13} />
+        </span>
+        <.icon :if={!@drag_out} name="database" size={13} />
         <span :if={@schema} class="hakushi-kit-table-schema">{@schema}.</span>
         <input
           :if={!@readonly}
@@ -239,7 +253,14 @@ defmodule Hakushi.Kits.Schema do
           phx-value-action="column"
           phx-value-column={i}
         />
-        <span :if={@readonly} class="hakushi-kit-column-name">{get(c, "name")}</span>
+        <span
+          :if={@readonly}
+          class="hakushi-kit-column-name"
+          data-hakushi-out={@drag_out && get(c, "name")}
+          draggable={@drag_out && "true"}
+        >
+          {get(c, "name")}
+        </span>
         <form
           :if={!@readonly}
           id={"#{@canvas}-#{@node.id}-type-#{i}"}

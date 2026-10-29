@@ -35,6 +35,9 @@ export const Hakushi = {
       pushView(event, payload, onReply) {
         hook.pushEvent(event, payload, onReply ? (reply) => onReply(reply) : undefined);
       },
+      pushTo(target, event, payload) {
+        hook.pushEventTo(target, event, payload);
+      },
     });
     hook.canvas = canvas;
     canvases.set(root, canvas);

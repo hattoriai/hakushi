@@ -12,6 +12,7 @@
 import { editable, el, interactive, isApple, numberAttr, prefersReducedMotion, svg } from "./dom";
 import { contains, cornersPath, edgePath, edgePathThrough, facing, fromCorners, grow, intersects, sidePoint, union } from "./geometry";
 import { routeAround } from "./route";
+import { fillTransfer, registerSender } from "./out";
 import { arrange, type Arrangement } from "./arrange";
 import { exportImage, type ExportOptions } from "./export";
 import { icons } from "./icons";
@@ -2289,6 +2290,35 @@ export class Canvas {
     }, 2000);
   }
 
+  // The element of a node that drags out of the canvas (`data-hakushi-out`
+  // and `draggable`), under `target`; none in a dragged node's ghost.
+  private outElement(target: Element | null): HTMLElement | null {
+    const out = target?.closest?.<HTMLElement>("[data-hakushi-out][draggable='true']");
+    const nodeEl = out?.closest<HTMLElement>(".hakushi-node");
+    return out && nodeEl && this.nodesEl.contains(nodeEl) ? out : null;
+  }
+
+  private dragOutStart(event: DragEvent) {
+    const out = this.outElement(event.target as Element);
+    const nodeEl = out?.closest<HTMLElement>(".hakushi-node");
+    if (!out || !nodeEl || !event.dataTransfer) return;
+    const payload = { canvas: this.id, node: nodeEl.dataset.id || "", text: out.dataset.hakushiOut ?? "" };
+    fillTransfer(event.dataTransfer, payload);
+    this.root.setAttribute("data-ui-dragging-out", "");
+    this.announce(this.messages.t("dragOut", { name: payload.text }));
+  }
+
+  private dragOutEnd(event: DragEvent) {
+    const out = this.outElement(event.target as Element);
+    const nodeEl = out?.closest<HTMLElement>(".hakushi-node");
+    this.root.removeAttribute("data-ui-dragging-out");
+    if (!out || !nodeEl) return;
+    const dropped = event.dataTransfer?.dropEffect !== "none";
+    const text = out.dataset.hakushiOut ?? "";
+    if (dropped) this.announce(this.messages.t("droppedOut", { name: text }));
+    this.emit("out", { node: nodeEl.dataset.id || "", text, dropped });
+  }
+
   private dragOver(event: DragEvent) {
     const files = this.config.files;
     if (!files || this.config.readonly || !event.dataTransfer) return;
@@ -3066,6 +3096,23 @@ export class Canvas {
       this.toggleLayoutMenu(false);
       this.buildControls();
     });
+    // Out of the canvas: a marked element of a node, dragged onto the page.
+    on(this.root, "dragstart", (e) => this.dragOutStart(e as DragEvent));
+    on(this.root, "dragend", (e) => this.dragOutEnd(e as DragEvent));
+    on(this.root, "click", (e) => {
+      const out = this.outElement(e.target as Element);
+      const nodeEl = out?.closest<HTMLElement>(".hakushi-node");
+      if (!nodeEl) return;
+      const id = nodeEl.dataset.id || "";
+      if (e.shiftKey || e.metaKey || e.ctrlKey) this.toggleSelect(id);
+      else this.select([id]);
+    });
+    this.cleanups.push(
+      registerSender(this.id, (target, event, payload) => {
+        if (target && this.live.pushTo) this.live.pushTo(target, event, payload);
+        else (this.live.pushView ?? this.live.push)(event, payload);
+      }),
+    );
     on(this.root, "dragover", (e) => this.dragOver(e));
     on(this.root, "dragleave", (e) => {
       if (!this.root.contains(e.relatedTarget as Node | null)) this.root.removeAttribute("data-ui-dropping");
@@ -3078,6 +3125,8 @@ export class Canvas {
 
   private pointerDown(event: PointerEvent) {
     const target = event.target as Element;
+    // A part of a node that drags out of the canvas: the browser's drag, not a move.
+    if (this.outElement(target)) return;
     // A press away from a crop keeps it.
     if (this.cropping && !target.closest(".hakushi-crop")) this.finishCrop(true);
     this.root.removeAttribute("data-ui-keyboard");

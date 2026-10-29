@@ -103,8 +103,10 @@ defmodule Hakushi.Kit do
   @doc """
   Draws a node of the kit's types. The assigns are `node` (the
   `Hakushi.Node`), `canvas` (the canvas's id, for the ids of forms),
-  `readonly`, `target` (the canvas, for `phx-target`) and `messages`
-  (the canvas's words).
+  `readonly`, `drag_out` (whether the canvas's `drag_out` is on: the parts
+  of the node that drag out onto the page then carry `data-hakushi-out` and
+  `draggable="true"`), `target` (the canvas, for `phx-target`) and
+  `messages` (the canvas's words).
   """
   @callback node(assigns :: map()) :: Phoenix.LiveView.Rendered.t()
 
