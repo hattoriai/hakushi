@@ -50,6 +50,32 @@ export async function drag(page: Page, from: { x: number; y: number }, to: { x: 
   await page.mouse.up();
 }
 
+/**
+ * Points along an edge's line, on the screen: at `fractions` of its length.
+ * The line's points are the canvas's; they are put on the screen by a node's
+ * box (its place and its zoom), not by the SVG's getScreenCTM, which WebKit
+ * gets wrong under the canvas's CSS transform.
+ */
+export async function alongEdge(page: Page, canvas: string, id: string, fractions: number[] = [0.5]): Promise<{ x: number; y: number }[]> {
+  return page.evaluate(
+    ({ canvas, id, fractions }) => {
+      const root = document.getElementById(canvas)!;
+      const line = root.querySelector<SVGPathElement>(`.hakushi-edge[data-edge="${CSS.escape(id)}"] .hakushi-edge-line`)!;
+      const node = root.querySelector<HTMLElement>(".hakushi-node:not([data-parent])")!;
+      const box = node.getBoundingClientRect();
+      const zoom = box.width / node.offsetWidth;
+      const left = box.left - Number(node.dataset.x) * zoom;
+      const top = box.top - Number(node.dataset.y) * zoom;
+      const total = line.getTotalLength();
+      return fractions.map((f) => {
+        const p = line.getPointAtLength(total * f);
+        return { x: left + p.x * zoom, y: top + p.y * zoom };
+      });
+    },
+    { canvas, id, fractions },
+  );
+}
+
 /** The ids of the edges the server rendered. */
 export async function edgeCount(page: Page, canvas: string): Promise<number> {
   return page.locator(`#${canvas}-edge-data > i`).count();
