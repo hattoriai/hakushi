@@ -98,12 +98,24 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`:let` gets the edge), rendered on the server and placed by the canvas
   on the middle of its edge: a click on it selects the edge, and its
   fields and buttons are theirs. See the Edges guide.
+- The canvas finds the nodes and edges near the screen in a grid of the
+  canvas (a spatial index): the culling of a pan, a box that selects, a
+  drop into a group, the helper lines of a drag, and `nodesAt` look at
+  what is near, not at every node. A fast pan of 10,000 nodes keeps
+  60 frames a second, its slowest frames too (they were 300 to 450 ms).
+  See the Limits guide.
 
 ### Changed
 
 - `on_change` returning `{:ok, %Hakushi.Change{}}` makes that change
   happen in place of the one it was given; any other `{:ok, term}` takes
   the change, as before.
+
+### Fixed
+
+- A pan of a canvas of many nodes drew every edge again, every few
+  frames: the canvas took its own culling of nodes for a change of the
+  server's, which made it cull again on the next frame.
 
 ## [0.7.0] - 2026-10-26
 

@@ -14,6 +14,43 @@ test("two thousand nodes: only those near the screen are laid out", async ({ pag
   await expect(node(page, "n1999")).toBeAttached();
 });
 
+// The frames of the browser with nothing moving, then of a pan.
+async function panFrames(page: import("@playwright/test").Page, canvas: string) {
+  return page.evaluate(async (canvas) => {
+    const run = (count: number, pan: boolean) =>
+      new Promise<{ median: number; p95: number }>((done) => {
+        const times: number[] = [];
+        let last = performance.now();
+        const tick = (now: number) => {
+          times.push(now - last);
+          last = now;
+          if (pan) document.getElementById(canvas)!.dispatchEvent(new WheelEvent("wheel", { deltaX: 60, deltaY: 35, bubbles: true, cancelable: true, clientX: 600, clientY: 400 }));
+          if (times.length < count) return requestAnimationFrame(tick);
+          times.sort((a, b) => a - b);
+          done({ median: times[Math.floor(times.length / 2)], p95: times[Math.floor(times.length * 0.95)] });
+        };
+        requestAnimationFrame(tick);
+      });
+    const idle = await run(30, false);
+    return { idle, pan: await run(90, true) };
+  }, canvas);
+}
+
+test("a fast pan of ten thousand nodes keeps its frames: only what is near is looked at", async ({ page, browserName }) => {
+  test.skip(browserName === "webkit" && !!process.env.CI, "CI's headless WebKit, hattoriai/hakushi#5: run it locally");
+  test.setTimeout(90_000);
+  // Six megabytes of nodes, twice (the page, then the LiveView's): more than a canvas's time.
+  await page.goto(`/scale?n=10000&room=t${Date.now()}`, { timeout: 60_000 });
+  await expect(page.locator("[data-phx-main].phx-connected")).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator("#scale .hakushi-node")).toHaveCount(10_000, { timeout: 30_000 });
+  await page.waitForTimeout(500);
+  const frames = await panFrames(page, "scale");
+  console.log("frames of 10,000 (ms)", frames);
+  expect(frames.pan.median).toBeLessThan(Math.max(34, frames.idle.median * 2));
+  // No slow frames: a frame that looked at every node or edge is one.
+  expect(frames.pan.p95).toBeLessThan(Math.max(67, frames.idle.p95 * 3));
+});
+
 test("a pan of two thousand nodes keeps its frames", async ({ page, browserName }) => {
   // CI's headless WebKit measures a median pan frame of about 60ms that no
   // other WebKit reproduced (WebKitGTK: 23-28ms): run it locally in WebKit
