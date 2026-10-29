@@ -70,6 +70,8 @@ defmodule HakushiTest.CanvasLive do
        user: user(params),
        rewrite: params["rewrite"],
        notify: params["notify"] == "true",
+       menu: params["menu"],
+       edge_label: params["edge_label"] == "true",
        readonly: readonly(params["readonly"]),
        way: params["layout"] && String.to_existing_atom(params["layout"]),
        tidy: params["tidy"] == "true"
@@ -87,6 +89,30 @@ defmodule HakushiTest.CanvasLive do
       {String.to_existing_atom(key), value}
     end
   end
+
+  # ?menu=default: Hakushi's own; ?menu=app: the app's, with its own items.
+  defp menu("default"), do: true
+  defp menu("app"), do: &app_menu/1
+  defp menu(_none), do: nil
+
+  defp app_menu(%{kind: :node, nodes: [_one]}),
+    do: [
+      %{id: "inspect", label: "Inspect", icon: "table", shortcut: "I"},
+      :separator,
+      :copy,
+      :delete
+    ]
+
+  defp app_menu(%{kind: :node}), do: [:separator, :copy, :delete, :separator]
+
+  defp app_menu(%{kind: :edge}),
+    do: [
+      :label,
+      %{id: "explain", label: "Explain", disabled: true},
+      %{id: "cut", label: "Cut it", danger: true}
+    ]
+
+  defp app_menu(%{kind: :canvas}), do: []
 
   defp readonly("true"), do: true
   defp readonly("arrange"), do: :arrange
@@ -135,6 +161,51 @@ defmodule HakushiTest.CanvasLive do
     {:noreply, socket}
   end
 
+  # The app's marks: what the nodes and edges are now.
+  def handle_event("app_mark", %{"fun" => "clear"}, socket) do
+    Hakushi.Live.clear_marks("schema")
+    {:noreply, socket}
+  end
+
+  def handle_event("app_mark", %{"fun" => "spotlight"} = params, socket) do
+    lit =
+      if params["off"],
+        do: nil,
+        else: [nodes: params["nodes"] || [], edges: params["edges"] || []]
+
+    Hakushi.Live.spotlight("schema", lit)
+    {:noreply, socket}
+  end
+
+  def handle_event("app_mark", %{"fun" => fun, "ids" => ids} = params, socket) do
+    mark =
+      case params["mark"] do
+        nil -> nil
+        mark -> Map.new(mark, fn {key, value} -> {String.to_existing_atom(key), value} end)
+      end
+
+    case fun do
+      "nodes" -> Hakushi.Live.mark("schema", ids, mark)
+      "edges" -> Hakushi.Live.mark_edges("schema", ids, mark)
+    end
+
+    {:noreply, socket}
+  end
+
+  def handle_event("app_arrange", %{"how" => how} = params, socket) do
+    opts = if params["nodes"], do: [nodes: params["nodes"]], else: []
+
+    case String.to_existing_atom(how) do
+      spread when spread in [:horizontal, :vertical] ->
+        Hakushi.Live.distribute("schema", spread, opts)
+
+      line ->
+        Hakushi.Live.align("schema", line, opts)
+    end
+
+    {:noreply, socket}
+  end
+
   def handle_event("app_change", _params, socket) do
     Hakushi.Live.change("schema", Hakushi.Change.move([{"note", 7, 7}]))
     {:noreply, socket}
@@ -150,6 +221,10 @@ defmodule HakushiTest.CanvasLive do
       on_select={@test && (&send(@test, {:on_select, &1}))}
       on_viewport={@test && (&send(@test, {:on_viewport, &1}))}
       notify={@notify && @test}
+      menu={menu(@menu)}
+      on_menu={@test && (&send(@test, {:on_menu, &1, &2}))}
+      on_open={@test && (&send(@test, {:on_open, &1}))}
+      on_up={@test && (&send(@test, {:on_up, &1}))}
       new_node={&new_node/2}
       issho={@issho}
       user={@user}
@@ -160,7 +235,7 @@ defmodule HakushiTest.CanvasLive do
       papers={[:dots, :lines, %{name: "iso", label: "Isometric"}]}
       label="Schema"
     >
-      <:node type="table" :let={node}>
+      <:node type="table" opens :let={node}>
         <div class="table">
           <strong>{node.data.name}</strong>
           <div :for={column <- node.data.columns} class="relative" data-column={column}>
@@ -170,6 +245,9 @@ defmodule HakushiTest.CanvasLive do
           </div>
         </div>
       </:node>
+      <:edge_label :if={@edge_label} :let={edge}>
+        <span class="fk-badge" data-fk={edge.id}>{edge.source_handle} → {edge.target_handle}</span>
+      </:edge_label>
       <:empty>Drop a table here.</:empty>
     </.canvas>
     <.canvas_item for="schema" item="table">New table</.canvas_item>

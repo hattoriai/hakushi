@@ -126,6 +126,10 @@ defmodule Hakushi.MixProject do
         "guides/embedding.md",
         "guides/layout.md",
         "guides/changes.md",
+        "guides/marks.md",
+        "guides/versions.md",
+        "guides/drill-down.md",
+        "guides/javascript.md",
         "guides/collaboration.md",
         "guides/upgrading.md",
         "guides/navigation.md",
@@ -148,6 +152,10 @@ defmodule Hakushi.MixProject do
           "guides/embedding.md",
           "guides/layout.md",
           "guides/changes.md",
+          "guides/marks.md",
+          "guides/versions.md",
+          "guides/drill-down.md",
+          "guides/javascript.md",
           "guides/upgrading.md",
           "guides/navigation.md",
           "guides/testing.md",
@@ -163,7 +171,14 @@ defmodule Hakushi.MixProject do
         ]
       ],
       groups_for_modules: [
-        Canvas: [Hakushi, Hakushi.Components, Hakushi.Canvas, Hakushi.Live, Hakushi.Messages],
+        Canvas: [
+          Hakushi,
+          Hakushi.Components,
+          Hakushi.Canvas,
+          Hakushi.Live,
+          Hakushi.Menu,
+          Hakushi.Messages
+        ],
         Kits: [
           Hakushi.Kit,
           Hakushi.Kits.Schema,
@@ -179,6 +194,7 @@ defmodule Hakushi.MixProject do
         ],
         Graph: [
           Hakushi.Graph,
+          Hakushi.History,
           Hakushi.Node,
           Hakushi.Edge,
           Hakushi.Change,

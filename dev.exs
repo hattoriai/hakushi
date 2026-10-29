@@ -236,13 +236,13 @@ defmodule HakushiDev.Seeds do
         step.("wait", 1520, 120, "wait", "Wait 30 days", "then ask for a review", "waiting")
       ],
       edges: [
-        %{source: "paid", target: "big", path: "smooth"},
-        %{source: "big", source_handle: "yes", target: "lead", path: "smooth", label: "Yes"},
-        %{source: "big", source_handle: "no", target: "receipt", path: "smooth", label: "No"},
-        %{source: "lead", target: "thanks", path: "smooth"},
-        %{source: "thanks", target: "close", path: "smooth", animated: true},
-        %{source: "receipt", target: "close", path: "smooth"},
-        %{source: "close", target: "wait", path: "smooth"}
+        %{source: "paid", target: "big", path: "routed"},
+        %{source: "big", source_handle: "yes", target: "lead", path: "routed", label: "Yes"},
+        %{source: "big", source_handle: "no", target: "receipt", path: "routed", label: "No"},
+        %{source: "lead", target: "thanks", path: "routed"},
+        %{source: "thanks", target: "close", path: "routed", animated: true},
+        %{source: "receipt", target: "close", path: "routed"},
+        %{source: "close", target: "wait", path: "routed"}
       ]
     )
   end
@@ -756,6 +756,25 @@ defmodule HakushiDev.Store do
 
   def put(name, room, graph), do: Agent.update(__MODULE__, &Map.put(&1, key(name, room), graph))
 
+  @doc "The history of a canvas (Hakushi.History), since its first change here."
+  def history(name, room) do
+    Agent.get(__MODULE__, &Map.get(&1, key(name, room) <> "#history")) ||
+      Hakushi.History.new(get(name, room))
+  end
+
+  @doc "A change of a canvas, into its history, from the graph it changed."
+  def record(name, room, change, %{graph: before, by: by}) do
+    Agent.update(__MODULE__, fn state ->
+      key = key(name, room) <> "#history"
+      history = Map.get_lazy(state, key, fn -> Hakushi.History.new(before) end)
+
+      case Hakushi.History.record(history, change, by: by && by.name) do
+        {:ok, history} -> Map.put(state, key, history)
+        {:error, _reason, _id} -> Map.put(state, key, Hakushi.History.new(before))
+      end
+    end)
+  end
+
   def key(name, nil), do: name
   def key(name, room), do: name <> ":" <> room
 
@@ -923,6 +942,9 @@ defmodule HakushiDev.Layouts do
           .top .crumb { color: var(--atelier-muted); font-size: 0.875rem; }
           .top .spacer { flex: 1; }
           .top .hint { color: var(--atelier-muted); font-size: 0.8125rem; }
+          .versions .version { display: grid; gap: 2px; width: 100%; text-align: left; font: inherit; padding: 0.5rem 0.6rem; border: 1px solid var(--atelier-line); border-radius: 8px; background: var(--atelier-card); color: inherit; cursor: pointer; }
+          .versions .version small { color: var(--atelier-muted); font-size: 0.75rem; }
+          .versions .version.chosen { border-color: var(--atelier-accent); }
           .top .find input { font: inherit; font-size: 0.8125rem; padding: 0.3rem 0.5rem; border: 1px solid var(--atelier-line, #ddd); border-radius: 6px; background: transparent; color: inherit; width: 9rem; }
           .button { display: inline-flex; align-items: center; gap: 0.375rem; height: 2rem; padding: 0 0.75rem; border: 1px solid var(--atelier-line); border-radius: 7px; background: var(--atelier-card); color: var(--atelier-ink); font: inherit; font-size: 0.8125rem; font-weight: 500; }
           .button.primary { background: var(--atelier-accent); border-color: transparent; color: #fff; }
@@ -1019,6 +1041,12 @@ defmodule HakushiDev.Layouts do
 
           .people-strip { display: flex; align-items: center; }
           .people-strip span { display: grid; place-items: center; width: 1.75rem; height: 1.75rem; margin-left: -6px; border: 2px solid var(--atelier-bg); border-radius: 99px; color: #fff; font-size: 0.625rem; font-weight: 600; }
+          .way-label { display: inline-flex; align-items: center; gap: 4px; padding: 1px 4px 1px 8px; border-radius: 99px; background: var(--atelier-card); border: 1px solid var(--atelier-line); font-size: 0.75rem; font-weight: 600; color: var(--atelier-muted); }
+          .way-label[data-way="yes"] { color: #2e6b5c; border-color: #2e6b5c55; }
+          .way-label[data-way="no"] { color: #b5643c; border-color: #b5643c55; }
+          .way-label button { border: 0; background: none; color: inherit; cursor: pointer; font: inherit; padding: 0 2px; }
+          .ruler-line { stroke: var(--atelier-accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
+          .ruler-text { fill: var(--atelier-accent); font: 600 13px system-ui; text-anchor: middle; }
           .scale-node { padding: 0.5rem 0.75rem; border: 1px solid var(--atelier-line); border-radius: 8px; background: var(--atelier-card); font-size: 0.8125rem; width: 9rem; position: relative; }
         </style>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -1037,7 +1065,48 @@ defmodule HakushiDev.Layouts do
           import { Socket } from "phoenix"
           import { LiveSocket } from "phoenix_live_view"
           import { Hooks as Issho } from "issho"
-          import { Hakushi, canvasOf } from "hakushi"
+          import { Hakushi, canvasOf, registerTool } from "hakushi"
+
+          // Tools of the app's own (registerTool), on the canvases whose
+          // client_tools name them: a ruler, which changes nothing, and a
+          // stamp, which drops a note where it is pressed.
+          registerTool({
+            name: "ruler",
+            label: "Ruler",
+            key: "m",
+            cursor: "crosshair",
+            readonly: true,
+            icon: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 17 17 3l4 4L7 21z"/><path d="m7 13 2 2m1-5 2 2m1-5 2 2"/></svg>',
+            down(ctx, _event, at) {
+              ctx.layer.replaceChildren()
+              this.from = at
+              this.line = ctx.svg("line", { x1: at.x, y1: at.y, x2: at.x, y2: at.y, class: "ruler-line" })
+              this.text = ctx.svg("text", { x: at.x, y: at.y - 8, class: "ruler-text" })
+              ctx.layer.append(this.line, this.text)
+            },
+            move(_ctx, _event, at) {
+              this.line.setAttribute("x2", at.x)
+              this.line.setAttribute("y2", at.y)
+              this.text.setAttribute("x", (this.from.x + at.x) / 2)
+              this.text.setAttribute("y", (this.from.y + at.y) / 2 - 8)
+              this.text.textContent = `${Math.round(Math.hypot(at.x - this.from.x, at.y - this.from.y))} px`
+            },
+            up(ctx) {
+              ctx.layer.dataset.measured = this.text.textContent
+              ctx.announce(this.text.textContent)
+            },
+            cancel(ctx) {
+              ctx.layer.replaceChildren()
+            }
+          })
+          registerTool({
+            name: "stamp",
+            label: "Stamp a note",
+            key: "s",
+            up(ctx, _event, at) {
+              ctx.drop("note", at)
+            }
+          })
 
           const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
           const liveSocket = new LiveSocket("/live", Socket, {
@@ -1222,6 +1291,12 @@ defmodule HakushiDev.SchemaLive do
   def handle_info({:viewport, %{zoom: zoom}}, socket),
     do: {:noreply, assign(socket, :zoom, zoom)}
 
+  # An item of the canvas's menu (Hakushi.Menu): a column for the table.
+  def handle_info({:menu, "add_column", %{nodes: [table]}}, socket),
+    do: handle_event("add_column", %{"table" => table}, socket)
+
+  def handle_info({:menu, _item, _target}, socket), do: {:noreply, socket}
+
   def handle_info({Issho.Live, "event", _room, %Issho.Event{}}, socket) do
     {:noreply, assign(socket, :now, Hakushi.Issho.graph(HakushiDev.Issho, socket.assigns.doc))}
   end
@@ -1305,6 +1380,19 @@ defmodule HakushiDev.SchemaLive do
          do: Enum.find(columns, &(&1.name == name))
   end
 
+  # The canvas's menu: the app's own item for one table, and the canvas's own.
+  def menu(%{kind: :node, nodes: [_table]}),
+    do: [
+      %{id: "add_column", label: "Add a column", icon: "plus"},
+      :separator,
+      :copy,
+      :duplicate,
+      :separator,
+      :delete
+    ]
+
+  def menu(target), do: Hakushi.Menu.defaults(target)
+
   def new_node("table", {x, y}) do
     %{
       type: "table",
@@ -1349,6 +1437,8 @@ defmodule HakushiDev.SchemaLive do
         on_change={if @app_grid, do: &on_grid(&1, &2, @room), else: &on_change(&1, &2, @room)}
         on_select={&send(self(), {:selected, &1})}
         on_viewport={&send(self(), {:viewport, &1})}
+        menu={&menu/1}
+        on_menu={&send(self(), {:menu, &1, &2})}
         new_node={&new_node/2}
         issho={[instance: HakushiDev.Issho, document: @doc, follow: @follow]}
         user={@me}
@@ -1415,12 +1505,98 @@ defmodule HakushiDev.WorkflowLive do
   @impl true
   def mount(_params, _session, socket) do
     {:ok,
-     assign(socket, graph: HakushiDev.Store.get("workflow", socket.assigns.room), kinds: @kinds)}
+     assign(socket,
+       graph: HakushiDev.Store.get("workflow", socket.assigns.room),
+       kinds: @kinds,
+       run: nil,
+       history: nil,
+       then: nil
+     )}
   end
 
-  def on_change(_change, %{result: result}, room) do
+  def on_change(change, %{result: result} = context, room) do
     HakushiDev.Store.put("workflow", room, result)
+    HakushiDev.Store.record("workflow", room, change, context)
     :ok
+  end
+
+  # The versions of the workflow (Hakushi.History): a list of them, and the
+  # workflow as it is now against the one chosen (the canvas's compare).
+  @impl true
+  def handle_event("history", _params, socket) do
+    case socket.assigns.history do
+      nil ->
+        {:noreply,
+         assign(socket,
+           history: HakushiDev.Store.history("workflow", socket.assigns.room),
+           then: nil
+         )}
+
+      _open ->
+        {:noreply, assign(socket, history: nil, then: nil)}
+    end
+  end
+
+  # A button of an edge's label (the canvas's :edge_label slot): the edge goes.
+  def handle_event("drop_edge", %{"edge" => edge}, socket) do
+    Hakushi.Live.change("workflow", Hakushi.Change.delete(edges: [edge]))
+    {:noreply, socket}
+  end
+
+  def handle_event("then", %{"version" => version}, socket) do
+    {:noreply, assign(socket, :then, String.to_integer(version))}
+  end
+
+  # A run of the workflow, step by step, shown with marks (Hakushi.Live.mark/3),
+  # which are not saved: each step waits, runs (with its progress) and is
+  # done, and the edges it takes run.
+  def handle_event("run", _params, socket) do
+    graph =
+      Hakushi.Issho.graph(HakushiDev.Issho, topic("workflow", socket.assigns.room)) ||
+        socket.assigns.graph
+
+    order = run_order(graph)
+    Hakushi.Live.clear_marks("workflow")
+    Hakushi.Live.mark("workflow", order, status: :waiting)
+    send(self(), :run)
+    {:noreply, assign(socket, :run, %{graph: graph, order: order, progress: 0.0})}
+  end
+
+  @impl true
+  def handle_info(:run, %{assigns: %{run: %{order: []}}} = socket),
+    do: {:noreply, assign(socket, :run, nil)}
+
+  def handle_info(
+        :run,
+        %{assigns: %{run: %{order: [id | rest], progress: progress} = run}} = socket
+      ) do
+    edges = for edge <- Hakushi.Graph.edges_of(run.graph, id), edge.source == id, do: edge.id
+
+    run =
+      if progress >= 1 do
+        Hakushi.Live.mark("workflow", id, status: :done, progress: nil, badge: "✓")
+        Hakushi.Live.mark_edges("workflow", edges, status: :done)
+        %{run | order: rest, progress: 0.0}
+      else
+        Hakushi.Live.mark("workflow", id, status: :running, progress: progress)
+        Hakushi.Live.mark_edges("workflow", edges, status: :running)
+        %{run | progress: progress + 0.5}
+      end
+
+    Process.send_after(self(), :run, 150)
+    {:noreply, assign(socket, :run, run)}
+  end
+
+  # The steps from the trigger on, each after the steps before it
+  # (Hakushi.Graph's order of a flow).
+  defp run_order(graph) do
+    starts = for node <- Hakushi.Graph.nodes(graph), node.type == "trigger", do: node.id
+    reached = MapSet.new(starts ++ Enum.flat_map(starts, &Hakushi.Graph.downstream(graph, &1)))
+
+    case Hakushi.Graph.topological_sort(graph) do
+      {:ok, order} -> Enum.filter(order, &MapSet.member?(reached, &1))
+      {:error, _cycle} -> MapSet.to_list(reached)
+    end
   end
 
   def new_node(kind, {x, y}) when is_map_key(@kinds, kind) do
@@ -1442,6 +1618,8 @@ defmodule HakushiDev.WorkflowLive do
     <.app page={:workflow} me={@me} query={@query} title="Workflow" crumb="When an invoice is paid">
       <:actions>
         <span class="hint">Live · ran 3 minutes ago</span>
+        <button type="button" class="button" phx-click="run" disabled={@run != nil or @history != nil}>Run</button>
+        <button type="button" class="button" phx-click="history" aria-pressed={to_string(@history != nil)}>History</button>
         <span class="button primary"><.icon name="check" /> Published</span>
       </:actions>
       <aside :if={!@readonly} class="palette">
@@ -1451,7 +1629,42 @@ defmodule HakushiDev.WorkflowLive do
           <div>{label}<small>{detail(kind)}</small></div>
         </.canvas_item>
       </aside>
+      <aside :if={@history} class="palette versions" aria-label="Versions">
+        <p :if={Hakushi.History.versions(@history) == []}>No changes yet. Move a step, then look again.</p>
+        <button
+          :for={v <- Enum.reverse(Hakushi.History.versions(@history))}
+          type="button"
+          class={["version", @then == v.version - 1 && "chosen"]}
+          phx-click="then"
+          phx-value-version={v.version - 1}
+          data-version={v.version}
+        >
+          <strong>Before version {v.version}</strong>
+          <small>{v.op} · {length(v.nodes)} nodes · {v.by || "the app"}</small>
+        </button>
+      </aside>
       <.canvas
+        :if={@history && @then}
+        id="workflow-then"
+        graph={Hakushi.History.graph(@history)}
+        compare={Hakushi.History.at(@history, @then)}
+        background={:dots}
+        label="The workflow now, against a version"
+      >
+        <:node :let={node}>
+          <div class="step" data-status={node.data[:status] || node.data["status"]} style={"--kind: #{kind_color(node.type)}"}>
+            <div class="body">
+              <span class="kind"><.icon name={node.type} /></span>
+              <div>
+                <small>{kind_label(node.type)}</small>
+                <strong>{node.data[:title] || node.data["title"]}</strong>
+              </div>
+            </div>
+          </div>
+        </:node>
+      </.canvas>
+      <.canvas
+        :if={!(@history && @then)}
         id="workflow"
         graph={@graph}
         on_change={&on_change(&1, &2, @room)}
@@ -1482,6 +1695,12 @@ defmodule HakushiDev.WorkflowLive do
             <footer><i></i> {status(node.data.status)}</footer>
           </div>
         </:node>
+        <:edge_label :let={edge}>
+          <span :if={edge.label} class="way-label" data-way={edge.source_handle}>
+            {edge.label}
+            <button :if={!@readonly} type="button" phx-click="drop_edge" phx-value-edge={edge.id} aria-label={"Remove the way #{edge.label}"}>×</button>
+          </span>
+        </:edge_label>
       </.canvas>
     </.app>
     """
@@ -1510,22 +1729,75 @@ defmodule HakushiDev.BoardLive do
   A moodboard: notes that resize, swatches, a specimen, labelled arrows,
   ink (Hakushi.Kits.Ink): people draw on it with a pen, and an agent
   circles a node; and images (Hakushi.Kits.Images), dropped, pasted or
-  picked.
+  picked. A frame opens (a double click on its title, its opener, ⌘↓) as
+  a canvas of its own, its inside (`?frame=`), and ⌘↑ goes back.
   """
   use Phoenix.LiveView
 
   import Hakushi.Components
   import HakushiDev.Icons
-  import HakushiDev.Layouts, only: [app: 1]
+  import HakushiDev.Layouts, only: [app: 1, qs: 2]
   import HakushiDev.Page, only: [topic: 2]
+
+  alias Hakushi.Graph
+
+  @kits [Hakushi.Kits.Ink, Hakushi.Kits.Images]
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok, assign(socket, graph: HakushiDev.Store.get("board", socket.assigns.room))}
+    {:ok,
+     assign(socket,
+       graph: HakushiDev.Store.get("board", socket.assigns.room),
+       frame: nil,
+       kits: @kits
+     )}
   end
+
+  # A frame opened: its inside, as a canvas of its own.
+  @impl true
+  def handle_params(%{"frame" => id}, _uri, socket) do
+    graph = HakushiDev.Store.get("board", socket.assigns.room)
+
+    case Graph.node(graph, id) do
+      %{type: "frame"} = frame ->
+        {:noreply, assign(socket, frame: frame, inside: Graph.subgraph(graph, id))}
+
+      _other ->
+        {:noreply, push_patch(socket, to: "/board" <> qs(socket.assigns.query, %{}))}
+    end
+  end
+
+  def handle_params(_params, _uri, socket) do
+    {:noreply,
+     assign(socket, frame: nil, graph: HakushiDev.Store.get("board", socket.assigns.room))}
+  end
+
+  @impl true
+  def handle_info({:open, id}, socket),
+    do: {:noreply, push_patch(socket, to: "/board" <> qs(socket.assigns.query, %{"frame" => id}))}
+
+  def handle_info(:up, socket),
+    do: {:noreply, push_patch(socket, to: "/board" <> qs(socket.assigns.query, %{}))}
 
   def on_change(_change, %{result: result}, room) do
     HakushiDev.Store.put("board", room, result)
+    :ok
+  end
+
+  # A change of a frame's inside: the board with that inside, and the
+  # change, as the board's (Hakushi.Change.lift/2), in its room when someone
+  # has it open.
+  def on_inside(change, %{result: inside}, room, frame) do
+    board = HakushiDev.Store.get("board", room)
+    HakushiDev.Store.put("board", room, Graph.put_subgraph(board, frame.id, inside))
+
+    _ =
+      Hakushi.Issho.change(
+        HakushiDev.Issho,
+        topic("board", room),
+        Hakushi.Change.lift(change, frame)
+      )
+
     :ok
   end
 
@@ -1543,6 +1815,42 @@ defmodule HakushiDev.BoardLive do
     }
 
   @impl true
+  def render(%{frame: %{} = frame} = assigns) do
+    assigns = assign(assigns, :title, frame.data.title)
+
+    ~H"""
+    <.app page={:board} me={@me} query={@query} title="Moodboard" crumb="Harbour Museum rebrand">
+      <:actions>
+        <.canvas_path>
+          <:step patch={"/board" <> qs(@query, %{})}>Moodboard</:step>
+          <:step>{@title}</:step>
+        </.canvas_path>
+        <span class="hint">⌘↑ goes back to the board.</span>
+      </:actions>
+      <.canvas
+        id={"frame-" <> @frame.id}
+        graph={@inside}
+        on_change={&on_inside(&1, &2, @room, @frame)}
+        on_up={fn _ -> send(self(), :up) end}
+        new_node={&new_node/2}
+        kits={@kits}
+        readonly={@readonly}
+        background={:cross}
+        grid={20}
+        snap
+        rules={[loops: false]}
+        label={@title}
+      >
+        <:node type="note" resizable :let={node}><.note node={node} /></:node>
+        <:node type="frame" group resizable opens :let={node}><.frame node={node} /></:node>
+        <:node type="title" :let={node}><.board_title node={node} /></:node>
+        <:node type="swatches" :let={node}><.swatches node={node} /></:node>
+        <:node type="specimen" :let={node}><.specimen node={node} /></:node>
+      </.canvas>
+    </.app>
+    """
+  end
+
   def render(assigns) do
     ~H"""
     <.app page={:board} me={@me} query={@query} title="Moodboard" crumb="Harbour Museum rebrand">
@@ -1555,8 +1863,10 @@ defmodule HakushiDev.BoardLive do
         id="board"
         graph={@graph}
         on_change={&on_change(&1, &2, @room)}
+        on_open={&send(self(), {:open, &1.node})}
+        client_tools={["ruler", "stamp"]}
         new_node={&new_node/2}
-        kits={[Hakushi.Kits.Ink, Hakushi.Kits.Images]}
+        kits={@kits}
         issho={[instance: HakushiDev.Issho, document: topic("board", @room), follow: @follow]}
         user={@me}
         readonly={@readonly}
@@ -1567,37 +1877,57 @@ defmodule HakushiDev.BoardLive do
         rules={[loops: false]}
         label="The moodboard"
       >
-        <:node type="note" resizable :let={node}>
-          <div class="note" data-tone={node.data.tone}>
-            <.handle kind={:both} side={:right} /><.handle kind={:both} side={:left} />
-            {node.data.text}
-          </div>
-        </:node>
-        <:node type="frame" group resizable :let={node}>
-          <div class="frame"><span data-hakushi-drag>{node.data.title}</span></div>
-        </:node>
-        <:node type="title" :let={node}>
-          <div class="board-title"><strong>{node.data.text}</strong><span>{node.data.sub}</span></div>
-        </:node>
-        <:node type="swatches" :let={node}>
-          <div class="swatches">
-            <.handle kind={:both} side={:left} /><.handle kind={:both} side={:right} />
-            <small>{node.data.title}</small>
-            <ul>
-              <li :for={{name, color} <- node.data.colors}><span style={"--swatch: #{color}"}></span><em>{name}</em></li>
-            </ul>
-          </div>
-        </:node>
-        <:node type="specimen" :let={node}>
-          <div class="specimen">
-            <.handle kind={:both} side={:left} /><.handle kind={:both} side={:right} /><.handle kind={:both} side={:bottom} />
-            <small>Type</small>
-            <b>{node.data.sample}</b>
-            <span>{node.data.family} · {node.data.note}</span>
-          </div>
-        </:node>
+        <:node type="note" resizable :let={node}><.note node={node} /></:node>
+        <:node type="frame" group resizable opens :let={node}><.frame node={node} /></:node>
+        <:node type="title" :let={node}><.board_title node={node} /></:node>
+        <:node type="swatches" :let={node}><.swatches node={node} /></:node>
+        <:node type="specimen" :let={node}><.specimen node={node} /></:node>
       </.canvas>
     </.app>
+    """
+  end
+
+  defp note(assigns) do
+    ~H"""
+    <div class="note" data-tone={@node.data.tone}>
+      <.handle kind={:both} side={:right} /><.handle kind={:both} side={:left} />
+      {@node.data.text}
+    </div>
+    """
+  end
+
+  defp frame(assigns) do
+    ~H"""
+    <div class="frame"><span data-hakushi-drag>{@node.data.title} <.opener /></span></div>
+    """
+  end
+
+  defp board_title(assigns) do
+    ~H"""
+    <div class="board-title"><strong>{@node.data.text}</strong><span>{@node.data.sub}</span></div>
+    """
+  end
+
+  defp swatches(assigns) do
+    ~H"""
+    <div class="swatches">
+      <.handle kind={:both} side={:left} /><.handle kind={:both} side={:right} />
+      <small>{@node.data.title}</small>
+      <ul>
+        <li :for={{name, color} <- @node.data.colors}><span style={"--swatch: #{color}"}></span><em>{name}</em></li>
+      </ul>
+    </div>
+    """
+  end
+
+  defp specimen(assigns) do
+    ~H"""
+    <div class="specimen">
+      <.handle kind={:both} side={:left} /><.handle kind={:both} side={:right} /><.handle kind={:both} side={:bottom} />
+      <small>Type</small>
+      <b>{@node.data.sample}</b>
+      <span>{@node.data.family} · {@node.data.note}</span>
+    </div>
     """
   end
 end

@@ -4,6 +4,8 @@ defmodule Hakushi.GraphTest do
 
   alias Hakushi.{Change, Edge, Graph, Node}
 
+  doctest Hakushi.Graph
+
   defp graph do
     Graph.new(
       nodes: [
@@ -156,6 +158,254 @@ defmodule Hakushi.GraphTest do
 
       {:ok, back, _change, _inverse} = Graph.apply(moved, undo_move)
       assert back == start
+    end
+  end
+
+  describe "an edge's points" do
+    test "are kept, checked, and go to JSON and back" do
+      edge =
+        Edge.new(%{
+          source: "a",
+          target: "b",
+          points: [{1, 2}, %{x: 3, y: 4}, %{"x" => 5, "y" => 6}]
+        })
+
+      assert edge.points == [[1, 2], [3, 4], [5, 6]]
+      assert Edge.new(%{source: "a", target: "b"}).points == []
+
+      assert_raise ArgumentError, ~r/points/, fn ->
+        Edge.new(%{source: "a", target: "b", points: [[1]]})
+      end
+
+      graph =
+        Graph.new(
+          nodes: [%{id: "a"}, %{id: "b"}],
+          edges: [edge, %{id: "plain", source: "b", target: "a"}]
+        )
+
+      dumped = Graph.dump(graph)
+      refute Map.has_key?(Enum.find(dumped["edges"], &(&1["id"] == "plain")), "points")
+      assert Graph.load(JSON.decode!(JSON.encode!(dumped))) == graph
+
+      {:ok, bent, _, _} =
+        Graph.apply(graph, Change.update(edges: [%{id: "plain", points: [[9, 9]]}]))
+
+      assert Graph.compare(graph, bent).changed.edges == %{"plain" => [:points]}
+    end
+  end
+
+  describe "the inside of a group" do
+    defp framed do
+      Graph.new(
+        nodes: [
+          %{id: "frame", x: 100, y: 100, width: 500, height: 400},
+          %{id: "a", x: 120, y: 140, parent: "frame"},
+          %{id: "inner", x: 200, y: 200, width: 100, height: 100, parent: "frame"},
+          %{id: "b", x: 210, y: 220, parent: "inner"},
+          %{id: "out", x: 0, y: 0}
+        ],
+        edges: [
+          %{id: "ab", source: "a", target: "b"},
+          %{id: "a-out", source: "a", target: "out"},
+          %{id: "frame-out", source: "frame", target: "out"}
+        ]
+      )
+    end
+
+    test "is a graph of its own, from its corner, with the edges inside it" do
+      inside = Graph.subgraph(framed(), "frame")
+
+      assert Enum.map(Graph.nodes(inside), &{&1.id, &1.x, &1.y, &1.parent}) ==
+               [{"a", 20, 40, nil}, {"inner", 100, 100, nil}, {"b", 110, 120, "inner"}]
+
+      assert Enum.map(Graph.edges(inside), & &1.id) == ["ab"]
+    end
+
+    test "goes back as it changed, with the edges to the outside that still have both ends" do
+      graph = framed()
+      inside = Graph.subgraph(graph, "frame")
+      {:ok, inside, _, _} = Graph.apply(inside, Change.move([{"a", 30, 50}]))
+
+      {:ok, inside, _, _} =
+        Graph.apply(
+          inside,
+          Change.add([%{id: "c", x: 0, y: 0}], [%{id: "ac", source: "a", target: "c"}])
+        )
+
+      {:ok, inside, _, _} = Graph.apply(inside, Change.delete(nodes: ["inner"]))
+
+      back = Graph.put_subgraph(graph, "frame", inside)
+      assert %{x: 130, y: 150, parent: "frame"} = Graph.node(back, "a")
+      assert %{x: 100, y: 100, parent: "frame"} = Graph.node(back, "c")
+      refute Graph.node(back, "inner")
+      refute Graph.node(back, "b")
+      assert Enum.sort(Enum.map(Graph.edges(back), & &1.id)) == ["a-out", "ac", "frame-out"]
+
+      # The same changes, lifted into the graph the frame is in, give it.
+      lifted =
+        [
+          Change.move([{"a", 30, 50}]),
+          Change.add([%{id: "c", x: 0, y: 0}], [%{id: "ac", source: "a", target: "c"}]),
+          Change.delete(nodes: ["inner"])
+        ]
+        |> Enum.reduce(graph, fn change, outer ->
+          {:ok, outer, _, _} = Graph.apply(outer, Change.lift(change, Graph.node(graph, "frame")))
+          outer
+        end)
+
+      assert Graph.compare(back, lifted) == Graph.compare(back, back)
+
+      # Taken out and put back as it was, nothing changed.
+      assert Graph.compare(
+               graph,
+               Graph.put_subgraph(graph, "frame", Graph.subgraph(graph, "frame"))
+             ) ==
+               Graph.compare(graph, graph)
+    end
+  end
+
+  describe "paths" do
+    # start -> check -> (yes) pay -> receipt
+    #                -> (no)  remind
+    # alone
+    defp flow do
+      Graph.new(
+        nodes: Enum.map(~w(start check pay receipt remind alone), &%{id: &1}),
+        edges: [
+          %{id: "e1", source: "start", target: "check"},
+          %{id: "yes", source: "check", target: "pay"},
+          %{id: "no", source: "check", target: "remind"},
+          %{id: "e3", source: "pay", target: "receipt"}
+        ]
+      )
+    end
+
+    test "successors and predecessors, near and far" do
+      graph = flow()
+      assert Graph.successors(graph, "check") == ["pay", "remind"]
+      assert Graph.predecessors(graph, "pay") == ["check"]
+      assert Graph.successors(graph, "alone") == []
+      assert Graph.downstream(graph, "start") == ~w(check pay remind receipt)
+      assert Graph.upstream(graph, "receipt") == ~w(pay check start)
+      assert Graph.upstream(graph, "start") == []
+    end
+
+    test "roots and leaves" do
+      assert Graph.roots(flow()) == ~w(start alone)
+      assert Graph.leaves(flow()) == ~w(receipt remind alone)
+    end
+
+    test "a topological order, and the cycle that has none" do
+      assert {:ok, ~w(start check pay receipt remind alone)} = Graph.topological_sort(flow())
+      assert Graph.cycle(flow()) == nil
+
+      looped =
+        Graph.new(
+          nodes: Enum.map(~w(a b c d), &%{id: &1}),
+          edges: [
+            %{source: "a", target: "b"},
+            %{source: "b", target: "c"},
+            %{source: "c", target: "b"},
+            %{source: "c", target: "d"}
+          ]
+        )
+
+      assert {:error, {:cycle, cycle}} = Graph.topological_sort(looped)
+      assert Enum.sort(cycle) == ["b", "c"]
+
+      itself = Graph.new(nodes: [%{id: "a"}], edges: [%{source: "a", target: "a"}])
+      assert Graph.cycle(itself) == ["a"]
+    end
+
+    test "the shortest way, and its edges" do
+      graph = flow()
+      assert Graph.path(graph, "start", "receipt") == ~w(start check pay receipt)
+      assert Graph.edges_along(graph, ~w(start check pay receipt)) == ~w(e1 yes e3)
+      assert Graph.path(graph, "receipt", "start") == nil
+      assert Graph.path(graph, "remind", "pay", directed: false) == ~w(remind check pay)
+      assert Graph.edges_along(graph, ~w(remind check pay)) == ["yes"]
+      assert Graph.edges_along(graph, ~w(remind check pay), directed: false) == ~w(no yes)
+      assert Graph.path(graph, "start", "alone") == nil
+      assert Graph.path(graph, "start", "start") == ["start"]
+      assert Graph.path(graph, "start", "nowhere") == nil
+    end
+
+    test "the parts the edges join" do
+      assert Graph.components(flow()) == [~w(start check pay receipt remind), ["alone"]]
+      assert Graph.components(Graph.new()) == []
+    end
+  end
+
+  # A graph of n nodes and some edges between them, forward only (no
+  # cycle) or any way.
+  defp random_graph(forward) do
+    gen all(
+          n <- integer(1..12),
+          pairs <- list_of(tuple({integer(0..(n - 1)), integer(0..(n - 1))}), max_length: 30)
+        ) do
+      ids = Enum.map(0..(n - 1), &"n#{&1}")
+
+      edges =
+        for {a, b} <- Enum.uniq(pairs), a != b, not forward or a < b do
+          %{source: "n#{a}", target: "n#{b}"}
+        end
+
+      # Drawn in another order than the edges go.
+      Graph.new(nodes: ids |> Enum.reverse() |> Enum.map(&%{id: &1}), edges: edges)
+    end
+  end
+
+  property "a graph without a cycle has an order with every edge forward" do
+    check all(graph <- random_graph(true)) do
+      assert {:ok, order} = Graph.topological_sort(graph)
+      assert Enum.sort(order) == Enum.sort(graph.node_order)
+      at = order |> Enum.with_index() |> Map.new()
+      for edge <- Graph.edges(graph), do: assert(at[edge.source] < at[edge.target])
+      assert Graph.cycle(graph) == nil
+    end
+  end
+
+  property "a cycle found is one, and an order exists exactly when none is" do
+    check all(graph <- random_graph(false)) do
+      case Graph.cycle(graph) do
+        nil ->
+          assert {:ok, _order} = Graph.topological_sort(graph)
+
+        cycle ->
+          assert {:error, {:cycle, _}} = Graph.topological_sort(graph)
+          ring = Enum.zip(cycle, tl(cycle) ++ [hd(cycle)])
+          for {a, b} <- ring, do: assert(b in Graph.successors(graph, a))
+      end
+    end
+  end
+
+  property "a way found goes along edges, and is there when downstream says so" do
+    check all(
+            graph <- random_graph(false),
+            from <- member_of(graph.node_order),
+            to <- member_of(graph.node_order)
+          ) do
+      way = Graph.path(graph, from, to)
+      assert way != nil == (from == to or to in Graph.downstream(graph, from))
+
+      if way do
+        assert hd(way) == from and List.last(way) == to
+        assert length(Graph.edges_along(graph, way)) == length(way) - 1
+        assert length(Enum.uniq(way)) == length(way)
+      end
+    end
+  end
+
+  property "the parts the edges join are each node once" do
+    check all(graph <- random_graph(false)) do
+      parts = Graph.components(graph)
+      assert Enum.sort(List.flatten(parts)) == Enum.sort(graph.node_order)
+
+      for edge <- Graph.edges(graph),
+          do:
+            assert(
+              Enum.find(parts, &(edge.source in &1)) == Enum.find(parts, &(edge.target in &1))
+            )
     end
   end
 end

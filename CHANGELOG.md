@@ -33,12 +33,95 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   canvas everyone's), each selection and each view at rest. For a
   canvas in a LiveView of its own, a process that runs a flow, a copy of
   the graph. See the Changes guide.
+- Marks: what a node or an edge is now, which is not saved
+  (`Hakushi.Live.mark/3`, `mark_edges/3`, `clear_marks/1`): a status
+  (`:running`, `:done`, `:failed`, `:warning`, `:waiting`, or the app's
+  own), a badge, a bar of progress, a highlight, dim, words, classes. The
+  spotlight (`Hakushi.Live.spotlight/2`) fades all but some nodes and
+  edges. Not part of the graph: `on_change` never sees them, and they go
+  with the page. `--hakushi-mark-*` colour them, and
+  `Hakushi.Test.marks/2` reads them. See the Marks guide.
+- `Hakushi.Graph` reads the graph along its edges: `successors/2`,
+  `predecessors/2`, `downstream/2`, `upstream/2`, `roots/1`, `leaves/1`,
+  `topological_sort/1` (the order a flow runs in, or a cycle),
+  `cycle/1`, `path/4` and `edges_along/3` (the shortest way between two
+  nodes), and `components/1`. See the Edges guide.
+- A menu of the canvas's own on a right click (`menu`, `on_menu`,
+  `Hakushi.Menu`): for a node, an edge or the paper, of the canvas's own
+  actions (copy, paste, delete, fit, tidy up…) and the app's own items,
+  which call `on_menu`. The menu key and Shift+F10 open it from the
+  keyboard. `Hakushi.Test.menu/3` and `pick/4` open it and choose in it.
+  See the Navigation guide.
+- Versions: `Hakushi.Graph.compare/2` says what was added, removed,
+  moved and changed from one graph to another; a canvas with `compare`
+  (an older graph) shows its graph against it, read-only, with what was
+  removed as ghosts (`data-diff`, `--hakushi-diff-*`,
+  `Hakushi.Test.diff/2`); `Hakushi.History` keeps a canvas's versions,
+  who made each change and when, gives any version back, and goes to
+  JSON (`dump/1`, `load/1`), as does a change (`Hakushi.Change.dump/1`,
+  `load/1`). See the Versions guide.
+- Lining up and spacing out: the selected nodes line up by their left
+  sides, middles or right sides, or tops, middles or bottoms (Alt and A,
+  H, D, W, V, S), and three or more space out with equal gaps
+  (Alt+Shift+H, Alt+Shift+V); from the menu (`:align_left`…,
+  `:distribute_horizontal`, `:distribute_vertical`, in Hakushi's own menu
+  of two or more nodes), and from the app (`Hakushi.Live.align/3`,
+  `distribute/3`). One move, undone with ⌘Z. See the Layout guide.
+- Drill-down: the nodes of a slot that `opens` open (a double click, ⌘↓,
+  an `opener/1`): the view goes into the node, and the canvas calls
+  `on_open`; `on_up` makes ⌘↑ go back up; `canvas_path/1` shows where a
+  canvas is among canvases. A group's inside is a graph of its own
+  (`Hakushi.Graph.subgraph/2`), put back with `put_subgraph/3`, and its
+  changes are the outer graph's with `Hakushi.Change.lift/2`.
+  `Hakushi.Test.open_node/3` and `go_up/2`. The development app's frames
+  open. See the Drill-down guide.
+- `Hakushi.Kits.Schema.from_ecto/2`: the graph of an app's Ecto schemas
+  (a list of them, or an OTP app's), a table for each with its columns,
+  types and keys, a foreign key for each `belongs_to`, the join tables
+  of `many_to_many`, and stubs of the tables of schemas not given. See
+  the Kits guide.
+- A JavaScript API: a canvas from a page's script (`canvasOf`) gives its
+  nodes, edges and the nodes under a point (`getNodes`, `getEdges`,
+  `nodesAt`, `toCanvas`), and tells what happens on it
+  (`on("select" | "view" | "change" | "tool")`); tools of the app's own
+  (`registerTool`, offered by a canvas's `client_tools`) are buttons of
+  the bar of tools, whose handlers have the pointer, a layer to draw on
+  and changes as a person's. See the JavaScript guide.
+- An edge goes through points people bend it to (`Hakushi.Edge`'s
+  `points`): a selected edge shows a point between each two, to drag out
+  of its line; a point drags, and a double click takes it away. Its
+  `path` draws the way through them (a line, steps along the axes, or a
+  curve square to its ends). A change as any (`:update` of `points`),
+  kept in JSON and in Markdown. `Hakushi.Test.bend/4`, and `:points` in
+  `Hakushi.Test.edges/2`. See the Edges guide.
+- An `:edge_label` slot draws each edge's label in the app's own HEEx
+  (`:let` gets the edge), rendered on the server and placed by the canvas
+  on the middle of its edge: a click on it selects the edge, and its
+  fields and buttons are theirs. See the Edges guide.
+- The canvas finds the nodes and edges near the screen in a grid of the
+  canvas (a spatial index): the culling of a pan, a box that selects, a
+  drop into a group, the helper lines of a drag, and `nodesAt` look at
+  what is near, not at every node. A fast pan of 10,000 nodes keeps
+  60 frames a second, its slowest frames too (they were 300 to 450 ms).
+  See the Limits guide.
+- `path: "routed"`: an edge in steps with round corners that goes
+  around the nodes in its way, the shortest way with the fewest corners,
+  and again as they move (a node dragged onto its line, it goes around it
+  as it is dragged). Through its `points`, when people bent it, as
+  `"smooth"`. The development app's workflow is routed. See the Edges
+  guide.
 
 ### Changed
 
 - `on_change` returning `{:ok, %Hakushi.Change{}}` makes that change
   happen in place of the one it was given; any other `{:ok, term}` takes
   the change, as before.
+
+### Fixed
+
+- A pan of a canvas of many nodes drew every edge again, every few
+  frames: the canvas took its own culling of nodes for a change of the
+  server's, which made it cull again on the next frame.
 
 ## [0.7.0] - 2026-10-26
 

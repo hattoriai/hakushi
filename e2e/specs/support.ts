@@ -37,7 +37,15 @@ export async function place(page: Page, id: string): Promise<{ x: number; y: num
 }
 
 export async function center(locator: Locator): Promise<{ x: number; y: number }> {
-  const box = (await locator.boundingBox())!;
+  // An element of the canvas's overlay (a knob, a waypoint) is drawn again
+  // on each frame: the one found may be gone when it is measured. Again,
+  // then, until one is measured.
+  let box = await locator.boundingBox();
+  for (let tries = 0; !box && tries < 20; tries++) {
+    await locator.page().waitForTimeout(50);
+    box = await locator.boundingBox();
+  }
+  if (!box) throw new Error(`no box for ${locator}`);
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 }
 
@@ -48,6 +56,32 @@ export async function drag(page: Page, from: { x: number; y: number }, to: { x: 
   await page.mouse.move(from.x + (to.x - from.x) / 4, from.y + (to.y - from.y) / 4, { steps: 3 });
   await page.mouse.move(to.x, to.y, { steps });
   await page.mouse.up();
+}
+
+/**
+ * Points along an edge's line, on the screen: at `fractions` of its length.
+ * The line's points are the canvas's; they are put on the screen by a node's
+ * box (its place and its zoom), not by the SVG's getScreenCTM, which WebKit
+ * gets wrong under the canvas's CSS transform.
+ */
+export async function alongEdge(page: Page, canvas: string, id: string, fractions: number[] = [0.5]): Promise<{ x: number; y: number }[]> {
+  return page.evaluate(
+    ({ canvas, id, fractions }) => {
+      const root = document.getElementById(canvas)!;
+      const line = root.querySelector<SVGPathElement>(`.hakushi-edge[data-edge="${CSS.escape(id)}"] .hakushi-edge-line`)!;
+      const node = root.querySelector<HTMLElement>(".hakushi-node:not([data-parent])")!;
+      const box = node.getBoundingClientRect();
+      const zoom = box.width / node.offsetWidth;
+      const left = box.left - Number(node.dataset.x) * zoom;
+      const top = box.top - Number(node.dataset.y) * zoom;
+      const total = line.getTotalLength();
+      return fractions.map((f) => {
+        const p = line.getPointAtLength(total * f);
+        return { x: left + p.x * zoom, y: top + p.y * zoom };
+      });
+    },
+    { canvas, id, fractions },
+  );
 }
 
 /** The ids of the edges the server rendered. */

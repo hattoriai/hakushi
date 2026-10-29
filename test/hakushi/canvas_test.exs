@@ -379,6 +379,339 @@ defmodule Hakushi.CanvasTest do
     end
   end
 
+  describe "the menu" do
+    test "the app's items for a node, an edge and the paper" do
+      {view, _html} = open("?menu=app")
+
+      assert menu(view, "schema", kind: :node, nodes: ["users"]) ==
+               ["inspect", :separator, :copy, :delete]
+
+      # Separators at the ends, or two together, go.
+      assert menu(view, "schema", kind: :node, nodes: ["users", "orders"]) == [:copy, :delete]
+      assert menu(view, "schema", kind: :edge, edges: ["fk"]) == [:label, "explain", "cut"]
+      assert menu(view, "schema", kind: :canvas, at: {10, 20}) == []
+    end
+
+    test "an item of the app's own calls on_menu with the target, checked" do
+      {view, _html} = open("?menu=app&notify=true")
+
+      assert :ok =
+               pick(view, "schema", "inspect", kind: :node, nodes: ["users", "gone"], at: {4, 5})
+
+      assert_receive {:on_menu, "inspect",
+                      %{canvas: "schema", kind: :node, nodes: ["users"], edges: [], at: {4, 5}}}
+
+      assert_receive {Hakushi, "schema", {:menu, "inspect", %{kind: :node}}}
+
+      # Only an item the menu offered.
+      assert {:error, nil} =
+               pick(view, "schema", "delete-everything", kind: :node, nodes: ["users"])
+
+      refute_receive {:on_menu, _id, _target}
+    end
+
+    test "Hakushi's own items, and none that change a read-only canvas" do
+      {view, html} = open("?menu=default")
+      assert html =~ "&quot;menu&quot;:true"
+
+      assert menu(view, "schema", kind: :node, nodes: ["users"]) == [
+               :copy,
+               :cut,
+               :duplicate,
+               :separator,
+               :delete
+             ]
+
+      assert menu(view, "schema", kind: :edge, edges: ["fk"]) == [:label, :separator, :delete]
+      assert menu(view, "schema", kind: :canvas) == [:paste, :select_all, :separator, :fit, :tidy]
+
+      {view, _html} = open("?menu=default&readonly=true")
+      assert menu(view, "schema", kind: :node, nodes: ["users"]) == []
+      assert menu(view, "schema", kind: :canvas) == [:select_all, :separator, :fit]
+
+      {view, _html} = open("?menu=default&readonly=arrange")
+      assert menu(view, "schema", kind: :canvas) == [:select_all, :separator, :fit, :tidy]
+
+      # Arranged only, the nodes are lined up, and nothing else.
+      assert menu(view, "schema", kind: :node, nodes: ["users", "orders"]) ==
+               [
+                 :align_left,
+                 :align_center,
+                 :align_right,
+                 :align_top,
+                 :align_middle,
+                 :align_bottom
+               ]
+    end
+
+    test "two nodes or more are lined up, three or more spaced out" do
+      {view, _html} = open("?menu=default")
+      two = menu(view, "schema", kind: :node, nodes: ["users", "orders"])
+      assert :align_left in two and :align_bottom in two
+      refute :distribute_horizontal in two
+
+      three = menu(view, "schema", kind: :node, nodes: ["users", "orders", "note"])
+
+      assert [:distribute_horizontal, :distribute_vertical, :separator, :delete] =
+               Enum.take(three, -4)
+    end
+
+    test "no menu: the browser's" do
+      {view, html} = open()
+      assert html =~ "&quot;menu&quot;:false"
+      assert menu(view, "schema", kind: :canvas) == []
+    end
+
+    test "the items are drawn in the canvas's words, with their icons" do
+      can = %{messages: Hakushi.Messages.for_locale("fr", %{}), readonly: false, arrange: false}
+
+      assert {[%{"action" => "copy", "label" => "Copier"}, %{"icon" => "<svg" <> _}], ids} =
+               Hakushi.Menu.to_client([:copy, %{id: "a", label: "A", icon: "table"}], can)
+
+      assert MapSet.to_list(ids) == ["a"]
+
+      assert_raise ArgumentError, ~r/menu item/, fn -> Hakushi.Menu.to_client([:explode], can) end
+
+      assert_raise ArgumentError, ~r/no \[:colour\]/, fn ->
+        Hakushi.Menu.to_client([%{id: "a", label: "A", colour: 1}], can)
+      end
+
+      assert_raise ArgumentError, ~r/icon/, fn ->
+        Hakushi.Menu.to_client([%{id: "a", label: "A", icon: "nope"}], can)
+      end
+    end
+  end
+
+  describe "opening a node" do
+    test "a node of a slot that opens calls on_open, and up calls on_up" do
+      {view, html} = open("?notify=true")
+      assert html =~ ~r/data-id="users"[^>]*data-opens="true"/
+      refute html =~ ~r/data-id="note"[^>]*data-opens/
+      assert html =~ "&quot;up&quot;:true"
+
+      assert :ok = open_node(view, "schema", "users")
+      assert_receive {:on_open, %{canvas: "schema", node: "users"}}
+      assert_receive {Hakushi, "schema", {:opened, "users"}}
+
+      # A node of a slot that does not open, and none at all.
+      assert {:error, nil} = open_node(view, "schema", "note")
+      assert {:error, nil} = open_node(view, "schema", "gone")
+      refute_receive {:on_open, _}
+
+      assert :ok = go_up(view, "schema")
+      assert_receive {:on_up, %{canvas: "schema"}}
+      assert_receive {Hakushi, "schema", :up}
+    end
+
+    test "a read-only canvas opens too" do
+      {view, _html} = open("?readonly=true")
+      assert :ok = open_node(view, "schema", "orders")
+      assert_receive {:on_open, %{node: "orders"}}
+    end
+
+    test "an opener, and the path of canvases" do
+      html = render_component(&Hakushi.Components.opener/1, %{})
+      assert html =~ ~s(data-hakushi-open)
+      assert html =~ ~s(aria-label="Open")
+
+      assert render_component(&Hakushi.Components.opener/1, locale: "fr") =~
+               ~s(aria-label="Ouvrir")
+
+      html =
+        render_component(&Hakushi.Components.canvas_path/1,
+          step: [
+            %{inner_block: fn _, _ -> "Invoices" end, patch: "/flows/1", __slot__: :step},
+            %{inner_block: fn _, _ -> "Check" end, __slot__: :step}
+          ]
+        )
+
+      assert html =~ ~r{<a href="/flows/1"[^>]*>\s*Invoices}
+      assert html =~ ~r{<span aria-current="page">\s*Check}
+      assert html =~ ~s(aria-label="Where you are")
+    end
+  end
+
+  describe "a label of the app's own" do
+    test "an :edge_label slot draws each edge's label, with the edge's data" do
+      {view, html} = open("?edge_label=true")
+      assert html =~ ~r/class="hakushi-edge-label hakushi-edge-label-own"[^>]*data-id="fk"/
+      assert html =~ ~s(<span class="fk-badge" data-fk="fk">user_id → id</span>)
+      # The edge as it was: read by the browser, and the tests.
+      assert [%{id: "fk", source: "orders"}] = edges(view, "schema")
+
+      # A new edge has one too.
+      assert :ok = connect(view, "schema", "note", {"users", "id"})
+      assert length(Regex.scan(~r/class="fk-badge"/, render(view))) == 2
+    end
+
+    test "without the slot, the edges' data is no label" do
+      {_view, html} = open()
+      refute html =~ "hakushi-edge-label-own"
+      refute html =~ "fk-badge"
+    end
+  end
+
+  describe "the points an edge goes through" do
+    test "people bend an edge, and straighten it again" do
+      {view, _html} = open()
+      assert :ok = bend(view, "schema", "fk", [{100, 200}, {150.5, 220}])
+      assert [%{id: "fk", points: [[100, 200], [150.5, 220]]}] = edges(view, "schema")
+      assert render(view) =~ ~s(data-points="100,200 150.5,220")
+
+      assert_receive {:on_change,
+                      %Hakushi.Change{
+                        op: :update,
+                        edges: [%{id: "fk", points: [[100, 200], [150.5, 220]]}]
+                      }, _}
+
+      assert :ok = undo(view, "schema")
+      assert [%{points: []}] = edges(view, "schema")
+      assert :ok = redo(view, "schema")
+      assert :ok = bend(view, "schema", "fk", [])
+      assert [%{points: []}] = edges(view, "schema")
+    end
+
+    test "points that are not points are refused" do
+      {view, _html} = open()
+
+      assert {:error, _} =
+               view
+               |> element("#schema-hook")
+               |> render_hook("hakushi:change", %{
+                 "op" => "update",
+                 "edges" => [%{"id" => "fk", "points" => [[1, "x"]]}]
+               })
+               |> then(fn _ -> {:error, reply()["error"]} end)
+
+      too_many = for i <- 1..101, do: {i, i}
+      assert {:error, _} = bend(view, "schema", "fk", too_many)
+    end
+  end
+
+  describe "align and distribute" do
+    test "the app lines up and spaces out nodes, in the person's browser" do
+      {view, _html} = open()
+      render_click(view, "app_arrange", %{"how" => "top", "nodes" => ["users", "orders"]})
+
+      assert_push_event(view, "hakushi:arrange", %{
+        "canvas" => "schema",
+        "how" => "top",
+        "nodes" => ["users", "orders"]
+      })
+
+      render_click(view, "app_arrange", %{"how" => "vertical"})
+      assert_push_event(view, "hakushi:arrange", %{"how" => "vertical"} = payload)
+      refute Map.has_key?(payload, "nodes")
+    end
+
+    test "only the ways there are" do
+      assert_raise FunctionClauseError, fn -> Hakushi.Live.align("c", :diagonal) end
+      assert_raise FunctionClauseError, fn -> Hakushi.Live.distribute("c", :left) end
+    end
+  end
+
+  describe "marks" do
+    defp mark(view, fun, ids, mark),
+      do: render_click(view, "app_mark", %{"fun" => fun, "ids" => ids, "mark" => mark})
+
+    test "the app marks nodes, adds to their marks, and takes them away" do
+      {view, _html} = open()
+      mark(view, "nodes", "users", %{"status" => "running", "badge" => 3, "progress" => 0.25})
+
+      assert %{nodes: %{"users" => %{status: "running", badge: "3", progress: 0.25}}} =
+               marks(view, "schema")
+
+      html = render(view)
+      assert html =~ ~s(data-mark-status="running")
+      assert html =~ ~s(role="progressbar")
+
+      # A mark adds to the node's; a key given nil goes.
+      mark(view, "nodes", ["users", "orders"], %{"status" => "done", "progress" => nil})
+
+      assert %{nodes: %{"users" => users, "orders" => %{status: "done"}}} = marks(view, "schema")
+      assert users == %{status: "done", badge: "3"}
+
+      mark(view, "nodes", "users", nil)
+      assert %{nodes: nodes} = marks(view, "schema")
+      assert Map.keys(nodes) == ["orders"]
+    end
+
+    test "a highlight of a colour, dim, words and classes" do
+      {view, _html} = open()
+
+      mark(view, "nodes", "note", %{
+        "highlight" => "#e5484d",
+        "dim" => true,
+        "title" => "Late",
+        "class" => "late"
+      })
+
+      assert %{nodes: %{"note" => %{highlight: "#e5484d", dim: true, title: "Late"}}} =
+               marks(view, "schema")
+
+      assert render(view) =~ ~r/class="hakushi-node late"/
+    end
+
+    test "edges are marked, and the marks are not the graph's" do
+      {view, _html} = open("?notify=true")
+      mark(view, "edges", "fk", %{"status" => "running", "highlight" => true})
+      assert %{edges: %{"fk" => %{status: "running", highlight: true}}} = marks(view, "schema")
+      # Not a change: on_change and notify hear nothing of it.
+      refute_receive {:on_change, _change, _context}
+      refute_receive {Hakushi, "schema", {:changed, _change, _graph}}
+
+      # A node that moves keeps its mark.
+      mark(view, "nodes", "note", %{"badge" => "!"})
+      assert :ok = move(view, "schema", "note", {9, 9})
+      assert %{nodes: %{"note" => %{badge: "!"}}} = marks(view, "schema")
+    end
+
+    test "the spotlight fades the rest, and clear_marks takes every mark away" do
+      {view, _html} = open()
+
+      render_click(view, "app_mark", %{
+        "fun" => "spotlight",
+        "nodes" => ["users", "orders"],
+        "edges" => ["fk"]
+      })
+
+      assert render(view) =~ ~s(data-spotlight="true")
+
+      assert %{
+               nodes: %{"users" => %{lit: true}, "orders" => %{lit: true}},
+               edges: %{"fk" => %{lit: true}}
+             } =
+               marks(view, "schema")
+
+      mark(view, "nodes", "note", %{"status" => "failed"})
+      render_click(view, "app_mark", %{"fun" => "clear"})
+      assert marks(view, "schema") == %{nodes: %{}, edges: %{}}
+      refute render(view) =~ "data-spotlight"
+    end
+
+    test "a mark is checked" do
+      assert_raise ArgumentError, ~r/no :colour/, fn ->
+        Hakushi.Live.mark("c", "a", colour: "red")
+      end
+
+      assert_raise ArgumentError, ~r/status/, fn ->
+        Hakushi.Live.mark("c", "a", status: "Not OK")
+      end
+
+      assert_raise ArgumentError, ~r/progress/, fn -> Hakushi.Live.mark("c", "a", progress: 2) end
+
+      assert_raise ArgumentError, ~r/highlight/, fn ->
+        Hakushi.Live.mark("c", "a", highlight: "red; background: url(x)")
+      end
+
+      assert_raise ArgumentError, ~r/no \[:badge\]/, fn ->
+        Hakushi.Live.mark_edges("c", "e", badge: 1)
+      end
+
+      assert :ok = Hakushi.Live.mark("c", "a", highlight: "oklch(70% 0.1 200)")
+    end
+  end
+
   describe "the app and the view" do
     test "on_select hears what the person selects, of what the canvas has" do
       {view, _html} = open()

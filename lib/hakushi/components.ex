@@ -96,6 +96,51 @@ defmodule Hakushi.Components do
     [Changes](changes.md#hearing-of-the-changes)\
     """
 
+  attr :compare, Hakushi.Graph,
+    default: nil,
+    doc: """
+    an older graph to show `graph` against: the nodes and edges added, changed and moved since \
+    it are marked, and those removed are shown as ghosts. A canvas that compares changes \
+    nothing (it is read-only), and is not shared. See [Versions](versions.md)\
+    """
+
+  attr :on_open, :any,
+    default: nil,
+    doc: """
+    `fn %{canvas: id, node: id} -> any end`: called when the person opens a node of a slot that \
+    `opens` (a double click, ⌘↓, an `opener/1`), once the view has gone into it, in the \
+    LiveView's process: the app shows what is in it. See [Drill-down](drill-down.md)\
+    """
+
+  attr :on_up, :any,
+    default: nil,
+    doc: """
+    `fn %{canvas: id} -> any end`: called when the person goes up, out of the canvas (⌘↑), in \
+    the LiveView's process. See [Drill-down](drill-down.md)\
+    """
+
+  attr :client_tools, :list,
+    default: [],
+    doc: """
+    the tools of the app's own the canvas offers, by their names: tools its JavaScript \
+    registers (`registerTool`), each a button of the bar of tools with what the pointer does \
+    with it. See [JavaScript](javascript.md)\
+    """
+
+  attr :menu, :any,
+    default: nil,
+    doc: """
+    the menu of a right click on a node, an edge or the paper: `fn target -> items end`, or \
+    `true` for Hakushi's own items; none (the browser's) without it. See `Hakushi.Menu`\
+    """
+
+  attr :on_menu, :any,
+    default: nil,
+    doc: """
+    `fn id, target -> any end`: called when the person chooses an item of the app's own in the \
+    menu, with its `id` and the target (`Hakushi.Menu`), in the LiveView's process\
+    """
+
   attr :new_node, :any,
     default: nil,
     doc: """
@@ -252,7 +297,18 @@ defmodule Hakushi.Components do
     attr :group, :boolean,
       doc:
         "when `true`, these nodes hold others: a node dropped on one goes in it, see [Groups](groups.md)"
+
+    attr :opens, :boolean,
+      doc:
+        "when `true`, people open these nodes (a double click, ⌘↓, an `opener/1`): the canvas's `on_open`, see [Drill-down](drill-down.md)"
   end
+
+  slot :edge_label,
+    doc: """
+    draws the label of each edge, in the place of its text (`:let` gets the `Hakushi.Edge`): \
+    its `label`, a badge of its `data`, a button; nothing for an edge without one. See \
+    [Edges](edges.md#a-label-of-your-own)\
+    """
 
   slot :person,
     doc:
@@ -272,6 +328,11 @@ defmodule Hakushi.Components do
       on_select={@on_select}
       on_viewport={@on_viewport}
       notify={@notify}
+      menu={@menu}
+      on_menu={@on_menu}
+      client_tools={@client_tools}
+      on_open={@on_open}
+      on_up={@on_up}
       new_node={@new_node}
       rules={@rules}
       kits={@kits}
@@ -291,8 +352,9 @@ defmodule Hakushi.Components do
       tidy={@tidy}
       export={@export}
       controls={@controls}
-      readonly={@readonly != false}
-      arrange={@readonly == :arrange}
+      readonly={@readonly != false or @compare != nil}
+      arrange={@readonly == :arrange and @compare == nil}
+      compare={@compare}
       follow={@join == nil or @join.follow}
       show_people={@join == nil or @join.people}
       label={@label}
@@ -302,6 +364,7 @@ defmodule Hakushi.Components do
       class={@class}
       rest={@rest}
       node_slots={@node}
+      edge_label_slot={@edge_label}
       person_slot={@person}
       empty_slot={@empty}
     />
@@ -323,6 +386,13 @@ defmodule Hakushi.Components do
       raise(
         ArgumentError,
         "<.canvas follow={...}> was removed in Hakushi 0.3: give it issho={[..., follow: false]}"
+      )
+
+  defp with_join(%{issho: issho, compare: compare}) when issho != nil and compare != nil,
+    do:
+      raise(
+        ArgumentError,
+        "<.canvas compare={...}> shows a version, alone: give it no issho"
       )
 
   defp with_join(%{issho: nil} = assigns), do: assign(assigns, :join, nil)
@@ -420,6 +490,100 @@ defmodule Hakushi.Components do
     ></span>
     """
   end
+
+  @doc """
+  Renders a button in a node that opens it (the canvas's `on_open`), as a
+  double click or ⌘↓ does: for a node whose slot `opens`, to say so and
+  to open it with a touch. Its content is an icon unless given.
+
+      <:node type="subflow" opens :let={node}>
+        <div class="step">{node.data.title} <.opener /></div>
+      </:node>
+  """
+  attr :label, :string,
+    default: nil,
+    doc: "its name, \"Open\" (in the canvas's words) unless given"
+
+  attr :locale, :string, default: nil, doc: "the locale of its words, as the canvas's"
+  attr :messages, :map, default: nil, doc: "words that replace the built-in ones"
+  attr :class, :any, default: nil
+  attr :rest, :global
+  slot :inner_block
+
+  def opener(assigns) do
+    assigns = assign(assigns, :words, words(assigns))
+
+    ~H"""
+    <button
+      type="button"
+      class={["hakushi-opener", @class]}
+      data-hakushi-open
+      aria-label={@label || @words["open"]}
+      title={@label || @words["open"]}
+      {@rest}
+    >
+      <%= if @inner_block != [] do %>
+        {render_slot(@inner_block)}
+      <% else %>
+        <Hakushi.Icons.icon name="maximize" size={14} />
+      <% end %>
+    </button>
+    """
+  end
+
+  @doc """
+  Renders where a canvas is among canvases (breadcrumbs): the canvases
+  it was opened from, and itself, last. A step with `patch`, `navigate`
+  or `href` is a link to its canvas.
+
+      <.canvas_path>
+        <:step patch={~p"/flows/\#{@flow.id}"}>{@flow.name}</:step>
+        <:step>{@step.title}</:step>
+      </.canvas_path>
+  """
+  attr :label, :string,
+    default: nil,
+    doc: "its name for screen readers, \"Where you are\" unless given"
+
+  attr :locale, :string, default: nil, doc: "the locale of its words, as the canvas's"
+  attr :messages, :map, default: nil, doc: "words that replace the built-in ones"
+  attr :class, :any, default: nil
+  attr :rest, :global
+
+  slot :step, required: true, doc: "a canvas of the way, the last the one shown" do
+    attr :patch, :string
+    attr :navigate, :string
+    attr :href, :string
+  end
+
+  def canvas_path(assigns) do
+    assigns = assign(assigns, words: words(assigns), last: length(assigns.step) - 1)
+
+    ~H"""
+    <nav class={["hakushi-path", @class]} aria-label={@label || @words["path"]} {@rest}>
+      <ol>
+        <li :for={{step, i} <- Enum.with_index(@step)}>
+          <.link
+            :if={i != @last and linked?(step)}
+            patch={step[:patch]}
+            navigate={step[:navigate]}
+            href={step[:href]}
+          >
+            {render_slot(step)}
+          </.link>
+          <span
+            :if={i == @last or not linked?(step)}
+            aria-current={i == @last && "page"}
+          >
+            {render_slot(step)}
+          </span>
+        </li>
+      </ol>
+    </nav>
+    """
+  end
+
+  defp linked?(step), do: Enum.any?([:patch, :navigate, :href], &step[&1])
 
   @doc """
   Renders an item that people drag onto a canvas, outside it: a palette

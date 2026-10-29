@@ -4,7 +4,7 @@
 
 export type Side = "left" | "right" | "top" | "bottom";
 export type HandleKind = "source" | "target" | "both";
-export type PathKind = "bezier" | "smooth" | "step" | "straight";
+export type PathKind = "bezier" | "smooth" | "step" | "straight" | "routed";
 
 export interface Rules {
   loops: boolean;
@@ -43,6 +43,12 @@ export interface Config {
   reportSelect?: boolean;
   /** Whether the app hears where the person's view comes to rest (the canvas's `on_viewport`). */
   reportView?: boolean;
+  /** Whether a right click opens the canvas's menu (the canvas's `menu`, Hakushi.Menu), not the browser's. */
+  menu?: boolean;
+  /** Whether ⌘↑ goes up, out of the canvas (the canvas's `on_up`). */
+  up?: boolean;
+  /** The tools of the app's own (registerTool) the canvas offers: its `client_tools`. */
+  clientTools?: string[];
   live: boolean;
   user: string | null;
   /** The tools of the kits, for the bar of tools (Hakushi.Kit's `tools/1`). */
@@ -76,8 +82,10 @@ export interface StyleGroup {
 export interface Tool {
   kit: string;
   tool: string;
-  /** `pick` opens a file picker, and is never the tool chosen. */
-  mode: "draw" | "erase" | "lasso" | "box" | "line" | "pick";
+  /** `pick` opens a file picker, and is never the tool chosen; `client` is the app's own (registerTool). */
+  mode: "draw" | "erase" | "lasso" | "box" | "line" | "pick" | "client";
+  /** The icon of a tool of the app's own: the markup of its SVG. */
+  svg?: string;
   label: string;
   icon: string;
   key: string | null;
@@ -140,6 +148,8 @@ export interface NodeModel {
   parent: string | null;
   /** Whether it holds other nodes (a `group` slot). */
   group: boolean;
+  /** Whether people open it (a slot that `opens`): the canvas's `on_open`. */
+  opens: boolean;
   label: string;
   handles: Handle[];
   /** Whether it is drawn faint, and its edges too: its content has `data-hakushi-faint` (a table of another schema). */
@@ -159,6 +169,22 @@ export interface EdgeModel {
   label: string | null;
   marker: "arrow" | "dot" | "none";
   animated: boolean;
+  /** The points it goes through, where people bent it (in the canvas's terms). */
+  points: Point[];
+  /** The app's mark of it (Hakushi.Live.mark_edges/3), and whether the spotlight is on it. */
+  mark: EdgeMark;
+}
+
+/** What an edge is now, as the app marks it: not saved, not in the graph. */
+export interface EdgeMark {
+  status: string | null;
+  highlight: boolean;
+  color: string | null;
+  dim: boolean;
+  title: string | null;
+  lit: boolean;
+  /** What it is to an older graph, on a canvas that compares: added, removed or changed. */
+  diff: string | null;
 }
 
 /** An end of an edge: a node, and a handle of it. */
@@ -177,4 +203,58 @@ export interface Person {
 /** What the browser asks of the server. */
 export interface Live {
   push(event: string, payload: object, onReply?: (reply: Record<string, unknown>) => void): void;
+  /** An event to the canvas's LiveView itself, not its component. */
+  pushView?(event: string, payload: object, onReply?: (reply: Record<string, unknown>) => void): void;
+}
+
+/**
+ * An item of the canvas's menu (Hakushi.Menu): a line between items, an
+ * action of the canvas's own (`action`), or the app's own (`id`), with an
+ * icon (SVG), the words of its keys, and whether it deletes or is disabled.
+ */
+export interface MenuItem {
+  separator?: boolean;
+  action?: string;
+  id?: string;
+  label?: string;
+  icon?: string | null;
+  shortcut?: string | null;
+  danger?: boolean;
+  disabled?: boolean;
+}
+
+/** A node as the app's code reads it (Canvas.getNodes). */
+export interface NodeInfo {
+  id: string;
+  type: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  parent: string | null;
+  locked: boolean;
+  selected: boolean;
+}
+
+/** An edge as the app's code reads it (Canvas.getEdges). */
+export interface EdgeInfo {
+  id: string;
+  source: string;
+  sourceHandle: string | null;
+  target: string;
+  targetHandle: string | null;
+  label: string | null;
+  selected: boolean;
+}
+
+/** What the canvas tells the app's code (Canvas.on). */
+export interface CanvasEvents {
+  /** The selection changed. */
+  select: { nodes: string[]; edges: string[] };
+  /** The view moved: its place and zoom. */
+  view: View;
+  /** A change of the person's came back from the server: taken (`ok`), refused (`error`), or another in its place (`rewritten`). */
+  change: { change: Record<string, unknown>; ok: boolean; error: string | null; rewritten: boolean };
+  /** Another tool was chosen (`"ink:pen"`, `"app:ruler"`), or the pointer (null). */
+  tool: string | null;
 }

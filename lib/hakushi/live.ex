@@ -1,8 +1,9 @@
 defmodule Hakushi.Live do
   @moduledoc ~S"""
   The `on_mount` hook of a LiveView with a shared canvas (`issho`), the
-  app's own changes to a canvas, and the person's view of it: what it
-  shows (`fit/2`, `focus/3`) and what is selected (`select/3`).
+  app's own changes to a canvas, the person's view of it (what it shows,
+  `fit/2` and `focus/3`, and what is selected, `select/3`), and the marks
+  of what its nodes are now, which are not saved (`mark/3`).
 
       live_session :default, on_mount: [Hakushi.Live] do
 
@@ -187,6 +188,188 @@ defmodule Hakushi.Live do
     send_update(Hakushi.Canvas, id: canvas, hakushi_push: {"hakushi:select", payload})
     :ok
   end
+
+  @doc """
+  Lines up nodes of the canvas `canvas` of this LiveView, in the person's
+  browser, as Alt and a letter or the menu do: by their left sides
+  (`:left`), their middles (`:center`), their right sides (`:right`), or
+  their tops, middles or bottoms (`:top`, `:middle`, `:bottom`), on the
+  box around them all. `nodes: ids` are the nodes (two or more); the
+  person's selection unless given. The new places are a change as any:
+  checked, shared, and undone with ⌘Z.
+
+      Hakushi.Live.align("schema", :top, nodes: ["users", "orders"])
+  """
+  @spec align(String.t(), :left | :center | :right | :top | :middle | :bottom, keyword()) :: :ok
+  def align(canvas, how, opts \\ []) when how in [:left, :center, :right, :top, :middle, :bottom],
+    do: arrange(canvas, how, opts)
+
+  @doc """
+  Spaces out nodes of the canvas `canvas` of this LiveView, as `align/3`
+  lines them up: across (`:horizontal`) or down (`:vertical`), with equal
+  gaps between them, the first and the last staying where they are.
+  `nodes: ids` are the nodes (three or more); the selection unless given.
+  """
+  @spec distribute(String.t(), :horizontal | :vertical, keyword()) :: :ok
+  def distribute(canvas, how, opts \\ []) when how in [:horizontal, :vertical],
+    do: arrange(canvas, how, opts)
+
+  defp arrange(canvas, how, opts) when is_binary(canvas) do
+    payload = %{"how" => Atom.to_string(how)}
+
+    payload =
+      case opts[:nodes] do
+        nil -> payload
+        ids -> Map.put(payload, "nodes", ids!(ids))
+      end
+
+    send_update(Hakushi.Canvas, id: canvas, hakushi_push: {"hakushi:arrange", payload})
+    :ok
+  end
+
+  @doc """
+  Marks nodes of the canvas `canvas` of this LiveView with what they are
+  now, which is not saved: a step that runs, a table that failed its
+  check, the results of a search. `ids` is a node's id or a list of them,
+  and `mark` a keyword list or a map of:
+
+    * `status` - an atom or a string (`:running`, `:done`, `:failed`,
+      `:warning`, `:waiting`, or the app's own): `data-mark-status` on
+      the node, which Hakushi's styles give a ring for the first five;
+    * `badge` - a few words or a number in a corner of the node;
+    * `progress` - a bar along its foot, from `0` to `1`;
+    * `highlight` - `true` (a ring of the accent) or a colour;
+    * `dim` - `true`: faded, for the nodes that do not matter now;
+    * `title` - the words a pointer over the node shows;
+    * `class` - classes of the app's own on the node.
+
+  A mark adds to the node's: a key given `nil` goes, and a `mark` of
+  `nil` takes them all away. Marks are this LiveView's, in its canvas:
+  they are not part of the graph, `on_change` never sees them, and they
+  go when the page goes (mark again in `mount`). On a shared canvas, each
+  person's are their own.
+
+      Hakushi.Live.mark("flow", "send-receipt", status: :running, progress: 0.4)
+      Hakushi.Live.mark("flow", "send-receipt", status: :done, progress: nil)
+      Hakushi.Live.mark("schema", ["users", "orders"], highlight: true)
+
+  See [Marks](marks.md).
+  """
+  @spec mark(String.t(), String.t() | [String.t()], keyword() | map() | nil) :: :ok
+  def mark(canvas, ids, mark) when is_binary(canvas) do
+    send_update(Hakushi.Canvas, id: canvas, hakushi_mark: {:nodes, ids!(ids), mark!(mark)})
+    :ok
+  end
+
+  @doc """
+  Marks edges of the canvas `canvas` of this LiveView, as `mark/3` marks
+  nodes: `status`, `highlight`, `dim` and `title` (an edge has no badge,
+  no progress and no classes). A `:running` edge flows.
+
+      Hakushi.Live.mark_edges("flow", ["e1", "e2"], status: :running)
+  """
+  @spec mark_edges(String.t(), String.t() | [String.t()], keyword() | map() | nil) :: :ok
+  def mark_edges(canvas, ids, mark) when is_binary(canvas) do
+    mark = mark!(mark)
+
+    case mark && Map.keys(mark) -- [:status, :highlight, :dim, :title] do
+      bad when bad in [nil, []] -> :ok
+      bad -> raise ArgumentError, "an edge's mark has no #{inspect(bad)}"
+    end
+
+    send_update(Hakushi.Canvas, id: canvas, hakushi_mark: {:edges, ids!(ids), mark})
+    :ok
+  end
+
+  @doc """
+  Takes away every mark of the canvas `canvas` of this LiveView, of its
+  nodes and its edges, and its spotlight.
+  """
+  @spec clear_marks(String.t()) :: :ok
+  def clear_marks(canvas) when is_binary(canvas) do
+    send_update(Hakushi.Canvas, id: canvas, hakushi_mark: :clear)
+    :ok
+  end
+
+  @doc """
+  Puts the spotlight on nodes and edges of the canvas `canvas` of this
+  LiveView: the others fade, so that a path, a part of a flow, or what a
+  search found stands out (`nodes: ids`, `edges: ids`). `nil` takes the
+  spotlight away. It is a mark: this LiveView's, and not saved.
+
+      way = Hakushi.Graph.path(graph, "start", "send-receipt")
+      Hakushi.Live.spotlight("flow", nodes: way, edges: Hakushi.Graph.edges_along(graph, way))
+  """
+  @spec spotlight(String.t(), keyword() | nil) :: :ok
+  def spotlight(canvas, nil) when is_binary(canvas) do
+    send_update(Hakushi.Canvas, id: canvas, hakushi_mark: {:spotlight, nil})
+    :ok
+  end
+
+  def spotlight(canvas, opts) when is_binary(canvas) and is_list(opts) do
+    lit = %{
+      nodes: MapSet.new(ids!(Keyword.get(opts, :nodes, []))),
+      edges: MapSet.new(ids!(Keyword.get(opts, :edges, [])))
+    }
+
+    send_update(Hakushi.Canvas, id: canvas, hakushi_mark: {:spotlight, lit})
+    :ok
+  end
+
+  @mark_keys [:status, :badge, :progress, :highlight, :dim, :title, :class]
+  @color ~r/\A(#[0-9a-fA-F]{3,8}|[a-zA-Z]+|(rgb|rgba|hsl|hsla|oklch|oklab)\([0-9.,%\s\/-]+\)|var\(--[a-zA-Z0-9-]+\))\z/
+
+  @doc false
+  # A mark, checked: its keys and their values (nil, to take a key away).
+  @spec mark!(keyword() | map() | nil) :: map() | nil
+  def mark!(nil), do: nil
+
+  def mark!(mark) when is_list(mark) or is_map(mark) do
+    Map.new(mark, fn {key, value} ->
+      unless key in @mark_keys,
+        do: raise(ArgumentError, "a mark has no #{inspect(key)}, it has #{inspect(@mark_keys)}")
+
+      {key, mark_value!(key, value)}
+    end)
+  end
+
+  def mark!(other),
+    do: raise(ArgumentError, "a mark is a keyword list or a map, got: #{inspect(other)}")
+
+  defp mark_value!(_key, nil), do: nil
+
+  defp mark_value!(:status, status) when is_atom(status),
+    do: mark_value!(:status, Atom.to_string(status))
+
+  defp mark_value!(:status, status) when is_binary(status) do
+    if Regex.match?(~r/\A[a-z][a-z0-9-]{0,31}\z/, status),
+      do: status,
+      else:
+        raise(
+          ArgumentError,
+          "a mark's status is a word of a-z, 0-9 and -, got: #{inspect(status)}"
+        )
+  end
+
+  defp mark_value!(:badge, badge) when is_binary(badge) or is_number(badge), do: to_string(badge)
+
+  defp mark_value!(:progress, progress)
+       when is_number(progress) and progress >= 0 and progress <= 1,
+       do: progress
+
+  defp mark_value!(:highlight, highlight) when is_boolean(highlight), do: highlight
+
+  defp mark_value!(:highlight, color) when is_binary(color) do
+    if Regex.match?(@color, color),
+      do: color,
+      else: raise(ArgumentError, "a mark's highlight is true or a colour, got: #{inspect(color)}")
+  end
+
+  defp mark_value!(:dim, dim) when is_boolean(dim), do: dim
+  defp mark_value!(key, text) when key in [:title, :class] and is_binary(text), do: text
+
+  defp mark_value!(key, value),
+    do: raise(ArgumentError, "a mark's #{key} cannot be #{inspect(value)}")
 
   defp view_opts(opts) do
     padding =

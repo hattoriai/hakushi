@@ -10,8 +10,6 @@ Known gaps in Hakushi, each to become an issue. None is planned yet.
 
 ## Scale
 
-- A spatial index (a grid of buckets) for culling, so that a pan of
-  10,000 nodes has no slow frames.
 - Nodes drawn as plain boxes when zoomed far out (level of detail).
 - A canvas that sends the nodes near the view first, and the others as
   the view moves.
@@ -29,7 +27,6 @@ Known gaps in Hakushi, each to become an issue. None is planned yet.
 
 ## Layout
 
-- Edges routed around the nodes in their way.
 - A layout of the nodes in a group, within it.
 - A force-directed layout, for graphs that do not flow (a mind map, a
   network).

@@ -78,6 +78,21 @@
   /* The kits' second colour, beside the accent: Schema's primary keys and
      Flow's conditions. */
   --hakushi-kit-alt: #c58a12;
+  /* The marks of the app (Hakushi.Live.mark/3): the colour of each status,
+     and of a highlight. */
+  --hakushi-mark-running: var(--hakushi-accent);
+  --hakushi-mark-done: var(--hakushi-ink-green);
+  --hakushi-mark-failed: var(--hakushi-ink-red);
+  --hakushi-mark-warning: var(--hakushi-ink-orange);
+  --hakushi-mark-waiting: var(--hakushi-muted);
+  --hakushi-mark-highlight: var(--hakushi-accent);
+  --hakushi-mark-dim: 0.32;
+  /* A canvas that compares (its `compare`): what was added, removed,
+     changed and moved since the older graph. */
+  --hakushi-diff-added: var(--hakushi-ink-green);
+  --hakushi-diff-removed: var(--hakushi-ink-red);
+  --hakushi-diff-changed: var(--hakushi-ink-orange);
+  --hakushi-diff-moved: var(--hakushi-accent);
 }
 
 /*
@@ -290,6 +305,49 @@
   color: var(--hakushi-accent);
 }
 
+/* The canvas's menu (Hakushi.Menu): by the pointer, its items with an
+   icon, their words and their keys. */
+.hakushi-context-menu {
+  bottom: auto;
+  min-width: 13rem;
+}
+
+.hakushi-menu-item {
+  display: grid;
+  grid-template-columns: 16px 1fr auto;
+}
+
+.hakushi-menu-icon {
+  display: flex;
+  color: var(--hakushi-muted);
+}
+
+.hakushi-menu-keys {
+  padding-left: 16px;
+  color: var(--hakushi-muted);
+  font: inherit;
+  font-size: 0.75rem;
+}
+
+.hakushi-menu-item[data-danger] {
+  color: var(--hakushi-mark-failed, #e5484d);
+}
+
+.hakushi-menu-item[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.hakushi-menu-item[aria-disabled="true"]:hover {
+  background: transparent;
+}
+
+.hakushi-menu-separator {
+  height: 1px;
+  margin: 3px 4px;
+  background: var(--hakushi-border);
+}
+
 .hakushi-paper-frame {
   display: block;
   flex: none;
@@ -434,6 +492,27 @@
   vector-effect: non-scaling-stroke;
   pointer-events: all;
   cursor: grab;
+}
+
+/* The points a selected edge goes through, and the places between them
+   to drag a new one from. */
+.hakushi-waypoint {
+  fill: var(--hakushi-edge-selected);
+  stroke: var(--hakushi-surface);
+  stroke-width: 1.5px;
+  vector-effect: non-scaling-stroke;
+  pointer-events: all;
+  cursor: move;
+}
+
+.hakushi-waypoint-new {
+  fill: var(--hakushi-surface);
+  stroke: var(--hakushi-edge-selected);
+  stroke-width: 1px;
+  vector-effect: non-scaling-stroke;
+  opacity: 0.7;
+  pointer-events: all;
+  cursor: copy;
 }
 
 .hakushi-guide {
@@ -705,10 +784,29 @@
 }
 
 /* The labels of the edges. */
-.hakushi-labels {
+.hakushi-labels,
+.hakushi-edge-data {
   position: absolute;
   top: 0;
   left: 0;
+}
+
+/* The edges' data, which the browser reads: unseen, but the labels of the
+   app's own (an :edge_label slot), placed on their edges. */
+.hakushi-edge-data > i:not(.hakushi-edge-label-own) {
+  display: none;
+}
+
+.hakushi-edge-label-own {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-style: normal;
+  white-space: normal;
+}
+
+.hakushi-edge-label-own:empty {
+  display: none;
 }
 
 .hakushi-edge-label,
@@ -2093,4 +2191,243 @@
 @media (max-width: 40rem) {
   .hakushi-embed-subtitle { display: none; }
   .hakushi-embed-bar { flex-wrap: wrap; }
+}
+
+/* -- Marks (Hakushi.Live.mark/3) -------------------------------------------
+   What a node or an edge is now, as the app marks it: a ring in the colour
+   of its status or highlight, a badge, a bar of progress; faded when dim,
+   or out of the spotlight. A selection's ring wins over a mark's. */
+
+.hakushi-node[data-mark-status="running"],
+.hakushi-edge[data-mark-status="running"] {
+  --hakushi-mark: var(--hakushi-mark-running);
+}
+
+.hakushi-node[data-mark-status="done"],
+.hakushi-edge[data-mark-status="done"] {
+  --hakushi-mark: var(--hakushi-mark-done);
+}
+
+.hakushi-node[data-mark-status="failed"],
+.hakushi-edge[data-mark-status="failed"] {
+  --hakushi-mark: var(--hakushi-mark-failed);
+}
+
+.hakushi-node[data-mark-status="warning"],
+.hakushi-edge[data-mark-status="warning"] {
+  --hakushi-mark: var(--hakushi-mark-warning);
+}
+
+.hakushi-node[data-mark-status="waiting"],
+.hakushi-edge[data-mark-status="waiting"] {
+  --hakushi-mark: var(--hakushi-mark-waiting);
+}
+
+.hakushi-node:is([data-mark-status="running"], [data-mark-status="done"], [data-mark-status="failed"], [data-mark-status="warning"], [data-mark-highlight]):not([data-ui-selected], [data-ui-peer]) {
+  box-shadow: 0 0 0 2px var(--hakushi-mark, var(--hakushi-mark-highlight));
+}
+
+.hakushi-node[data-mark-status="waiting"]:not([data-ui-selected], [data-ui-peer]) {
+  outline: 2px dashed var(--hakushi-mark);
+  outline-offset: 2px;
+}
+
+.hakushi-node[data-mark-status="running"]:not([data-ui-selected], [data-ui-peer]) {
+  animation: hakushi-running 1.4s ease-in-out infinite;
+}
+
+@keyframes hakushi-running {
+  50% {
+    box-shadow: 0 0 0 2px var(--hakushi-mark), 0 0 0 6px color-mix(in oklab, var(--hakushi-mark) 22%, transparent);
+  }
+}
+
+.hakushi-node[data-mark-dim],
+.hakushi[data-spotlight] .hakushi-node:not([data-lit], [data-ui-selected]) {
+  opacity: var(--hakushi-mark-dim);
+  transition: opacity var(--hakushi-transition);
+}
+
+.hakushi-mark-badge {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  z-index: 1;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  border-radius: 9px;
+  background: var(--hakushi-mark, var(--hakushi-mark-highlight));
+  color: var(--hakushi-accent-text);
+  font: 600 11px/18px var(--hakushi-font);
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.hakushi-mark-progress {
+  position: absolute;
+  right: 6px;
+  bottom: 3px;
+  left: 6px;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: color-mix(in oklab, var(--hakushi-mark, var(--hakushi-mark-running)) 20%, transparent);
+  pointer-events: none;
+}
+
+.hakushi-mark-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--hakushi-mark, var(--hakushi-mark-running));
+  transition: width 200ms ease-out;
+}
+
+.hakushi-edge:is([data-mark-status], [data-mark-highlight]):not([data-ui-selected]) .hakushi-edge-line {
+  stroke: var(--hakushi-mark, var(--hakushi-mark-highlight));
+  stroke-width: calc(var(--hakushi-edge-width) + 0.5px);
+}
+
+.hakushi-edge[data-mark-status="running"] .hakushi-edge-line {
+  stroke-dasharray: 6 4;
+  animation: hakushi-flow 0.6s linear infinite;
+}
+
+.hakushi-edge[data-mark-status="waiting"] .hakushi-edge-line {
+  stroke-dasharray: 3 4;
+}
+
+.hakushi-edge[data-mark-dim],
+.hakushi-edge-label[data-mark-dim],
+.hakushi[data-spotlight] :is(.hakushi-edge, .hakushi-edge-label):not([data-lit], [data-ui-selected]) {
+  opacity: var(--hakushi-mark-dim);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hakushi-node[data-mark-status="running"],
+  .hakushi-edge[data-mark-status="running"] .hakushi-edge-line {
+    animation: none;
+  }
+}
+
+/* -- Versions (a canvas's compare) -------------------------------------------
+   What each node and edge is to the older graph: added, changed or moved,
+   a ring of its colour; removed, a ghost of it, dashed. */
+
+.hakushi-node[data-diff="added"] {
+  --hakushi-diff: var(--hakushi-diff-added);
+}
+
+.hakushi-node[data-diff="changed"] {
+  --hakushi-diff: var(--hakushi-diff-changed);
+}
+
+.hakushi-node[data-diff="moved"] {
+  --hakushi-diff: var(--hakushi-diff-moved);
+}
+
+.hakushi-node:is([data-diff="added"], [data-diff="changed"]):not([data-ui-selected]) {
+  box-shadow: 0 0 0 2px var(--hakushi-diff);
+}
+
+.hakushi-node[data-diff="moved"]:not([data-ui-selected]) {
+  outline: 2px dotted var(--hakushi-diff);
+  outline-offset: 3px;
+}
+
+.hakushi-node[data-diff="removed"] {
+  opacity: 0.45;
+  outline: 2px dashed var(--hakushi-diff-removed);
+  outline-offset: 3px;
+  filter: grayscale(1);
+}
+
+.hakushi-edge[data-diff="added"] .hakushi-edge-line {
+  stroke: var(--hakushi-diff-added);
+  stroke-width: calc(var(--hakushi-edge-width) + 0.5px);
+}
+
+.hakushi-edge[data-diff="changed"] .hakushi-edge-line {
+  stroke: var(--hakushi-diff-changed);
+  stroke-width: calc(var(--hakushi-edge-width) + 0.5px);
+}
+
+.hakushi-edge[data-diff="removed"] .hakushi-edge-line {
+  stroke: var(--hakushi-diff-removed);
+  stroke-dasharray: 5 4;
+  opacity: 0.6;
+}
+
+/* -- Opening a node (a slot that opens) ----------------------------------------
+   Its opener, a button in it; and where a canvas is among canvases
+   (canvas_path/1), its breadcrumbs. */
+
+.hakushi-node[data-opens] {
+  cursor: zoom-in;
+}
+
+.hakushi-opener {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--hakushi-radius);
+  background: transparent;
+  color: var(--hakushi-muted);
+  cursor: pointer;
+}
+
+.hakushi-opener:hover {
+  background: color-mix(in oklab, var(--hakushi-text) 8%, transparent);
+  color: var(--hakushi-text);
+}
+
+.hakushi-opener:focus-visible {
+  outline: 2px solid var(--hakushi-accent);
+  outline-offset: 1px;
+}
+
+.hakushi-path ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--hakushi-font);
+  font-size: var(--hakushi-font-size);
+}
+
+.hakushi-path li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--hakushi-muted);
+}
+
+.hakushi-path li + li::before {
+  content: "›";
+  color: var(--hakushi-muted);
+}
+
+.hakushi-path a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.hakushi-path a:hover {
+  color: var(--hakushi-text);
+  text-decoration: underline;
+}
+
+.hakushi-path [aria-current="page"] {
+  color: var(--hakushi-text);
+  font-weight: 600;
 }

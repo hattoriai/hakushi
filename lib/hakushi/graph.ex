@@ -195,7 +195,14 @@ defmodule Hakushi.Graph do
              :height
            ]),
          {:ok, graph, edge_undo} <-
-           update_all(graph, :edges, change.edges, [:label, :path, :marker, :animated, :data]) do
+           update_all(graph, :edges, change.edges, [
+             :label,
+             :path,
+             :marker,
+             :animated,
+             :points,
+             :data
+           ]) do
       {:ok, graph, change,
        %Change{op: :update, nodes: node_undo, edges: edge_undo, by: change.by}}
     end
@@ -466,6 +473,290 @@ defmodule Hakushi.Graph do
     end
   end
 
+  # -- Paths ----------------------------------------------------------------
+  #
+  # The graph read along its edges, from source to target: what comes
+  # after a node, before it, the order of a flow, the way from one node to
+  # another. Pure, and in the graph's order wherever there is a choice.
+
+  @doc """
+  The ids of the nodes an edge goes to from the node `id`, each once, in
+  the order of the edges.
+
+      iex> graph = Hakushi.Graph.new(nodes: [%{id: "a"}, %{id: "b"}, %{id: "c"}], edges: [%{source: "a", target: "c"}, %{source: "a", target: "b"}])
+      iex> Hakushi.Graph.successors(graph, "a")
+      ["c", "b"]
+  """
+  @spec successors(t(), Node.id()) :: [Node.id()]
+  def successors(%__MODULE__{} = graph, id),
+    do:
+      graph |> edges() |> Enum.filter(&(&1.source == id)) |> Enum.map(& &1.target) |> Enum.uniq()
+
+  @doc "The ids of the nodes an edge comes from to the node `id`, each once, in the order of the edges."
+  @spec predecessors(t(), Node.id()) :: [Node.id()]
+  def predecessors(%__MODULE__{} = graph, id),
+    do:
+      graph |> edges() |> Enum.filter(&(&1.target == id)) |> Enum.map(& &1.source) |> Enum.uniq()
+
+  @doc """
+  The ids of every node the edges lead to from the node `id`, however far
+  (what a step sets off, what a table's rows are used by), nearest first,
+  without `id` itself unless a cycle comes back to it.
+  """
+  @spec downstream(t(), Node.id()) :: [Node.id()]
+  def downstream(%__MODULE__{} = graph, id), do: reach(outgoing(graph), id)
+
+  @doc """
+  The ids of every node whose edges lead to the node `id`, however far
+  (what a step waits for), nearest first, without `id` itself unless a
+  cycle comes back to it.
+  """
+  @spec upstream(t(), Node.id()) :: [Node.id()]
+  def upstream(%__MODULE__{} = graph, id), do: reach(incoming(graph), id)
+
+  @doc "The ids of the nodes no edge goes to (where a flow starts), in the order they are drawn."
+  @spec roots(t()) :: [Node.id()]
+  def roots(%__MODULE__{} = graph) do
+    targets = MapSet.new(Map.values(graph.edges), & &1.target)
+    Enum.reject(graph.node_order, &MapSet.member?(targets, &1))
+  end
+
+  @doc "The ids of the nodes no edge leaves (where a flow ends), in the order they are drawn."
+  @spec leaves(t()) :: [Node.id()]
+  def leaves(%__MODULE__{} = graph) do
+    sources = MapSet.new(Map.values(graph.edges), & &1.source)
+    Enum.reject(graph.node_order, &MapSet.member?(sources, &1))
+  end
+
+  @doc """
+  The ids of every node, each after the nodes its edges come from: the
+  order a flow runs in, the order to create a schema's tables in. Of the
+  nodes that may come next, the one drawn first does. A graph with a
+  cycle has no such order: `{:error, {:cycle, ids}}` gives one.
+
+      iex> graph = Hakushi.Graph.new(nodes: [%{id: "pay"}, %{id: "start"}, %{id: "send"}], edges: [%{source: "start", target: "pay"}, %{source: "pay", target: "send"}])
+      iex> Hakushi.Graph.topological_sort(graph)
+      {:ok, ["start", "pay", "send"]}
+  """
+  @spec topological_sort(t()) :: {:ok, [Node.id()]} | {:error, {:cycle, [Node.id()]}}
+  def topological_sort(%__MODULE__{} = graph) do
+    out = outgoing(graph)
+    rank = graph.node_order |> Enum.with_index() |> Map.new()
+
+    degrees =
+      Enum.reduce(Map.values(graph.edges), Map.new(graph.node_order, &{&1, 0}), fn edge, acc ->
+        Map.update!(acc, edge.target, &(&1 + 1))
+      end)
+
+    ready =
+      :gb_sets.from_list(
+        for id <- graph.node_order, Map.fetch!(degrees, id) == 0, do: {Map.fetch!(rank, id), id}
+      )
+
+    case kahn(ready, degrees, out, rank, []) do
+      sorted when length(sorted) == map_size(graph.nodes) -> {:ok, sorted}
+      _short -> {:error, {:cycle, cycle(graph)}}
+    end
+  end
+
+  defp kahn(ready, degrees, out, rank, sorted) do
+    if :gb_sets.is_empty(ready) do
+      Enum.reverse(sorted)
+    else
+      {{_rank, id}, ready} = :gb_sets.take_smallest(ready)
+
+      {ready, degrees} =
+        out |> Map.get(id, []) |> Enum.reduce({ready, degrees}, &release(&1, &2, rank))
+
+      kahn(ready, degrees, out, rank, [id | sorted])
+    end
+  end
+
+  # One edge fewer to wait for: a node with none left may come next.
+  defp release(next, {ready, degrees}, rank) do
+    degrees = Map.update!(degrees, next, &(&1 - 1))
+
+    if Map.fetch!(degrees, next) == 0,
+      do: {:gb_sets.add({Map.fetch!(rank, next), next}, ready), degrees},
+      else: {ready, degrees}
+  end
+
+  @doc """
+  A cycle of the graph, the ids of its nodes in the order the edges go
+  (the last one has an edge back to the first), or `nil` for a graph
+  without one. An edge from a node to itself is a cycle of that node.
+  """
+  @spec cycle(t()) :: [Node.id()] | nil
+  def cycle(%__MODULE__{} = graph) do
+    out = outgoing(graph)
+
+    Enum.reduce_while(graph.node_order, %{}, fn id, colors ->
+      case visit(id, out, colors, []) do
+        {:cycle, ids} -> {:halt, {:cycle, ids}}
+        {:ok, colors} -> {:cont, colors}
+      end
+    end)
+    |> case do
+      {:cycle, ids} -> ids
+      _colors -> nil
+    end
+  end
+
+  # A depth-first walk: a node on the way (:open) met again closes a cycle.
+  defp visit(id, out, colors, way) do
+    case Map.get(colors, id) do
+      :done ->
+        {:ok, colors}
+
+      :open ->
+        {:cycle, way |> Enum.reverse() |> Enum.drop_while(&(&1 != id))}
+
+      nil ->
+        out
+        |> Map.get(id, [])
+        |> visit_all(out, Map.put(colors, id, :open), [id | way])
+        |> case do
+          {:ok, colors} -> {:ok, Map.put(colors, id, :done)}
+          cycle -> cycle
+        end
+    end
+  end
+
+  defp visit_all([], _out, colors, _way), do: {:ok, colors}
+
+  defp visit_all([next | rest], out, colors, way) do
+    case visit(next, out, colors, way) do
+      {:ok, colors} -> visit_all(rest, out, colors, way)
+      cycle -> cycle
+    end
+  end
+
+  @doc """
+  The shortest way from the node `from` to the node `to` along the edges:
+  the ids of its nodes, from `from` to `to`, or `nil` when there is none.
+  `directed: false` goes along the edges either way. A node's way to
+  itself is `[id]`.
+
+      iex> graph = Hakushi.Graph.new(nodes: [%{id: "a"}, %{id: "b"}, %{id: "c"}], edges: [%{source: "a", target: "b"}, %{source: "b", target: "c"}])
+      iex> Hakushi.Graph.path(graph, "a", "c")
+      ["a", "b", "c"]
+      iex> Hakushi.Graph.path(graph, "c", "a")
+      nil
+      iex> Hakushi.Graph.path(graph, "c", "a", directed: false)
+      ["c", "b", "a"]
+  """
+  @spec path(t(), Node.id(), Node.id(), keyword()) :: [Node.id()] | nil
+  def path(%__MODULE__{} = graph, from, to, opts \\ []) do
+    cond do
+      not Map.has_key?(graph.nodes, from) or not Map.has_key?(graph.nodes, to) -> nil
+      from == to -> [from]
+      true -> bfs(neighbours(graph, opts), :queue.from_list([from]), %{from => nil}, to)
+    end
+  end
+
+  defp bfs(next, queue, came, to) do
+    case :queue.out(queue) do
+      {:empty, _queue} ->
+        nil
+
+      {{:value, id}, queue} ->
+        fresh = next |> Map.get(id, []) |> Enum.reject(&Map.has_key?(came, &1))
+        came = Enum.reduce(fresh, came, &Map.put(&2, &1, id))
+
+        if Map.has_key?(came, to),
+          do: back(came, to, []),
+          else: bfs(next, Enum.reduce(fresh, queue, &:queue.in/2), came, to)
+    end
+  end
+
+  defp back(_came, nil, way), do: way
+  defp back(came, id, way), do: back(came, Map.fetch!(came, id), [id | way])
+
+  @doc """
+  The ids of the edges along a way of nodes (as `path/4` gives it): for
+  each two nodes after each other, the first edge between them, from the
+  one to the other (or the other way with `directed: false`). For a
+  spotlight on a path (`Hakushi.Live.spotlight/2`).
+  """
+  @spec edges_along(t(), [Node.id()], keyword()) :: [Edge.id()]
+  def edges_along(%__MODULE__{} = graph, way, opts \\ []) when is_list(way) do
+    directed = Keyword.get(opts, :directed, true)
+    edges = edges(graph)
+
+    way
+    |> Enum.chunk_every(2, 1, :discard)
+    |> Enum.flat_map(fn [a, b] ->
+      case Enum.find(edges, &joins?(&1, a, b, directed)) do
+        nil -> []
+        edge -> [edge.id]
+      end
+    end)
+  end
+
+  defp joins?(edge, a, b, directed),
+    do:
+      (edge.source == a and edge.target == b) or
+        (not directed and edge.source == b and edge.target == a)
+
+  @doc """
+  The parts of the graph that edges join, whichever way they go: a list of
+  lists of ids, each in the order the nodes are drawn, the part of the
+  first node first. A node with no edge is a part of its own.
+  """
+  @spec components(t()) :: [[Node.id()]]
+  def components(%__MODULE__{} = graph) do
+    next = neighbours(graph, directed: false)
+    rank = graph.node_order |> Enum.with_index() |> Map.new()
+
+    {parts, _seen} =
+      Enum.reduce(graph.node_order, {[], MapSet.new()}, fn id, {parts, seen} ->
+        if MapSet.member?(seen, id) do
+          {parts, seen}
+        else
+          part = [id | reach(next, id)] |> Enum.uniq() |> Enum.sort_by(&Map.fetch!(rank, &1))
+          {[part | parts], MapSet.union(seen, MapSet.new(part))}
+        end
+      end)
+
+    Enum.reverse(parts)
+  end
+
+  # The ids each node's edges go to, and come from, in the order of the edges.
+  defp outgoing(graph), do: adjacency(graph, & &1.source, & &1.target)
+  defp incoming(graph), do: adjacency(graph, & &1.target, & &1.source)
+
+  defp neighbours(graph, opts) do
+    if Keyword.get(opts, :directed, true) do
+      outgoing(graph)
+    else
+      Map.merge(outgoing(graph), incoming(graph), fn _id, out, in_ -> Enum.uniq(out ++ in_) end)
+    end
+  end
+
+  defp adjacency(graph, from, to) do
+    graph
+    |> edges()
+    |> Enum.group_by(from, to)
+    |> Map.new(fn {id, ids} -> {id, Enum.uniq(ids)} end)
+  end
+
+  # Every node reached from `id`, nearest first.
+  defp reach(next, id), do: reach(next, :queue.from_list(Map.get(next, id, [])), %{}, [])
+
+  defp reach(next, queue, seen, found) do
+    case :queue.out(queue) do
+      {:empty, _queue} ->
+        Enum.reverse(found)
+
+      {{:value, id}, queue} when is_map_key(seen, id) ->
+        reach(next, queue, seen, found)
+
+      {{:value, id}, queue} ->
+        queue = Enum.reduce(Map.get(next, id, []), queue, &:queue.in/2)
+        reach(next, queue, Map.put(seen, id, true), [id | found])
+    end
+  end
+
   @doc """
   What changed from one graph to another: the nodes and edges that are
   new or not the same, the ids of those that went away, and whether the
@@ -489,6 +780,159 @@ defmodule Hakushi.Graph do
   end
 
   @doc """
+  The inside of a group, as a graph of its own: the nodes in the node
+  `id` (`descendants/2`), those directly in it in no group, and the edges
+  between them. The places are the group's: its top left corner is the
+  new graph's `{0, 0}`. For a group opened as a canvas of its own (see the
+  Drill-down guide); `put_subgraph/3` puts it back.
+
+      iex> graph = Hakushi.Graph.new(nodes: [%{id: "frame", x: 100, y: 100, width: 400, height: 300}, %{id: "a", x: 120, y: 140, parent: "frame"}, %{id: "out", x: 0, y: 0}], edges: [%{source: "a", target: "out"}])
+      iex> inside = Hakushi.Graph.subgraph(graph, "frame")
+      iex> Enum.map(Hakushi.Graph.nodes(inside), &{&1.id, &1.x, &1.y, &1.parent})
+      [{"a", 20, 40, nil}]
+      iex> Hakushi.Graph.edges(inside)
+      []
+  """
+  @spec subgraph(t(), Node.id()) :: t()
+  def subgraph(%__MODULE__{} = graph, id) do
+    group = Map.fetch!(graph.nodes, id)
+    inside = descendants(graph, id)
+    kept = MapSet.new(inside)
+
+    nodes =
+      for child <- inside do
+        node = Map.fetch!(graph.nodes, child)
+        parent = if node.parent == id, do: nil, else: node.parent
+        %{node | x: node.x - group.x, y: node.y - group.y, parent: parent}
+      end
+
+    edges =
+      for edge <- edges(graph),
+          MapSet.member?(kept, edge.source) and MapSet.member?(kept, edge.target),
+          do: edge
+
+    new(nodes: nodes, edges: edges)
+  end
+
+  @doc """
+  Puts the inside of a group back (`subgraph/2`'s, as it changed): the
+  nodes now in the node `id` are those of `inside`, at their places in
+  the group, and the edges between them are its edges. The edges from a
+  node inside to one outside stay when both are still there. Raises when
+  a node of `inside` has the id of a node outside the group.
+  """
+  @spec put_subgraph(t(), Node.id(), t()) :: t()
+  def put_subgraph(%__MODULE__{} = graph, id, %__MODULE__{} = inside) do
+    group = Map.fetch!(graph.nodes, id)
+    old = MapSet.new(descendants(graph, id))
+
+    outside = Enum.reject(nodes(graph), &MapSet.member?(old, &1.id))
+
+    placed =
+      for node <- nodes(inside) do
+        %{node | x: node.x + group.x, y: node.y + group.y, parent: node.parent || id}
+      end
+
+    ids = MapSet.new(Enum.map(outside, & &1.id) ++ Enum.map(placed, & &1.id))
+
+    crossing =
+      for edge <- edges(graph),
+          MapSet.member?(old, edge.source) != MapSet.member?(old, edge.target),
+          MapSet.member?(ids, edge.source) and MapSet.member?(ids, edge.target),
+          do: edge
+
+    others =
+      Enum.reject(
+        edges(graph),
+        &(MapSet.member?(old, &1.source) or MapSet.member?(old, &1.target))
+      )
+
+    new(nodes: outside ++ placed, edges: others ++ crossing ++ edges(inside), paper: graph.paper)
+  end
+
+  @doc """
+  How one graph became another, for people to see (a visual diff, the
+  versions of a canvas): the ids of the nodes and edges `added` and
+  `removed`, those `moved` (a node's place or size), and those `changed`,
+  with the fields that changed (a node's `:type`, `:data`, `:locked` or
+  `:parent`; an edge's ends, `:label`, `:path`, `:marker`, `:animated` or
+  `:data`). A node that moved and changed is in both. `paper` is whether
+  the paper changed.
+
+      iex> old = Hakushi.Graph.new(nodes: [%{id: "a"}, %{id: "b", data: %{n: 1}}])
+      iex> new = Hakushi.Graph.new(nodes: [%{id: "b", x: 10, data: %{n: 2}}, %{id: "c"}])
+      iex> Hakushi.Graph.compare(old, new)
+      %{
+        added: %{nodes: ["c"], edges: []},
+        removed: %{nodes: ["a"], edges: []},
+        moved: ["b"],
+        changed: %{nodes: %{"b" => [:data]}, edges: %{}},
+        paper: false
+      }
+  """
+  @spec compare(t(), t()) :: %{
+          added: %{nodes: [Node.id()], edges: [Edge.id()]},
+          removed: %{nodes: [Node.id()], edges: [Edge.id()]},
+          moved: [Node.id()],
+          changed: %{nodes: %{Node.id() => [atom()]}, edges: %{Edge.id() => [atom()]}},
+          paper: boolean()
+        }
+  def compare(%__MODULE__{} = old, %__MODULE__{} = new) do
+    node_fields = [:type, :data, :locked, :parent]
+
+    edge_fields = [
+      :source,
+      :source_handle,
+      :target,
+      :target_handle,
+      :label,
+      :path,
+      :marker,
+      :animated,
+      :points,
+      :data
+    ]
+
+    %{
+      added: %{
+        nodes: Enum.reject(new.node_order, &Map.has_key?(old.nodes, &1)),
+        edges: Enum.reject(new.edge_order, &Map.has_key?(old.edges, &1))
+      },
+      removed: %{
+        nodes: Enum.reject(old.node_order, &Map.has_key?(new.nodes, &1)),
+        edges: Enum.reject(old.edge_order, &Map.has_key?(new.edges, &1))
+      },
+      moved: moved_nodes(old, new),
+      changed: %{
+        nodes: changed_fields(old.nodes, new.nodes, new.node_order, node_fields),
+        edges: changed_fields(old.edges, new.edges, new.edge_order, edge_fields)
+      },
+      paper: old.paper != new.paper
+    }
+  end
+
+  defp moved_nodes(old, new) do
+    box = [:x, :y, :width, :height]
+
+    for id <- new.node_order,
+        before = old.nodes[id],
+        before != nil,
+        Map.take(before, box) != Map.take(new.nodes[id], box),
+        do: id
+  end
+
+  defp changed_fields(old, new, order, fields) do
+    for id <- order,
+        before = old[id],
+        before != nil,
+        now = new[id],
+        changed = Enum.filter(fields, &(Map.fetch!(before, &1) != Map.fetch!(now, &1))),
+        changed != [],
+        into: %{},
+        do: {id, changed}
+  end
+
+  @doc """
   The graph as JSON-able maps, with string keys: for a column of the
   app's database (see `Hakushi.Graph.Type`) or a file. `data` goes as it
   is, so it must be JSON-able itself.
@@ -505,7 +949,10 @@ defmodule Hakushi.Graph do
         end),
       "edges" =>
         Enum.map(edges(graph), fn edge ->
-          edge |> Map.from_struct() |> Map.reject(fn {_k, v} -> is_nil(v) end) |> stringify()
+          edge
+          |> Map.from_struct()
+          |> Map.reject(fn {k, v} -> is_nil(v) or (k == :points and v == []) end)
+          |> stringify()
         end)
     }
     |> dump_paper(graph.paper)

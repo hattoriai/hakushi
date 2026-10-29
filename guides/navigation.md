@@ -12,6 +12,8 @@ a touch screen and the keyboard. (⌘ is Ctrl outside Apple's systems.)
 | Fit | ⇧1, or the fit button: every node on the screen, at 100% at most |
 | 100% | ⇧0, ⌘0, or a click on the zoom in the controls |
 | Overview | a click or a drag on the minimap moves the view there |
+| Into a node | a double click, ⌘↓ or its opener, on a node that opens: what is in it (see [Drill-down](drill-down.md)) |
+| Up | ⌘↑, on a canvas the app opened from another |
 
 `wheel={:zoom}` makes the wheel zoom, as a map does. `wheel={:scroll}`
 leaves the wheel to the page, for a canvas in a page that scrolls: ⌘ or
@@ -32,8 +34,11 @@ Escape nothing.
 | Move | drag a node (and every selected node with it); the helper lines line it up with the nodes near it, and Alt drags without them; the arrow keys move the selection by one (ten with Shift, a square of the grid on a canvas that snaps) |
 | Connect | drag from a handle to a handle; or C, then the arrows, then Enter |
 | Move an end | select an edge, and drag one of its ends to another handle |
+| Bend an edge | select it, and drag a point out of its line; drag a point to move it, and double-click it to take it away |
 | Group | drop a node on a group to put it in; drag it off to take it out |
 | Tidy up | ⇧L, or the button of the controls: the selection when two or more nodes are selected, else every node |
+| Line up | Alt and A, H or D: the left sides, the middles or the right sides of the selected nodes; Alt and W, V or S: their tops, middles or bottoms (⌥ on a Mac); or the menu |
+| Space out | Alt+Shift+H across, Alt+Shift+V down: equal gaps between three or more selected nodes; or the menu |
 | Download | the button of the controls: the canvas as a PNG |
 | Resize | the corners of a selected node of a `resizable` slot |
 | Delete | Delete or Backspace |
@@ -56,6 +61,36 @@ The canvas is one stop of Tab. From there:
 * C starts an edge from the focused node: the arrows (or Tab) go through
   the nodes it may end on, nearest first, Enter makes it, Escape does
   not.
+
+## The menu
+
+A canvas with `menu` opens its own menu on a right click, in place of
+the browser's: on a node (selected with it), an edge, or the paper. The
+menu key, or Shift+F10, opens the menu of the focused node or of what
+is selected; the arrows go through its items, Enter chooses one, and
+Escape closes it.
+
+```heex
+<.canvas id="flow" graph={@graph} menu={&menu/1} on_menu={&send(self(), {:menu, &1, &2})}>
+```
+
+```elixir
+def menu(%{kind: :node, nodes: [_one]}),
+  do: [%{id: "inspect", label: "Inspect", icon: "table"}, :separator, :copy, :duplicate, :delete]
+
+def menu(target), do: Hakushi.Menu.defaults(target)
+
+def handle_info({:menu, "inspect", %{nodes: [id]}}, socket),
+  do: {:noreply, assign(socket, :inspected, id)}
+```
+
+`menu` gives the items for a target (what is under the pointer, what is
+selected, and where): the canvas's own actions, as atoms, which it runs
+itself (`:copy`, `:paste`, `:delete`, `:fit`, `:tidy`…), and items of
+the app's own, maps with an `id` and a `label`, whose choice calls
+`on_menu`. `menu={true}` gives Hakushi's own items. A person who may not
+change the canvas is not offered the actions that change it. See
+`Hakushi.Menu`.
 
 ## The app and the view
 

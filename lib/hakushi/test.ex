@@ -58,7 +58,7 @@ defmodule Hakushi.Test do
   @doc """
   The edges of the canvas `id`: maps with `:id`, `:source`,
   `:source_handle`, `:target`, `:target_handle`, `:path`, `:label`,
-  `:marker` and `:animated`.
+  `:marker`, `:animated` and `:points` (`[[x, y]]`, `[]` for none).
   """
   @spec edges(struct(), String.t()) :: [map()]
   def edges(view, id) do
@@ -74,7 +74,8 @@ defmodule Hakushi.Test do
         path: attribute(edge, "data-path"),
         label: attribute(edge, "data-label"),
         marker: attribute(edge, "data-marker"),
-        animated: attribute(edge, "data-animated") == "true"
+        animated: attribute(edge, "data-animated") == "true",
+        points: edge |> attribute("data-points") |> points()
       }
     end)
   end
@@ -180,6 +181,19 @@ defmodule Hakushi.Test do
           "targetHandle" => target_handle
         }
       ]
+    })
+  end
+
+  @doc """
+  Bends an edge through points, as a person does who drags them out of
+  its line: `[{x, y}]`, or `[]` for none.
+  """
+  @spec bend(struct(), String.t(), String.t(), [{number(), number()}]) ::
+          :ok | {:error, String.t()}
+  def bend(view, id, edge, points) do
+    change(view, id, %{
+      "op" => "update",
+      "edges" => [%{"id" => edge, "points" => Enum.map(points, fn {x, y} -> [x, y] end)}]
     })
   end
 
@@ -339,6 +353,151 @@ defmodule Hakushi.Test do
   end
 
   @doc """
+  The marks of the canvas `id` (`Hakushi.Live.mark/3`), as it draws them:
+  `%{nodes: %{id => mark}, edges: %{id => mark}}`, each mark a map of the
+  keys it has (`:status`, `:badge`, `:progress`, `:highlight`, `:dim`,
+  `:title` and, under a spotlight, `:lit`), for the nodes and edges that
+  have one.
+  """
+  @spec marks(struct(), String.t()) :: %{nodes: map(), edges: map()}
+  def marks(view, id) do
+    nodes =
+      for node <- query(view, id, ".hakushi-nodes > .hakushi-node"),
+          mark = node_mark(node),
+          mark != %{},
+          into: %{},
+          do: {attribute(node, "data-id"), mark}
+
+    edges =
+      for edge <- query(view, id, "##{id}-edge-data > i"),
+          mark = edge_mark(edge),
+          mark != %{},
+          into: %{},
+          do: {attribute(edge, "data-id"), mark}
+
+    %{nodes: nodes, edges: edges}
+  end
+
+  defp node_mark(node) do
+    badge =
+      node |> LazyHTML.query(".hakushi-mark-badge") |> LazyHTML.text() |> String.trim()
+
+    progress =
+      case node
+           |> LazyHTML.query(".hakushi-mark-progress")
+           |> attribute("aria-valuenow") do
+        nil -> nil
+        percent -> String.to_integer(percent) / 100
+      end
+
+    %{
+      status: attribute(node, "data-mark-status"),
+      badge: if(badge != "", do: badge),
+      progress: progress,
+      highlight: highlight(attribute(node, "data-mark-highlight"), attribute(node, "style")),
+      dim: attribute(node, "data-mark-dim") == "true" || nil,
+      title: attribute(node, "title"),
+      lit: attribute(node, "data-lit") == "true" || nil
+    }
+    |> Map.reject(fn {_key, value} -> is_nil(value) end)
+  end
+
+  defp edge_mark(edge) do
+    %{
+      status: attribute(edge, "data-mark-status"),
+      highlight:
+        attribute(edge, "data-mark-color") ||
+          (attribute(edge, "data-mark-highlight") == "true" || nil),
+      dim: attribute(edge, "data-mark-dim") == "true" || nil,
+      title: attribute(edge, "data-mark-title"),
+      lit: attribute(edge, "data-lit") == "true" || nil
+    }
+    |> Map.reject(fn {_key, value} -> is_nil(value) end)
+  end
+
+  defp highlight("true", style) do
+    case Regex.run(~r/--hakushi-mark: ([^;]+);/, style || "") do
+      [_, color] -> color
+      nil -> true
+    end
+  end
+
+  defp highlight(_none, _style), do: nil
+
+  @doc """
+  What each node and edge of the canvas `id` is to the older graph it
+  compares to (its `compare`): `%{nodes: %{id => status}, edges: %{id =>
+  status}}`, where a status is `:added`, `:removed`, `:changed` or
+  `:moved`, for those that are any.
+  """
+  @spec diff(struct(), String.t()) :: %{nodes: map(), edges: map()}
+  def diff(view, id) do
+    statuses = fn selector ->
+      for item <- query(view, id, selector),
+          status = attribute(item, "data-diff"),
+          into: %{},
+          do: {attribute(item, "data-id"), String.to_existing_atom(status)}
+    end
+
+    %{
+      nodes: statuses.(".hakushi-nodes > .hakushi-node"),
+      edges: statuses.("##{id}-edge-data > i")
+    }
+  end
+
+  @doc """
+  Opens a node, as a double click or ⌘↓ does (its slot `opens`): the
+  canvas's `on_open`. `{:error, nil}` for a node that does not open.
+  """
+  @spec open_node(struct(), String.t(), String.t()) :: :ok | {:error, nil}
+  def open_node(view, id, node), do: result(event(view, id, "hakushi:open", %{"node" => node}))
+
+  @doc "Goes up, out of the canvas, as ⌘↑ does: the canvas's `on_up`."
+  @spec go_up(struct(), String.t()) :: :ok
+  def go_up(view, id), do: result(event(view, id, "hakushi:up", %{}))
+
+  @doc """
+  The menu of the canvas `id` (`Hakushi.Menu`), as a right click opens
+  it: `kind` (`:node`, `:edge` or `:canvas`), the `nodes` and `edges`
+  selected and the point it is `at`. Gives its items as the person sees
+  them: the actions of the canvas's own as atoms (`:delete`), the app's
+  own as their ids, and `:separator`.
+  """
+  @spec menu(struct(), String.t(), keyword()) :: [atom() | String.t()]
+  def menu(view, id, target) do
+    %{"items" => items} = event(view, id, "hakushi:menu", menu_target(target))
+
+    Enum.map(items, fn
+      %{"separator" => true} -> :separator
+      %{"action" => action} -> String.to_existing_atom(action)
+      %{"id" => item} -> item
+    end)
+  end
+
+  @doc """
+  Chooses an item of the app's own in the menu of the canvas `id`, as a
+  person does: opens the menu of the target (as `menu/3`), and chooses
+  the item `item`, whose `on_menu` the canvas calls. `{:error, nil}` for
+  an item the menu does not have.
+  """
+  @spec pick(struct(), String.t(), String.t(), keyword()) :: :ok | {:error, nil}
+  def pick(view, id, item, target) do
+    _items = menu(view, id, target)
+    result(event(view, id, "hakushi:menu-pick", Map.put(menu_target(target), "id", item)))
+  end
+
+  defp menu_target(target) do
+    {x, y} = Keyword.get(target, :at, {0, 0})
+
+    %{
+      "kind" => target |> Keyword.get(:kind, :canvas) |> Atom.to_string(),
+      "nodes" => Keyword.get(target, :nodes, []),
+      "edges" => Keyword.get(target, :edges, []),
+      "at" => [x, y]
+    }
+  end
+
+  @doc """
   Selects nodes, and edges, as a person does with a click or a box: the
   canvas's `on_select` hears it. To select from the app, as
   `Hakushi.Live.select/3` does, assert its push of `"hakushi:select"`.
@@ -416,6 +575,14 @@ defmodule Hakushi.Test do
       [] -> nil
     end
   end
+
+  defp points(nil), do: []
+
+  defp points(text),
+    do:
+      text
+      |> String.split()
+      |> Enum.map(fn pair -> pair |> String.split(",") |> Enum.map(&number/1) end)
 
   defp number(nil), do: nil
 

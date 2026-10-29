@@ -36,6 +36,12 @@ defmodule Hakushi.Canvas do
       undone and done again as new changes, which the server checks again.
     * `"hakushi:select"` with `nodes` and `edges`: what the person
       selected, for the canvas's `on_select`.
+    * `"hakushi:menu"` with `kind`, `nodes`, `edges` and `at`: the items
+      of the canvas's `menu` for them (`Hakushi.Menu`), and
+      `"hakushi:menu-pick"` with an item's `id` too: the person chose it.
+    * `"hakushi:open"` with `node`: the person opened it (its slot
+      `opens`), for the canvas's `on_open`; `"hakushi:up"`: they went
+      up, for its `on_up`.
     * `"hakushi:viewport"` with `box` (`[x, y, width, height]`) and `zoom`:
       where the person's view came to rest, for the canvas's
       `on_viewport`.
@@ -118,7 +124,10 @@ defmodule Hakushi.Canvas do
        configured: false,
        arrange: false,
        tidy: false,
-       places: %{}
+       places: %{},
+       marks: %{nodes: %{}, edges: %{}},
+       spotlight: nil,
+       diff: %{nodes: %{}, edges: %{}}
      )}
   end
 
@@ -128,6 +137,8 @@ defmodule Hakushi.Canvas do
   def update(%{hakushi_push: {event, payload}}, socket) do
     {:ok, push_event(socket, event, Map.put(payload, "canvas", socket.assigns.id))}
   end
+
+  def update(%{hakushi_mark: mark}, socket), do: {:ok, put_marks(socket, mark)}
 
   def update(%{hakushi_change: %Change{} = change}, socket) do
     {socket, _result} = commit(socket, %{change | by: nil}, false)
@@ -146,8 +157,13 @@ defmodule Hakushi.Canvas do
 
     socket = assign(socket, :rules, Rules.new(assigns[:rules] || socket.assigns[:rules]))
 
+    compare = socket.assigns[:compare]
+
     socket =
       cond do
+        compare != nil ->
+          compared(socket, compare, assigns.graph)
+
         not socket.assigns.configured ->
           start(socket, assigns.graph)
 
@@ -162,6 +178,65 @@ defmodule Hakushi.Canvas do
       end
 
     {:ok, socket}
+  end
+
+  # A canvas that compares (`compare`): its graph, with what the old one
+  # had and it has not (the nodes and edges removed, shown as ghosts), and
+  # what each node and edge is to the old (`diff`). Shown whole again when
+  # either changes.
+  defp compared(socket, old, %Graph{} = graph) do
+    if socket.assigns.configured and socket.assigns.given == {old, graph} do
+      socket
+    else
+      {shown, diff} = overlay(old, graph)
+      socket = assign(socket, given: {old, graph}, diff: diff)
+
+      if socket.assigns.configured,
+        do: reset(socket, shown),
+        else: start(socket, shown)
+    end
+  end
+
+  @doc false
+  # The graph and the old one together, and what each node and edge of it
+  # is to the old: :added, :removed, :changed or :moved (as
+  # Hakushi.Graph.compare/2 says it).
+  @spec overlay(Graph.t(), Graph.t()) :: {Graph.t(), %{nodes: map(), edges: map()}}
+  def overlay(%Graph{} = old, %Graph{} = graph) do
+    compared = Graph.compare(old, graph)
+    removed = MapSet.new(compared.removed.nodes)
+
+    ghosts =
+      for id <- compared.removed.nodes do
+        node = Graph.node(old, id)
+        parent = node.parent
+        kept = parent && (Map.has_key?(graph.nodes, parent) or MapSet.member?(removed, parent))
+        %{node | locked: true, parent: if(kept, do: parent)}
+      end
+
+    ghost_edges = Enum.map(compared.removed.edges, &Graph.edge(old, &1))
+
+    shown =
+      Graph.new(
+        nodes: Graph.nodes(graph) ++ ghosts,
+        edges: Graph.edges(graph) ++ ghost_edges,
+        paper: graph.paper
+      )
+
+    statuses = fn ids, status -> Map.new(ids, &{&1, status}) end
+
+    nodes =
+      statuses.(compared.moved, :moved)
+      |> Map.merge(statuses.(Map.keys(compared.changed.nodes), :changed))
+      |> Map.merge(statuses.(compared.added.nodes, :added))
+      |> Map.merge(statuses.(compared.removed.nodes, :removed))
+
+    edges =
+      statuses.(Map.keys(compared.changed.edges), :changed)
+      |> Map.merge(statuses.(compared.added.edges, :added))
+      |> Map.merge(statuses.(compared.removed.edges, :removed))
+
+    {shown, %{nodes: nodes, edges: edges}}
   end
 
   defp start(socket, %Graph{} = graph) do
@@ -328,6 +403,70 @@ defmodule Hakushi.Canvas do
       _other ->
         socket = Enum.reduce(node_ids, socket, &stream_insert(&2, :nodes, Graph.node(graph, &1)))
         Enum.reduce(edge_ids, socket, &stream_insert(&2, :edges, Graph.edge(graph, &1)))
+    end
+  end
+
+  # -- Marks ----------------------------------------------------------------
+
+  # The app's marks (Hakushi.Live.mark/3): what the nodes and edges are
+  # now, kept here and drawn on them, never in the graph. A node or an
+  # edge whose mark changed is sent again.
+  defp put_marks(socket, :clear) do
+    %{marks: marks, spotlight: lit} = socket.assigns
+    {lit_nodes, lit_edges} = lit_ids(lit)
+
+    socket
+    |> assign(marks: %{nodes: %{}, edges: %{}}, spotlight: nil)
+    |> resend(:nodes, Map.keys(marks.nodes) ++ lit_nodes)
+    |> resend(:edges, Map.keys(marks.edges) ++ lit_edges)
+  end
+
+  defp put_marks(socket, {:spotlight, lit}) do
+    {old_nodes, old_edges} = lit_ids(socket.assigns.spotlight)
+    {new_nodes, new_edges} = lit_ids(lit)
+
+    socket
+    |> assign(:spotlight, lit)
+    |> resend(:nodes, old_nodes ++ new_nodes)
+    |> resend(:edges, old_edges ++ new_edges)
+  end
+
+  defp put_marks(socket, {kind, ids, mark}) when kind in [:nodes, :edges] do
+    marks = Enum.reduce(ids, socket.assigns.marks[kind], &merge_mark(&2, &1, mark))
+
+    socket
+    |> assign(:marks, Map.put(socket.assigns.marks, kind, marks))
+    |> resend(kind, ids)
+  end
+
+  defp merge_mark(marks, id, nil), do: Map.delete(marks, id)
+
+  defp merge_mark(marks, id, mark) do
+    case marks
+         |> Map.get(id, %{})
+         |> Map.merge(mark)
+         |> Map.reject(fn {_k, v} -> is_nil(v) end) do
+      empty when map_size(empty) == 0 -> Map.delete(marks, id)
+      merged -> Map.put(marks, id, merged)
+    end
+  end
+
+  defp lit_ids(nil), do: {[], []}
+  defp lit_ids(%{nodes: nodes, edges: edges}), do: {MapSet.to_list(nodes), MapSet.to_list(edges)}
+
+  defp resend(socket, :nodes, ids) do
+    graph = socket.assigns.graph
+
+    for id <- Enum.uniq(ids), node = Graph.node(graph, id), reduce: socket do
+      socket -> stream_insert(socket, :nodes, node)
+    end
+  end
+
+  defp resend(socket, :edges, ids) do
+    graph = socket.assigns.graph
+
+    for id <- Enum.uniq(ids), edge = Graph.edge(graph, id), reduce: socket do
+      socket -> stream_insert(socket, :edges, edge)
     end
   end
 
@@ -518,6 +657,62 @@ defmodule Hakushi.Canvas do
     else
       _other -> {:noreply, socket}
     end
+  end
+
+  # The menu of a right click (Hakushi.Menu): the app's items for what is
+  # under the pointer, as the person may choose them; the ids of the app's
+  # own are kept, which a choice must be one of.
+  def handle_event("hakushi:menu", params, socket) when is_map(params) do
+    %{menu: menu, id: id, graph: graph} = socket.assigns
+    target = Hakushi.Menu.target(params, id, graph)
+
+    items =
+      case menu do
+        none when none in [nil, false] -> []
+        true -> Hakushi.Menu.defaults(target)
+        fun when is_function(fun, 1) -> fun.(target)
+      end
+
+    can = %{
+      messages: socket.assigns.messages,
+      readonly: socket.assigns.readonly,
+      arrange: socket.assigns[:arrange] == true
+    }
+
+    {items, offered} = Hakushi.Menu.to_client(items, can)
+    {:reply, %{"items" => items}, assign(socket, :menu_offered, offered)}
+  end
+
+  # An item of the app's own, chosen: its on_menu, and notify.
+  def handle_event("hakushi:menu-pick", %{"id" => item} = params, socket) when is_binary(item) do
+    if MapSet.member?(socket.assigns[:menu_offered] || MapSet.new(), item) do
+      target = Hakushi.Menu.target(params, socket.assigns.id, socket.assigns.graph)
+      if socket.assigns.on_menu, do: socket.assigns.on_menu.(item, target)
+
+      {:reply, %{"ok" => true},
+       socket |> assign(:menu_offered, MapSet.new()) |> notify({:menu, item, target})}
+    else
+      {:reply, %{"ok" => false}, socket}
+    end
+  end
+
+  # A node opened (its slot `opens`): the app's on_open, and notify.
+  def handle_event("hakushi:open", %{"node" => id}, socket) when is_binary(id) do
+    %{graph: graph, on_open: on_open, node_slots: slots, kits: kits} = socket.assigns
+    node = Graph.node(graph, id)
+
+    if node && node_flag?(slots, kits, node, :opens) do
+      if on_open, do: on_open.(%{canvas: socket.assigns.id, node: id})
+      {:reply, %{"ok" => true}, notify(socket, {:opened, id})}
+    else
+      {:reply, %{"ok" => false}, socket}
+    end
+  end
+
+  # Up, out of the canvas: the app's on_up, and notify.
+  def handle_event("hakushi:up", _params, socket) do
+    if socket.assigns.on_up, do: socket.assigns.on_up.(%{canvas: socket.assigns.id})
+    {:reply, %{"ok" => true}, notify(socket, :up)}
   end
 
   def handle_event(event, params, %{assigns: %{readonly: true}} = socket)
@@ -1240,6 +1435,8 @@ defmodule Hakushi.Canvas do
       phx-mounted={JS.ignore_attributes(["style", "data-ui-*"])}
       data-background={@paper_background}
       data-tidy={@tidy && "true"}
+      data-spotlight={@spotlight && "true"}
+      data-compare={@compare && "true"}
       role="application"
       tabindex="0"
       aria-roledescription={@messages["canvas"]}
@@ -1270,7 +1467,7 @@ defmodule Hakushi.Canvas do
           <div
             :for={{dom_id, node} <- @streams.nodes}
             id={dom_id}
-            class="hakushi-node"
+            class={["hakushi-node", mark(@marks.nodes, node.id, :class)]}
             data-id={node.id}
             data-type={node.type}
             data-x={node.x}
@@ -1280,8 +1477,15 @@ defmodule Hakushi.Canvas do
             data-locked={node.locked && "true"}
             data-resizable={node_flag?(@node_slots, @kits, node, :resizable) && "true"}
             data-group={node_flag?(@node_slots, @kits, node, :group) && "true"}
+            data-opens={node_flag?(@node_slots, @kits, node, :opens) && "true"}
             data-parent={node.parent}
-            style={node_style(node)}
+            data-mark-status={mark(@marks.nodes, node.id, :status)}
+            data-mark-highlight={mark(@marks.nodes, node.id, :highlight) && "true"}
+            data-mark-dim={mark(@marks.nodes, node.id, :dim) && "true"}
+            data-lit={lit?(@spotlight, :nodes, node.id) && "true"}
+            data-diff={@diff.nodes[node.id]}
+            title={mark(@marks.nodes, node.id, :title)}
+            style={node_style(node) <> mark_color(@marks.nodes, node.id)}
             tabindex="-1"
             role="group"
             aria-roledescription={@messages["node"]}
@@ -1296,28 +1500,56 @@ defmodule Hakushi.Canvas do
               target={@myself}
               messages={@messages}
             />
+            <span :if={mark(@marks.nodes, node.id, :badge)} class="hakushi-mark-badge">
+              {mark(@marks.nodes, node.id, :badge)}
+            </span>
+            <span
+              :if={mark(@marks.nodes, node.id, :progress)}
+              class="hakushi-mark-progress"
+              role="progressbar"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              aria-valuenow={round(mark(@marks.nodes, node.id, :progress) * 100)}
+            >
+              <span style={"width: #{mark(@marks.nodes, node.id, :progress) * 100}%"}></span>
+            </span>
           </div>
         </div>
         <%!-- The edges of the selected nodes, and a selected edge, above
              the nodes: the whole of each, where it goes under another node. --%>
         <svg id={@id <> "-svg-raised"} class="hakushi-edges hakushi-edges-raised" phx-update="ignore" aria-hidden="true"></svg>
         <div id={@id <> "-labels"} class="hakushi-labels" phx-update="ignore"></div>
+        <%!-- The edges' data, which the browser draws them by; with an
+             :edge_label slot, each one's label too, which it places on
+             the edge (the style and data-ui-* are the browser's). --%>
+        <div id={@id <> "-edge-data"} class="hakushi-edge-data" phx-update="stream">
+          <i
+            :for={{dom_id, edge} <- @streams.edges}
+            id={dom_id}
+            class={@edge_label_slot != [] && "hakushi-edge-label hakushi-edge-label-own"}
+            phx-mounted={@edge_label_slot != [] && JS.ignore_attributes(["style", "data-ui-*"])}
+            data-id={edge.id}
+            data-edge={edge.id}
+            data-source={edge.source}
+            data-source-handle={edge.source_handle}
+            data-target={edge.target}
+            data-target-handle={edge.target_handle}
+            data-path={edge.path}
+            data-label={edge.label}
+            data-marker={edge.marker}
+            data-animated={edge.animated && "true"}
+            data-points={edge.points != [] && Enum.map_join(edge.points, " ", fn [x, y] -> "#{x},#{y}" end)}
+            data-mark-status={mark(@marks.edges, edge.id, :status)}
+            data-mark-highlight={mark(@marks.edges, edge.id, :highlight) && "true"}
+            data-mark-color={mark_color_value(@marks.edges, edge.id)}
+            data-mark-dim={mark(@marks.edges, edge.id, :dim) && "true"}
+            data-mark-title={mark(@marks.edges, edge.id, :title)}
+            data-lit={lit?(@spotlight, :edges, edge.id) && "true"}
+            data-diff={@diff.edges[edge.id]}
+          >{if @edge_label_slot != [], do: render_slot(@edge_label_slot, edge)}</i>
+        </div>
       </div>
-      <div id={@id <> "-edge-data"} phx-update="stream" hidden>
-        <i
-          :for={{dom_id, edge} <- @streams.edges}
-          id={dom_id}
-          data-id={edge.id}
-          data-source={edge.source}
-          data-source-handle={edge.source_handle}
-          data-target={edge.target}
-          data-target-handle={edge.target_handle}
-          data-path={edge.path}
-          data-label={edge.label}
-          data-marker={edge.marker}
-          data-animated={edge.animated && "true"}
-        ></i>
-      </div>
+
       <div :if={@people != [] and @show_people} class="hakushi-people" data-hakushi-people>
         <.dynamic_tag
           :for={person <- @people}
@@ -1408,6 +1640,31 @@ defmodule Hakushi.Canvas do
   defp paper_label(messages, name) do
     key = "paper" <> String.capitalize(name)
     messages[key] || name |> String.replace("-", " ") |> String.capitalize()
+  end
+
+  defp mark(marks, id, key) do
+    case marks do
+      %{^id => mark} -> Map.get(mark, key)
+      _none -> nil
+    end
+  end
+
+  defp lit?(nil, _kind, _id), do: false
+  defp lit?(lit, kind, id), do: MapSet.member?(Map.fetch!(lit, kind), id)
+
+  # A highlight of a colour of the app's own: the mark's colour.
+  defp mark_color_value(marks, id) do
+    case mark(marks, id, :highlight) do
+      color when is_binary(color) -> color
+      _other -> nil
+    end
+  end
+
+  defp mark_color(marks, id) do
+    case mark_color_value(marks, id) do
+      nil -> ""
+      color -> " --hakushi-mark: #{color};"
+    end
   end
 
   defp node_style(node) do
@@ -1550,6 +1807,9 @@ defmodule Hakushi.Canvas do
       "exportable" => assigns.export,
       "reportSelect" => assigns.on_select != nil or assigns.notify != nil,
       "reportView" => assigns.on_viewport != nil or assigns.notify != nil,
+      "menu" => assigns.menu != nil and assigns.menu != false,
+      "up" => assigns.on_up != nil,
+      "clientTools" => Enum.map(assigns.client_tools, &to_string/1),
       "live" => assigns.join != nil,
       "user" => own_id(%{assigns: assigns}),
       "tools" => Kit.tools(assigns.kits, assigns.messages),
