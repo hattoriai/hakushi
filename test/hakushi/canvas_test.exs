@@ -431,6 +431,29 @@ defmodule Hakushi.CanvasTest do
 
       {view, _html} = open("?menu=default&readonly=arrange")
       assert menu(view, "schema", kind: :canvas) == [:select_all, :separator, :fit, :tidy]
+
+      # Arranged only, the nodes are lined up, and nothing else.
+      assert menu(view, "schema", kind: :node, nodes: ["users", "orders"]) ==
+               [
+                 :align_left,
+                 :align_center,
+                 :align_right,
+                 :align_top,
+                 :align_middle,
+                 :align_bottom
+               ]
+    end
+
+    test "two nodes or more are lined up, three or more spaced out" do
+      {view, _html} = open("?menu=default")
+      two = menu(view, "schema", kind: :node, nodes: ["users", "orders"])
+      assert :align_left in two and :align_bottom in two
+      refute :distribute_horizontal in two
+
+      three = menu(view, "schema", kind: :node, nodes: ["users", "orders", "note"])
+
+      assert [:distribute_horizontal, :distribute_vertical, :separator, :delete] =
+               Enum.take(three, -4)
     end
 
     test "no menu: the browser's" do
@@ -456,6 +479,28 @@ defmodule Hakushi.CanvasTest do
       assert_raise ArgumentError, ~r/icon/, fn ->
         Hakushi.Menu.to_client([%{id: "a", label: "A", icon: "nope"}], can)
       end
+    end
+  end
+
+  describe "align and distribute" do
+    test "the app lines up and spaces out nodes, in the person's browser" do
+      {view, _html} = open()
+      render_click(view, "app_arrange", %{"how" => "top", "nodes" => ["users", "orders"]})
+
+      assert_push_event(view, "hakushi:arrange", %{
+        "canvas" => "schema",
+        "how" => "top",
+        "nodes" => ["users", "orders"]
+      })
+
+      render_click(view, "app_arrange", %{"how" => "vertical"})
+      assert_push_event(view, "hakushi:arrange", %{"how" => "vertical"} = payload)
+      refute Map.has_key?(payload, "nodes")
+    end
+
+    test "only the ways there are" do
+      assert_raise FunctionClauseError, fn -> Hakushi.Live.align("c", :diagonal) end
+      assert_raise FunctionClauseError, fn -> Hakushi.Live.distribute("c", :left) end
     end
   end
 

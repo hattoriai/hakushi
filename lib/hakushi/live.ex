@@ -190,6 +190,44 @@ defmodule Hakushi.Live do
   end
 
   @doc """
+  Lines up nodes of the canvas `canvas` of this LiveView, in the person's
+  browser, as Alt and a letter or the menu do: by their left sides
+  (`:left`), their middles (`:center`), their right sides (`:right`), or
+  their tops, middles or bottoms (`:top`, `:middle`, `:bottom`), on the
+  box around them all. `nodes: ids` are the nodes (two or more); the
+  person's selection unless given. The new places are a change as any:
+  checked, shared, and undone with ⌘Z.
+
+      Hakushi.Live.align("schema", :top, nodes: ["users", "orders"])
+  """
+  @spec align(String.t(), :left | :center | :right | :top | :middle | :bottom, keyword()) :: :ok
+  def align(canvas, how, opts \\ []) when how in [:left, :center, :right, :top, :middle, :bottom],
+    do: arrange(canvas, how, opts)
+
+  @doc """
+  Spaces out nodes of the canvas `canvas` of this LiveView, as `align/3`
+  lines them up: across (`:horizontal`) or down (`:vertical`), with equal
+  gaps between them, the first and the last staying where they are.
+  `nodes: ids` are the nodes (three or more); the selection unless given.
+  """
+  @spec distribute(String.t(), :horizontal | :vertical, keyword()) :: :ok
+  def distribute(canvas, how, opts \\ []) when how in [:horizontal, :vertical],
+    do: arrange(canvas, how, opts)
+
+  defp arrange(canvas, how, opts) when is_binary(canvas) do
+    payload = %{"how" => Atom.to_string(how)}
+
+    payload =
+      case opts[:nodes] do
+        nil -> payload
+        ids -> Map.put(payload, "nodes", ids!(ids))
+      end
+
+    send_update(Hakushi.Canvas, id: canvas, hakushi_push: {"hakushi:arrange", payload})
+    :ok
+  end
+
+  @doc """
   Marks nodes of the canvas `canvas` of this LiveView with what they are
   now, which is not saved: a step that runs, a table that failed its
   check, the results of a search. `ids` is a node's id or a list of them,

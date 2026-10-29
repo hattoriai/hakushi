@@ -11,6 +11,7 @@
 
 import { editable, el, interactive, isApple, numberAttr, prefersReducedMotion, svg } from "./dom";
 import { contains, edgePath, facing, fromCorners, grow, intersects, sidePoint, union } from "./geometry";
+import { arrange, type Arrangement } from "./arrange";
 import { exportImage, type ExportOptions } from "./export";
 import { icons } from "./icons";
 import { aspectResize, cropOf, dragCrop, fitImage, fullOf, imageAddress, rowAt, type Crop } from "./images";
@@ -1715,6 +1716,8 @@ export class Canvas {
       case "redo":
         return this.redo();
     }
+    const how = item.action.replace(/^(align|distribute)_/, "") as Arrangement;
+    if (item.action !== how) void this.arrange(how);
   }
 
   // -- The paper -----------------------------------------------------------------
@@ -3753,6 +3756,21 @@ export class Canvas {
       return;
     }
 
+    // Line up or space out the selection: Alt and A, H, D (left, centre,
+    // right), W, V, S (top, middle, bottom); with Shift, H and V space out.
+    // By the key's place, as Alt changes the letter it types on a Mac.
+    if (event.altKey && !mod && this.selected.size >= 2) {
+      const keys: Record<string, Arrangement> = event.shiftKey
+        ? { KeyH: "horizontal", KeyV: "vertical" }
+        : { KeyA: "left", KeyH: "center", KeyD: "right", KeyW: "top", KeyV: "middle", KeyS: "bottom" };
+      const how = keys[event.code];
+      if (how) {
+        event.preventDefault();
+        void this.arrange(how);
+        return;
+      }
+    }
+
     // The menu of what is selected, by the keyboard.
     if (this.config.menu && (key === "ContextMenu" || (key === "F10" && event.shiftKey))) {
       event.preventDefault();
@@ -4264,16 +4282,8 @@ export class Canvas {
     chosen: string[],
     options: { direction?: "right" | "down"; algorithm?: Algorithm },
   ): { origin: Map<string, Point>; target: Map<string, Point>; count: number } | null {
-    const set = new Set(chosen);
-    const top = (id: string): string => {
-      let node = this.nodes.get(id);
-      while (node?.parent && set.has(node.parent)) node = this.nodes.get(node.parent);
-      return node?.id ?? id;
-    };
-    const boxes = chosen
-      .map((id) => this.nodes.get(id)!)
-      .filter((n) => n && top(n.id) === n.id && !n.locked && !this.gone.has(n.id))
-      .map((n) => ({ id: n.id, width: n.width, height: n.height }));
+    const top = this.topOf(chosen);
+    const boxes = this.tops(chosen).map((n) => ({ id: n.id, width: n.width, height: n.height }));
     if (boxes.length < 2) return null;
     const laid = new Set(boxes.map((b) => b.id));
     const edges = [...this.edges.values()]
@@ -4291,22 +4301,65 @@ export class Canvas {
     const after = union(boxes.map((b) => ({ ...places.get(b.id)!, width: b.width, height: b.height })))!;
     const shift = { x: before.x - after.x, y: before.y - after.y };
 
+    const moves = new Map<string, Point>();
+    for (const b of boxes) {
+      const p = places.get(b.id)!;
+      moves.set(b.id, { x: p.x + shift.x, y: p.y + shift.y });
+    }
+    return { ...this.withInside(moves), count: boxes.length };
+  }
+
+  // Of the chosen nodes, the ones in no group among them (a group moves
+  // with what is in it), and not the locked ones nor those going.
+  private tops(chosen: string[]): NodeModel[] {
+    const top = this.topOf(chosen);
+    return chosen.map((id) => this.nodes.get(id)!).filter((n) => n && top(n.id) === n.id && !n.locked && !this.gone.has(n.id));
+  }
+
+  // The outermost of the chosen nodes a node is in (or itself).
+  private topOf(chosen: string[]): (id: string) => string {
+    const set = new Set(chosen);
+    return (id: string): string => {
+      let node = this.nodes.get(id);
+      while (node?.parent && set.has(node.parent)) node = this.nodes.get(node.parent);
+      return node?.id ?? id;
+    };
+  }
+
+  // Nodes to new places, and the nodes in them with them: where each is,
+  // and where it goes.
+  private withInside(moves: Map<string, Point>): { origin: Map<string, Point>; target: Map<string, Point> } {
     const origin = new Map<string, Point>();
     const target = new Map<string, Point>();
-    for (const b of boxes) {
-      const node = this.nodes.get(b.id)!;
-      const p = places.get(b.id)!;
-      const to = { x: round(p.x + shift.x), y: round(p.y + shift.y) };
-      const dx = to.x - node.x;
-      const dy = to.y - node.y;
-      for (const id of this.withDescendants([b.id])) {
+    for (const [moved, p] of moves) {
+      const node = this.nodes.get(moved)!;
+      const dx = round(p.x) - node.x;
+      const dy = round(p.y) - node.y;
+      for (const id of this.withDescendants([moved])) {
         const n = this.nodes.get(id);
         if (!n || n.locked) continue;
         origin.set(id, { x: n.x, y: n.y });
         target.set(id, { x: round(n.x + dx), y: round(n.y + dy) });
       }
     }
-    return { origin, target, count: boxes.length };
+    return { origin, target };
+  }
+
+  /**
+   * Lines up the selected nodes (or `ids`), or spaces them out (Alt and a
+   * letter, the menu, Hakushi.Live.align/3 and distribute/3): one move, as
+   * the person's, which the server checks and undo takes back.
+   */
+  async arrange(how: Arrangement, ids?: string[]): Promise<void> {
+    if (!this.arranges || this.gesture) return;
+    const chosen = (ids ?? [...this.selected]).filter((id) => this.nodes.has(id));
+    const boxes = this.tops(chosen).map((n) => ({ id: n.id, ...this.rect(n) }));
+    const places = arrange(boxes, how);
+    const moves = new Map([...places].filter(([id, p]) => round(p.x) !== this.nodes.get(id)!.x || round(p.y) !== this.nodes.get(id)!.y));
+    if (!moves.size) return;
+    const { origin, target } = this.withInside(moves);
+    await this.glide(origin, target);
+    this.commitMove(origin, new Map(), this.messages.t(how === "horizontal" || how === "vertical" ? "distributed" : "aligned", { n: boxes.length }));
   }
 
   // -- Tidy as it opens -----------------------------------------------------------
@@ -4526,8 +4579,20 @@ function actionKeys(action: string): string | null {
       return mod("Z");
     case "redo":
       return mod("Z", true);
-    default:
-      return null;
+    default: {
+      const alt = (key: string, shift = false) => (apple ? `${shift ? "⇧" : ""}⌥${key}` : `Alt+${shift ? "Shift+" : ""}${key}`);
+      const keys: Record<string, string> = {
+        align_left: alt("A"),
+        align_center: alt("H"),
+        align_right: alt("D"),
+        align_top: alt("W"),
+        align_middle: alt("V"),
+        align_bottom: alt("S"),
+        distribute_horizontal: alt("H", true),
+        distribute_vertical: alt("V", true),
+      };
+      return keys[action] ?? null;
+    }
   }
 }
 

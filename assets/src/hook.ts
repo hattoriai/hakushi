@@ -5,6 +5,7 @@
 // (`updated`) and the state of the connection, and passes it the events of
 // Hakushi.Canvas (hakushi:people, hakushi:peer) that are its own.
 
+import type { Arrangement } from "./arrange";
 import { Canvas } from "./canvas";
 import type { Person } from "./types";
 
@@ -53,6 +54,9 @@ export const Hakushi = {
     });
     hook.handleEvent("hakushi:select", (payload) => {
       if (payload.canvas === canvas.id) canvas.selectFor(payload);
+    });
+    hook.handleEvent("hakushi:arrange", (payload) => {
+      if (payload.canvas === canvas.id) void canvas.arrange(payload.how as Arrangement, Array.isArray(payload.nodes) ? (payload.nodes as string[]) : undefined);
     });
     hook.handleEvent("hakushi:export", (payload) => {
       if (payload.canvas === canvas.id) void canvas.download({ format: payload.format as "png" | "svg" | undefined, filename: payload.filename as string | undefined, paper: payload.paper === true });
