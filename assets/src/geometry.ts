@@ -92,6 +92,7 @@ export function edgePath(kind: PathKind, s: Point, sSide: Side, t: Point, tSide:
     case "step":
       return orthogonal(s, sSide, t, tSide, 0);
     case "smooth":
+    case "routed":
       return orthogonal(s, sSide, t, tSide, 8);
     default:
       return bezier(s, sSide, t, tSide);
@@ -111,9 +112,10 @@ export function edgePathThrough(kind: PathKind, s: Point, sSide: Side, points: P
     case "straight":
       return { d: all.map((p, i) => `${i === 0 ? "M" : "L"}${round(p.x)},${round(p.y)}`).join(""), label: middleOf(all) };
     case "step":
-    case "smooth": {
+    case "smooth":
+    case "routed": {
       const corners = elbows(s, sSide, points, t, tSide, 20);
-      return { d: roundedPath(corners, kind === "smooth" ? 8 : 0), label: middleOf(corners) };
+      return { d: roundedPath(corners, kind === "step" ? 0 : 8), label: middleOf(corners) };
     }
     default:
       return spline(all, sSide, tSide);
@@ -252,6 +254,11 @@ function simplify(points: Point[]): Point[] {
     out.push(p);
   }
   return out;
+}
+
+/** The path through corners, with round ones, and its middle: a routed edge's. */
+export function cornersPath(points: Point[]): EdgeGeometry {
+  return { d: roundedPath(points, 8), label: middleOf(points) };
 }
 
 function roundedPath(points: Point[], radius: number): string {

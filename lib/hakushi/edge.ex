@@ -11,7 +11,10 @@ defmodule Hakushi.Edge do
       nodes (`Hakushi.Components.handle/1`); `nil` for the node's first
       handle of that kind, or its side when it has none.
     * `path` - how it is drawn: `"bezier"` (the default), `"smooth"` (steps
-      with round corners), `"step"` or `"straight"`.
+      with round corners), `"step"`, `"straight"`, or `"routed"`: steps
+      with round corners that go around the nodes in their way, drawn
+      again as those nodes move (through its `points`, when it has some,
+      as `"smooth"`).
     * `label` - a text on its middle, or `nil`.
     * `marker` - the end of the line at the target: `"arrow"` (the
       default), `"dot"` or `"none"`.
@@ -22,7 +25,7 @@ defmodule Hakushi.Edge do
     * `data` - anything of the app's; it stays on the server.
   """
 
-  @paths ~w(bezier smooth step straight)
+  @paths ~w(bezier smooth step straight routed)
   @markers ~w(arrow dot none)
 
   @enforce_keys [:id, :source, :target]

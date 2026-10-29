@@ -12,7 +12,7 @@ An edge is a `Hakushi.Edge`: from a handle of one node (`source`,
 
 | | |
 | --- | --- |
-| `path` | `"bezier"` (the default), `"smooth"` (steps with round corners), `"step"` (square corners), `"straight"` |
+| `path` | `"bezier"` (the default), `"smooth"` (steps with round corners), `"step"` (square corners), `"straight"`, `"routed"` (steps with round corners around the nodes in the way) |
 | `marker` | the end at the target: `"arrow"` (the default), `"dot"`, `"none"` |
 | `label` | a text on its middle; people set it with a double click on the edge |
 | `animated` | a dashed line that flows from the source to the target (still with reduced motion) |
@@ -120,6 +120,26 @@ Hakushi.Change.update(edges: [%{id: "e1", points: [[240, 80], [240, 300]]}])
 
 The points stay where they are when the nodes move: they are places of
 the canvas, not of its nodes.
+
+## Routing around the nodes
+
+An edge with `path: "routed"` goes along the axes, with round corners,
+and around the nodes in its way: the shortest way that keeps clear of
+them, with the fewest corners it can. With nothing in its way it is a
+`"smooth"` edge. It goes around them again as they move: a node dragged
+onto its line, it goes around the node while it is dragged.
+
+```elixir
+%{source: "receipt", target: "close", path: "routed"}
+```
+
+It goes around the nodes near its ends (within 160 pixels of the box
+between them, the 48 nearest), its own two ones too, but not the groups,
+which are drawn under the edges, nor the groups its ends are in. With no
+way around them, it goes as a `"smooth"` edge. When people bend it (its
+`points`), it goes through them as a `"smooth"` edge does: the points
+are theirs to place. Its way is the browser's: the server keeps no
+corners, and two browsers draw the same way for the same nodes.
 
 ## Selecting and deleting
 

@@ -27,7 +27,6 @@ Known gaps in Hakushi, each to become an issue. None is planned yet.
 
 ## Layout
 
-- Edges routed around the nodes in their way.
 - A layout of the nodes in a group, within it.
 - A force-directed layout, for graphs that do not flow (a mind map, a
   network).

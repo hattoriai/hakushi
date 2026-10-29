@@ -104,6 +104,12 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   what is near, not at every node. A fast pan of 10,000 nodes keeps
   60 frames a second, its slowest frames too (they were 300 to 450 ms).
   See the Limits guide.
+- `path: "routed"`: an edge in steps with round corners that goes
+  around the nodes in its way, the shortest way with the fewest corners,
+  and again as they move (a node dragged onto its line, it goes around it
+  as it is dragged). Through its `points`, when people bent it, as
+  `"smooth"`. The development app's workflow is routed. See the Edges
+  guide.
 
 ### Changed
 

@@ -236,13 +236,13 @@ defmodule HakushiDev.Seeds do
         step.("wait", 1520, 120, "wait", "Wait 30 days", "then ask for a review", "waiting")
       ],
       edges: [
-        %{source: "paid", target: "big", path: "smooth"},
-        %{source: "big", source_handle: "yes", target: "lead", path: "smooth", label: "Yes"},
-        %{source: "big", source_handle: "no", target: "receipt", path: "smooth", label: "No"},
-        %{source: "lead", target: "thanks", path: "smooth"},
-        %{source: "thanks", target: "close", path: "smooth", animated: true},
-        %{source: "receipt", target: "close", path: "smooth"},
-        %{source: "close", target: "wait", path: "smooth"}
+        %{source: "paid", target: "big", path: "routed"},
+        %{source: "big", source_handle: "yes", target: "lead", path: "routed", label: "Yes"},
+        %{source: "big", source_handle: "no", target: "receipt", path: "routed", label: "No"},
+        %{source: "lead", target: "thanks", path: "routed"},
+        %{source: "thanks", target: "close", path: "routed", animated: true},
+        %{source: "receipt", target: "close", path: "routed"},
+        %{source: "close", target: "wait", path: "routed"}
       ]
     )
   end
