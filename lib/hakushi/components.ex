@@ -119,6 +119,14 @@ defmodule Hakushi.Components do
     the LiveView's process. See [Drill-down](drill-down.md)\
     """
 
+  attr :client_tools, :list,
+    default: [],
+    doc: """
+    the tools of the app's own the canvas offers, by their names: tools its JavaScript \
+    registers (`registerTool`), each a button of the bar of tools with what the pointer does \
+    with it. See [JavaScript](javascript.md)\
+    """
+
   attr :menu, :any,
     default: nil,
     doc: """
@@ -315,6 +323,7 @@ defmodule Hakushi.Components do
       notify={@notify}
       menu={@menu}
       on_menu={@on_menu}
+      client_tools={@client_tools}
       on_open={@on_open}
       on_up={@on_up}
       new_node={@new_node}

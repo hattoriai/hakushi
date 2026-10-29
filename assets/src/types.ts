@@ -47,6 +47,8 @@ export interface Config {
   menu?: boolean;
   /** Whether ⌘↑ goes up, out of the canvas (the canvas's `on_up`). */
   up?: boolean;
+  /** The tools of the app's own (registerTool) the canvas offers: its `client_tools`. */
+  clientTools?: string[];
   live: boolean;
   user: string | null;
   /** The tools of the kits, for the bar of tools (Hakushi.Kit's `tools/1`). */
@@ -80,8 +82,10 @@ export interface StyleGroup {
 export interface Tool {
   kit: string;
   tool: string;
-  /** `pick` opens a file picker, and is never the tool chosen. */
-  mode: "draw" | "erase" | "lasso" | "box" | "line" | "pick";
+  /** `pick` opens a file picker, and is never the tool chosen; `client` is the app's own (registerTool). */
+  mode: "draw" | "erase" | "lasso" | "box" | "line" | "pick" | "client";
+  /** The icon of a tool of the app's own: the markup of its SVG. */
+  svg?: string;
   label: string;
   icon: string;
   key: string | null;
@@ -197,6 +201,8 @@ export interface Person {
 /** What the browser asks of the server. */
 export interface Live {
   push(event: string, payload: object, onReply?: (reply: Record<string, unknown>) => void): void;
+  /** An event to the canvas's LiveView itself, not its component. */
+  pushView?(event: string, payload: object, onReply?: (reply: Record<string, unknown>) => void): void;
 }
 
 /**
@@ -213,4 +219,40 @@ export interface MenuItem {
   shortcut?: string | null;
   danger?: boolean;
   disabled?: boolean;
+}
+
+/** A node as the app's code reads it (Canvas.getNodes). */
+export interface NodeInfo {
+  id: string;
+  type: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  parent: string | null;
+  locked: boolean;
+  selected: boolean;
+}
+
+/** An edge as the app's code reads it (Canvas.getEdges). */
+export interface EdgeInfo {
+  id: string;
+  source: string;
+  sourceHandle: string | null;
+  target: string;
+  targetHandle: string | null;
+  label: string | null;
+  selected: boolean;
+}
+
+/** What the canvas tells the app's code (Canvas.on). */
+export interface CanvasEvents {
+  /** The selection changed. */
+  select: { nodes: string[]; edges: string[] };
+  /** The view moved: its place and zoom. */
+  view: View;
+  /** A change of the person's came back from the server: taken (`ok`), refused (`error`), or another in its place (`rewritten`). */
+  change: { change: Record<string, unknown>; ok: boolean; error: string | null; rewritten: boolean };
+  /** Another tool was chosen (`"ink:pen"`, `"app:ruler"`), or the pointer (null). */
+  tool: string | null;
 }

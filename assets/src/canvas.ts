@@ -21,7 +21,8 @@ import { Messages } from "./messages";
 import { Minimap } from "./minimap";
 import { check } from "./rules";
 import { align, snapToGrid, type Guide } from "./snap";
-import type { Config, EdgeModel, End, Handle, HandleKind, Live, MenuItem, NodeModel, Person, Point, Rect, Side, Tool, View } from "./types";
+import { clientTool, type ClientTool, type ToolContext } from "./tools";
+import type { CanvasEvents, Config, EdgeInfo, EdgeModel, End, Handle, HandleKind, Live, MenuItem, NodeInfo, NodeModel, Person, Point, Rect, Side, Tool, View } from "./types";
 import { centerOn, clamp, fit, readableView, reveal, toCanvas, visible, zoomAt } from "./view";
 
 // The smallest zoom a canvas that should be read (fit "readable") opens at.
@@ -85,7 +86,9 @@ type Gesture =
   | { kind: "shape"; pointer: number; tool: Tool; start: Point; end: Point; square: boolean }
   // A node turned by its knob, about its middle.
   | { kind: "rotate"; pointer: number; id: string; center: Point; from: number; base: number; deg: number; el: HTMLElement }
-  | { kind: "pinch"; distance: number; mid: Point; view: View };
+  | { kind: "pinch"; distance: number; mid: Point; view: View }
+  // A tool of the app's own (registerTool): its handlers have the pointer.
+  | { kind: "client"; pointer: number; tool: ClientTool };
 
 interface EdgeView {
   g: SVGGElement;
@@ -230,6 +233,10 @@ export class Canvas {
   private inkPaths = new Map<string, { path: SVGPathElement; stroke: InkStroke; length: number }>();
   private inkPending: { key: string; stroke: InkStroke; id: string | null }[] = [];
   private inkSeq = 0;
+  // The app's code: what it listens to (on), and the layer its tools draw on.
+  private listeners = new Map<keyof CanvasEvents, Set<(payload: never) => void>>();
+  private clientG: SVGGElement;
+  private context: ToolContext | null = null;
 
   constructor(
     readonly root: HTMLElement,
@@ -253,12 +260,13 @@ export class Canvas {
     this.overlay = svg("g", { class: "hakushi-overlay" });
     this.raisedG = svg("g", { class: "hakushi-edge-lines" });
     this.inkG = svg("g", { class: "hakushi-ink-live" });
+    this.clientG = svg("g", { class: "hakushi-tool-layer" });
     const raisedSvg = root.querySelector<SVGSVGElement>(`#${CSS.escape(this.id)}-svg-raised`);
     if (raisedSvg) {
       this.edgesSvg.append(this.edgesG);
-      raisedSvg.append(this.raisedG, this.inkG, this.overlay);
+      raisedSvg.append(this.raisedG, this.inkG, this.clientG, this.overlay);
     } else {
-      this.edgesSvg.append(this.edgesG, this.raisedG, this.inkG, this.overlay);
+      this.edgesSvg.append(this.edgesG, this.raisedG, this.inkG, this.clientG, this.overlay);
     }
 
     this.status = el("div", { class: "hakushi-status", role: "status", "aria-live": "polite" });
@@ -480,7 +488,7 @@ export class Canvas {
     this.layoutVersion++;
     const minimap = this.config.minimap;
     const controls = this.config.controls;
-    const tools = JSON.stringify(this.config.tools ?? []) + this.config.readonly + this.arranges;
+    const tools = JSON.stringify(this.allTools()) + this.config.readonly + this.arranges;
     const papers = JSON.stringify(this.config.papers ?? []);
     const grid = this.config.grid;
     this.readConfig();
@@ -491,7 +499,7 @@ export class Canvas {
       this.toggleLayoutMenu(false);
       this.buildControls();
     }
-    if (tools !== JSON.stringify(this.config.tools ?? []) + this.config.readonly + this.arranges) {
+    if (tools !== JSON.stringify(this.allTools()) + this.config.readonly + this.arranges) {
       this.buildTools();
       this.toggleLayoutMenu(false);
       this.buildControls();
@@ -971,6 +979,7 @@ export class Canvas {
       bg.setProperty("--hakushi-grid-size", `${size}px`);
       bg.setProperty("--hakushi-grid-x", `${((this.view.x % period) + period) % period}px`);
       bg.setProperty("--hakushi-grid-y", `${((this.view.y % period) + period) % period}px`);
+      this.emit("view", { ...this.view });
       if (this.config.reportView && !this.viewGlide) {
         clearTimeout(this.viewTimer);
         this.viewTimer = window.setTimeout(() => this.reportView(), VIEW_REST);
@@ -2365,7 +2374,7 @@ export class Canvas {
   private buildTools() {
     this.toolsEl?.remove();
     this.toolsEl = null;
-    const tools = this.config.readonly ? [] : (this.config.tools ?? []);
+    const tools = this.offeredTools();
     if (this.tool && !tools.some((t) => t.kit === this.tool!.kit && t.tool === this.tool!.tool)) this.tool = null;
     this.root.toggleAttribute("data-ui-tool", false);
     if (!tools.length) return;
@@ -2374,6 +2383,8 @@ export class Canvas {
     const button = (name: string, label: string, icon: string, key: string | null) => {
       const b = el("button", { type: "button", class: "hakushi-control hakushi-tool", "data-tool": name, "aria-label": label, title: key ? `${label} (${key.toUpperCase()})` : label, "aria-pressed": "false" });
       b.innerHTML = (icons as Record<string, string>)[icon] ?? icons.pointer;
+      const own = tools.find((t) => `${t.kit}:${t.tool}` === name)?.svg;
+      if (own) b.innerHTML = own;
       b.addEventListener("click", (event) => {
         event.stopPropagation();
         this.setTool(name === "pointer" ? null : name);
@@ -2391,14 +2402,41 @@ export class Canvas {
 
   /** Chooses a tool of the kits by its name (`"ink:pen"`), or the pointer (`null`). */
   setTool(name: string | null) {
-    const tool = name ? (this.config.tools ?? []).find((t) => `${t.kit}:${t.tool}` === name) : undefined;
-    if (this.config.readonly || (name && !tool)) return;
+    const tool = name ? this.offeredTools().find((t) => `${t.kit}:${t.tool}` === name) : undefined;
+    if (name && !tool) return;
     // A picker of files: it opens, and the tool stays as it was.
     if (tool?.mode === "pick") return this.openPicker();
     if (this.gesture) this.cancelGesture();
+    const before = this.tool?.mode === "client" ? clientTool(this.tool.tool) : undefined;
     this.tool = tool ?? null;
+    if (before) {
+      before.dropped?.(this.toolContext());
+      this.clientG.replaceChildren();
+      this.root.style.removeProperty("cursor");
+    }
+    const after = tool?.mode === "client" ? clientTool(tool.tool) : undefined;
+    if (after) {
+      if (after.cursor) this.root.style.cursor = after.cursor;
+      after.chosen?.(this.toolContext());
+    }
     this.showTool();
     this.announce(tool ? tool.label : this.messages.t("inkSelect"));
+    this.emit("tool", this.getTool());
+  }
+
+  // The kits' tools, and the app's own its `client_tools` names that are registered.
+  private allTools(): Tool[] {
+    const own: Tool[] = (this.config.clientTools ?? []).flatMap((name) => {
+      const tool = clientTool(name);
+      return tool ? [{ kit: "app", tool: name, mode: "client" as const, label: tool.label, icon: name, svg: tool.icon, key: tool.key ?? null }] : [];
+    });
+    return [...(this.config.tools ?? []), ...own];
+  }
+
+  // The tools a person may choose: on a read-only canvas, the app's that change nothing.
+  private offeredTools(): Tool[] {
+    const tools = this.allTools();
+    return this.config.readonly ? tools.filter((t) => t.mode === "client" && clientTool(t.tool)?.readonly) : tools;
   }
 
   /** The tool chosen (`"ink:pen"`), or `null` for the pointer. */
@@ -2725,6 +2763,92 @@ export class Canvas {
     return duration;
   }
 
+  // -- The app's code ------------------------------------------------------------
+  //
+  // What a page's own script reads of a canvas (canvasOf(element)), and
+  // hears of it (on), and the context of the tools of the app's own.
+
+  /** Listens to the canvas: `fn` gets what each event says. Gives the function that stops listening. */
+  on<K extends keyof CanvasEvents>(event: K, fn: (payload: CanvasEvents[K]) => void): () => void {
+    let set = this.listeners.get(event);
+    if (!set) this.listeners.set(event, (set = new Set()));
+    set.add(fn as (payload: never) => void);
+    return () => set.delete(fn as (payload: never) => void);
+  }
+
+  private emit<K extends keyof CanvasEvents>(event: K, payload: CanvasEvents[K]) {
+    const set = this.listeners.get(event);
+    if (!set) return;
+    for (const fn of set) {
+      try {
+        (fn as (payload: CanvasEvents[K]) => void)(payload);
+      } catch (error) {
+        console.error(`Hakushi: a listener of ${event} failed`, error);
+      }
+    }
+  }
+
+  /** The nodes, in the order they are drawn: their places and sizes as shown now. */
+  getNodes(): NodeInfo[] {
+    return this.order.flatMap((id) => {
+      const node = this.nodes.get(id);
+      return node ? [this.nodeInfo(node)] : [];
+    });
+  }
+
+  /** A node by its id, or undefined. */
+  getNode(id: string): NodeInfo | undefined {
+    const node = this.nodes.get(id);
+    return node ? this.nodeInfo(node) : undefined;
+  }
+
+  private nodeInfo(node: NodeModel): NodeInfo {
+    const r = this.rect(node);
+    return { id: node.id, type: node.type, ...r, parent: node.parent, locked: node.locked, selected: this.selected.has(node.id) };
+  }
+
+  /** The edges, in the order they were made. */
+  getEdges(): EdgeInfo[] {
+    return [...this.edges.values()].map((e) => ({ id: e.id, source: e.source, sourceHandle: e.sourceHandle, target: e.target, targetHandle: e.targetHandle, label: e.label, selected: this.selectedEdges.has(e.id) }));
+  }
+
+  /** The ids of the nodes under a point of the canvas, the topmost first. */
+  nodesAt(point: Point): string[] {
+    const under = this.order.filter((id) => {
+      const node = this.nodes.get(id);
+      return node && !this.gone.has(id) && contains(this.rect(node), point);
+    });
+    return under.sort((a, b) => Number(this.nodes.get(b)!.el.style.zIndex || 0) - Number(this.nodes.get(a)!.el.style.zIndex || 0));
+  }
+
+  /** The point of the canvas under a point of the page (`clientX`, `clientY`). */
+  toCanvas(clientX: number, clientY: number): Point {
+    return this.canvasPoint({ clientX, clientY });
+  }
+
+  private toolContext(): ToolContext {
+    if (this.context) return this.context;
+    const changed = (payload: object) => new Promise<Record<string, unknown>>((done) => this.push("hakushi:change", payload, done));
+    const end = (end: { node: string; handle?: string | null }) => ({ node: end.node, handle: end.handle ?? null });
+    this.context = {
+      canvas: this,
+      layer: this.clientG,
+      svg: (tag, attributes = {}) => svg(tag as "g", Object.fromEntries(Object.entries(attributes).map(([k, v]) => [k, String(v)]))),
+      nodesAt: (point) => this.nodesAt(point),
+      select: (ids) => this.select(ids.filter((id) => this.nodes.has(id))),
+      move: (places) => changed({ op: "move", nodes: places.map((p) => ({ id: p.id, x: round(p.x), y: round(p.y) })) }),
+      connect: (source, target) => {
+        const [s, t] = [end(source), end(target)];
+        return changed({ op: "connect", edges: [{ source: s.node, sourceHandle: s.handle, target: t.node, targetHandle: t.handle }] });
+      },
+      remove: (nodes, edges = []) => changed({ op: "delete", nodes, edges }),
+      drop: (item, at) => this.drop(item, at),
+      pushEvent: (event, payload, onReply) => (this.live.pushView ?? this.live.push)(event, payload, onReply),
+      announce: (text) => this.announce(text),
+    };
+    return this.context;
+  }
+
   // -- Opening a node -------------------------------------------------------------
   //
   // A node of a slot that `opens` (a double click, ⌘↓, its opener): the
@@ -2837,6 +2961,12 @@ export class Canvas {
     on(document, "pointerdown", (e) => this.itemDown(e as PointerEvent), { capture: true });
     on(document, "keydown", (e) => this.itemKey(e as KeyboardEvent));
     on(window, "scroll", () => (this.bounds = null), { capture: true, passive: true });
+    // A tool of the app's own registered after the canvas came: in its bar.
+    on(document, "hakushi:tools" as keyof HTMLElementEventMap, () => {
+      this.buildTools();
+      this.toggleLayoutMenu(false);
+      this.buildControls();
+    });
     on(this.root, "dragover", (e) => this.dragOver(e));
     on(this.root, "dragleave", (e) => {
       if (!this.root.contains(e.relatedTarget as Node | null)) this.root.removeAttribute("data-ui-dropping");
@@ -2883,6 +3013,15 @@ export class Canvas {
 
     // A tool of a kit: it draws, erases or lassoes over anything on the
     // canvas. Once a pen is used, a finger pans and only the pen draws.
+    const own = this.tool?.mode === "client" ? clientTool(this.tool.tool) : undefined;
+    if (own) {
+      event.preventDefault();
+      this.root.focus({ preventScroll: true });
+      this.capture(event);
+      this.gesture = { kind: "client", pointer: event.pointerId, tool: own };
+      own.down?.(this.toolContext(), event, at);
+      return;
+    }
     if (this.tool && !this.config.readonly && !(this.tool.mode === "lasso" && node && this.selected.has(node.id))) {
       event.preventDefault();
       this.root.focus({ preventScroll: true });
@@ -3205,6 +3344,11 @@ export class Canvas {
         g.el.style.setProperty("--hakushi-rotation", `${g.deg}deg`);
         return;
       }
+      case "client": {
+        if (event.pointerId !== g.pointer) return;
+        g.tool.move?.(this.toolContext(), event, at);
+        return;
+      }
       case "lasso": {
         if (event.pointerId !== g.pointer) return;
         const last = g.points[g.points.length - 1];
@@ -3275,6 +3419,10 @@ export class Canvas {
         this.root.querySelectorAll("[data-ui-target]").forEach((e) => e.removeAttribute("data-ui-target"));
         if (!cancelled) this.commitShape(g);
         break;
+      case "client":
+        if (cancelled) g.tool.cancel?.(this.toolContext());
+        else g.tool.up?.(this.toolContext(), event, this.canvasPoint(event));
+        break;
       case "rotate":
         if (cancelled || g.deg === g.base) g.el.style.removeProperty("--hakushi-rotation");
         else
@@ -3299,6 +3447,7 @@ export class Canvas {
     if (g.kind === "box") this.boxEl.hidden = true;
     if (g.kind === "erase") this.unerase(g.hit);
     if (g.kind === "rotate") g.el.style.removeProperty("--hakushi-rotation");
+    if (g.kind === "client") g.tool.cancel?.(this.toolContext());
     if (g.kind === "shape") this.root.querySelectorAll("[data-ui-target]").forEach((e) => e.removeAttribute("data-ui-target"));
     if (g.kind === "ink" || g.kind === "erase" || g.kind === "lasso") this.sendPeer();
     if (g.kind === "resize") {
@@ -3467,6 +3616,8 @@ export class Canvas {
       // showed of it goes, and the server's shows.
       if (reply.rewritten === true && event === "hakushi:change") this.resync(payload as { nodes?: unknown[]; edges?: unknown[] });
       onReply?.(reply);
+      if (event === "hakushi:change")
+        this.emit("change", { change: payload as Record<string, unknown>, ok: !reply.error, error: typeof reply.error === "string" ? reply.error : null, rewritten: reply.rewritten === true });
       if (Array.isArray(reply.select)) {
         // The new nodes may come after the reply: they are selected as
         // they come.
@@ -3711,6 +3862,7 @@ export class Canvas {
   private selectionChanged() {
     this.allDirty = true;
     this.reportSelection();
+    this.emit("select", { nodes: [...this.selected], edges: [...this.selectedEdges] });
     this.drawStylePanel();
     const n = this.selected.size + this.selectedEdges.size;
     if (n === 1 && this.selected.size === 1) {
@@ -3856,7 +4008,7 @@ export class Canvas {
     // of two kits with one letter: the letter again takes the next.
     if (!mod && !event.altKey && !event.shiftKey && this.toolsEl && key.length === 1) {
       const letter = key.toLowerCase();
-      const tools = (this.config.tools ?? []).filter((t) => t.key === letter);
+      const tools = this.offeredTools().filter((t) => t.key === letter);
       if (tools.length || letter === "v") {
         event.preventDefault();
         const at = this.tool ? tools.indexOf(this.tool) : -1;

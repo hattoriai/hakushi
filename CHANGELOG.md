@@ -80,6 +80,13 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   types and keys, a foreign key for each `belongs_to`, the join tables
   of `many_to_many`, and stubs of the tables of schemas not given. See
   the Kits guide.
+- A JavaScript API: a canvas from a page's script (`canvasOf`) gives its
+  nodes, edges and the nodes under a point (`getNodes`, `getEdges`,
+  `nodesAt`, `toCanvas`), and tells what happens on it
+  (`on("select" | "view" | "change" | "tool")`); tools of the app's own
+  (`registerTool`, offered by a canvas's `client_tools`) are buttons of
+  the bar of tools, whose handlers have the pointer, a layer to draw on
+  and changes as a person's. See the JavaScript guide.
 
 ### Changed
 
