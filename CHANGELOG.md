@@ -41,6 +41,11 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   edges. Not part of the graph: `on_change` never sees them, and they go
   with the page. `--hakushi-mark-*` colour them, and
   `Hakushi.Test.marks/2` reads them. See the Marks guide.
+- `Hakushi.Graph` reads the graph along its edges: `successors/2`,
+  `predecessors/2`, `downstream/2`, `upstream/2`, `roots/1`, `leaves/1`,
+  `topological_sort/1` (the order a flow runs in, or a cycle),
+  `cycle/1`, `path/4` and `edges_along/3` (the shortest way between two
+  nodes), and `components/1`. See the Edges guide.
 
 ### Changed
 

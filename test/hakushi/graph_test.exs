@@ -4,6 +4,8 @@ defmodule Hakushi.GraphTest do
 
   alias Hakushi.{Change, Edge, Graph, Node}
 
+  doctest Hakushi.Graph
+
   defp graph do
     Graph.new(
       nodes: [
@@ -156,6 +158,151 @@ defmodule Hakushi.GraphTest do
 
       {:ok, back, _change, _inverse} = Graph.apply(moved, undo_move)
       assert back == start
+    end
+  end
+
+  describe "paths" do
+    # start -> check -> (yes) pay -> receipt
+    #                -> (no)  remind
+    # alone
+    defp flow do
+      Graph.new(
+        nodes: Enum.map(~w(start check pay receipt remind alone), &%{id: &1}),
+        edges: [
+          %{id: "e1", source: "start", target: "check"},
+          %{id: "yes", source: "check", target: "pay"},
+          %{id: "no", source: "check", target: "remind"},
+          %{id: "e3", source: "pay", target: "receipt"}
+        ]
+      )
+    end
+
+    test "successors and predecessors, near and far" do
+      graph = flow()
+      assert Graph.successors(graph, "check") == ["pay", "remind"]
+      assert Graph.predecessors(graph, "pay") == ["check"]
+      assert Graph.successors(graph, "alone") == []
+      assert Graph.downstream(graph, "start") == ~w(check pay remind receipt)
+      assert Graph.upstream(graph, "receipt") == ~w(pay check start)
+      assert Graph.upstream(graph, "start") == []
+    end
+
+    test "roots and leaves" do
+      assert Graph.roots(flow()) == ~w(start alone)
+      assert Graph.leaves(flow()) == ~w(receipt remind alone)
+    end
+
+    test "a topological order, and the cycle that has none" do
+      assert {:ok, ~w(start check pay receipt remind alone)} = Graph.topological_sort(flow())
+      assert Graph.cycle(flow()) == nil
+
+      looped =
+        Graph.new(
+          nodes: Enum.map(~w(a b c d), &%{id: &1}),
+          edges: [
+            %{source: "a", target: "b"},
+            %{source: "b", target: "c"},
+            %{source: "c", target: "b"},
+            %{source: "c", target: "d"}
+          ]
+        )
+
+      assert {:error, {:cycle, cycle}} = Graph.topological_sort(looped)
+      assert Enum.sort(cycle) == ["b", "c"]
+
+      itself = Graph.new(nodes: [%{id: "a"}], edges: [%{source: "a", target: "a"}])
+      assert Graph.cycle(itself) == ["a"]
+    end
+
+    test "the shortest way, and its edges" do
+      graph = flow()
+      assert Graph.path(graph, "start", "receipt") == ~w(start check pay receipt)
+      assert Graph.edges_along(graph, ~w(start check pay receipt)) == ~w(e1 yes e3)
+      assert Graph.path(graph, "receipt", "start") == nil
+      assert Graph.path(graph, "remind", "pay", directed: false) == ~w(remind check pay)
+      assert Graph.edges_along(graph, ~w(remind check pay)) == ["yes"]
+      assert Graph.edges_along(graph, ~w(remind check pay), directed: false) == ~w(no yes)
+      assert Graph.path(graph, "start", "alone") == nil
+      assert Graph.path(graph, "start", "start") == ["start"]
+      assert Graph.path(graph, "start", "nowhere") == nil
+    end
+
+    test "the parts the edges join" do
+      assert Graph.components(flow()) == [~w(start check pay receipt remind), ["alone"]]
+      assert Graph.components(Graph.new()) == []
+    end
+  end
+
+  # A graph of n nodes and some edges between them, forward only (no
+  # cycle) or any way.
+  defp random_graph(forward) do
+    gen all(
+          n <- integer(1..12),
+          pairs <- list_of(tuple({integer(0..(n - 1)), integer(0..(n - 1))}), max_length: 30)
+        ) do
+      ids = Enum.map(0..(n - 1), &"n#{&1}")
+
+      edges =
+        for {a, b} <- Enum.uniq(pairs), a != b, not forward or a < b do
+          %{source: "n#{a}", target: "n#{b}"}
+        end
+
+      # Drawn in another order than the edges go.
+      Graph.new(nodes: ids |> Enum.reverse() |> Enum.map(&%{id: &1}), edges: edges)
+    end
+  end
+
+  property "a graph without a cycle has an order with every edge forward" do
+    check all(graph <- random_graph(true)) do
+      assert {:ok, order} = Graph.topological_sort(graph)
+      assert Enum.sort(order) == Enum.sort(graph.node_order)
+      at = order |> Enum.with_index() |> Map.new()
+      for edge <- Graph.edges(graph), do: assert(at[edge.source] < at[edge.target])
+      assert Graph.cycle(graph) == nil
+    end
+  end
+
+  property "a cycle found is one, and an order exists exactly when none is" do
+    check all(graph <- random_graph(false)) do
+      case Graph.cycle(graph) do
+        nil ->
+          assert {:ok, _order} = Graph.topological_sort(graph)
+
+        cycle ->
+          assert {:error, {:cycle, _}} = Graph.topological_sort(graph)
+          ring = Enum.zip(cycle, tl(cycle) ++ [hd(cycle)])
+          for {a, b} <- ring, do: assert(b in Graph.successors(graph, a))
+      end
+    end
+  end
+
+  property "a way found goes along edges, and is there when downstream says so" do
+    check all(
+            graph <- random_graph(false),
+            from <- member_of(graph.node_order),
+            to <- member_of(graph.node_order)
+          ) do
+      way = Graph.path(graph, from, to)
+      assert way != nil == (from == to or to in Graph.downstream(graph, from))
+
+      if way do
+        assert hd(way) == from and List.last(way) == to
+        assert length(Graph.edges_along(graph, way)) == length(way) - 1
+        assert length(Enum.uniq(way)) == length(way)
+      end
+    end
+  end
+
+  property "the parts the edges join are each node once" do
+    check all(graph <- random_graph(false)) do
+      parts = Graph.components(graph)
+      assert Enum.sort(List.flatten(parts)) == Enum.sort(graph.node_order)
+
+      for edge <- Graph.edges(graph),
+          do:
+            assert(
+              Enum.find(parts, &(edge.source in &1)) == Enum.find(parts, &(edge.target in &1))
+            )
     end
   end
 end

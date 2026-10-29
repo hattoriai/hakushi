@@ -81,3 +81,37 @@ with the edge's new ends and `on_change` sees; ⌘Z puts it back.
 A click on an edge or its label selects it; Shift adds it. Delete
 deletes the selected edges and nodes; the edges of a deleted node go with
 it.
+
+## Reading the graph along its edges
+
+`Hakushi.Graph` reads the graph from source to target, for the app that
+runs what the canvas draws, checks it, or shows a part of it:
+
+| | |
+| --- | --- |
+| `successors/2`, `predecessors/2` | the nodes an edge goes to from a node, or comes from |
+| `downstream/2`, `upstream/2` | every node the edges lead to from a node, or from which they lead to it, however far |
+| `roots/1`, `leaves/1` | the nodes no edge goes to (where a flow starts), and those no edge leaves |
+| `topological_sort/1` | every node after the nodes its edges come from (the order a flow runs in), or the cycle that has no such order |
+| `cycle/1` | a cycle, or `nil` |
+| `path/4`, `edges_along/3` | the shortest way from a node to another, and its edges (`directed: false` goes either way) |
+| `components/1` | the parts of the graph that edges join |
+
+They are pure, and where there is a choice they keep the graph's order.
+
+```elixir
+{:ok, order} = Hakushi.Graph.topological_sort(graph)
+for id <- order, do: run_step(Hakushi.Graph.node(graph, id))
+```
+
+A canvas whose `rules` have `cycles: false` never has a cycle (see
+`Hakushi.Rules`); `on_change` may check more, with these, on the
+`result`:
+
+```elixir
+def change(%Hakushi.Change{op: :connect}, %{result: graph}, _flow) do
+  if Hakushi.Graph.roots(graph) |> length() > 1,
+    do: {:error, "A flow has one start."},
+    else: :ok
+end
+```

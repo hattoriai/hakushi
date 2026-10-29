@@ -24,6 +24,7 @@ Everything the canvas does, in one table. Each guide tells more.
 | Keyboard | Tab and Shift+Tab from node to node, Alt and an arrow to the nearest node that way, Enter into a node's fields and Escape out, C to connect with the arrows and Enter |
 | Screen readers | the canvas, its nodes and their connections, named; the moves, selections, connections and refusals said in a live region |
 | Scale | nodes and edges sent as LiveView streams: a change sends what it touches; the nodes and edges far from the screen are not laid out or painted |
+| The graph | read along its edges (`Hakushi.Graph`): successors and predecessors, downstream and upstream, roots and leaves, a topological order or a cycle, the shortest way between two nodes and its edges, the parts edges join |
 | Storage | `Hakushi.Graph.Type`, a whole canvas in one column (`jsonb`); or your own tables, with `on_change` |
 | Theming | CSS custom properties, the Sumi theme, dark mode, forced colours, reduced motion |
 | Words | the canvas's own words in English, Portuguese, Spanish, French, German and Japanese |

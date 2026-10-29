@@ -259,7 +259,8 @@ defmodule Hakushi.Live do
   search found stands out (`nodes: ids`, `edges: ids`). `nil` takes the
   spotlight away. It is a mark: this LiveView's, and not saved.
 
-      Hakushi.Live.spotlight("flow", nodes: ["start", "check", "send-receipt"], edges: ["e1", "e2"])
+      way = Hakushi.Graph.path(graph, "start", "send-receipt")
+      Hakushi.Live.spotlight("flow", nodes: way, edges: Hakushi.Graph.edges_along(graph, way))
   """
   @spec spotlight(String.t(), keyword() | nil) :: :ok
   def spotlight(canvas, nil) when is_binary(canvas) do
