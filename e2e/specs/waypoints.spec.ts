@@ -37,7 +37,8 @@ test("a point dragged out of a selected edge's line bends it, and a double click
   await expect(waypoint).toHaveCount(1);
   const moved = await points(page, "schema", id);
 
-  await page.mouse.dblclick((await center(waypoint)).x, (await center(waypoint)).y);
+  const last = await center(waypoint);
+  await page.mouse.dblclick(last.x, last.y);
   await expect.poll(() => points(page, "schema", id)).toBeNull();
   await expect(waypoint).toHaveCount(0);
 

@@ -37,7 +37,15 @@ export async function place(page: Page, id: string): Promise<{ x: number; y: num
 }
 
 export async function center(locator: Locator): Promise<{ x: number; y: number }> {
-  const box = (await locator.boundingBox())!;
+  // An element of the canvas's overlay (a knob, a waypoint) is drawn again
+  // on each frame: the one found may be gone when it is measured. Again,
+  // then, until one is measured.
+  let box = await locator.boundingBox();
+  for (let tries = 0; !box && tries < 20; tries++) {
+    await locator.page().waitForTimeout(50);
+    box = await locator.boundingBox();
+  }
+  if (!box) throw new Error(`no box for ${locator}`);
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 }
 
