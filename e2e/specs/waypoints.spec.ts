@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { center, drag, mod, openCanvas } from "./support";
+import { alongEdge, center, drag, mod, openCanvas } from "./support";
 
 // The points an edge goes through: dragged out of the line of a selected
 // edge, moved, and taken away with a double click.
@@ -7,12 +7,7 @@ import { center, drag, mod, openCanvas } from "./support";
 async function selectEdge(page: Page, canvas: string): Promise<string> {
   const edge = page.locator(`#${canvas} .hakushi-edge`).first();
   const id = (await edge.getAttribute("data-edge"))!;
-  const point = await page.locator(`#${canvas} .hakushi-edge[data-edge="${id}"] .hakushi-edge-line`).evaluate((path) => {
-    const line = path as SVGPathElement;
-    const p = line.getPointAtLength(line.getTotalLength() / 2);
-    const m = line.getScreenCTM()!;
-    return { x: p.x * m.a + m.e, y: p.y * m.d + m.f };
-  });
+  const [point] = await alongEdge(page, canvas, id);
   await page.mouse.click(point.x, point.y);
   await expect(page.locator(`#${canvas} .hakushi-edge[data-edge="${id}"]`)).toHaveAttribute("data-ui-selected", "");
   return id;
@@ -33,17 +28,8 @@ test("a point dragged out of a selected edge's line bends it, and a double click
   await expect(waypoint).toHaveCount(1);
   // The line goes through it.
   const at = await center(waypoint);
-  const through = await page.locator(`#schema .hakushi-edge[data-edge="${id}"] .hakushi-edge-line`).evaluate((path, at) => {
-    const line = path as SVGPathElement;
-    const m = line.getScreenCTM()!;
-    const total = line.getTotalLength();
-    let best = Infinity;
-    for (let i = 0; i <= 200; i++) {
-      const p = line.getPointAtLength((total * i) / 200);
-      best = Math.min(best, Math.hypot(p.x * m.a + m.e - at.x, p.y * m.d + m.f - at.y));
-    }
-    return best;
-  }, at);
+  const line = await alongEdge(page, "schema", id, Array.from({ length: 201 }, (_, i) => i / 200));
+  const through = Math.min(...line.map((p) => Math.hypot(p.x - at.x, p.y - at.y)));
   expect(through).toBeLessThan(4);
 
   // Moved, it stays one point.
