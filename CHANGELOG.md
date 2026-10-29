@@ -7,6 +7,16 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-29
+
+The app hears and steers the canvas (the selection, the view, a change
+of its own in place of the person's, a process that hears it all), and
+shows what is happening on it without saving it (marks). Menus, versions
+and their differences, lining up, drill-down, a JavaScript API, edges
+bent through points, routed around nodes and labelled in HEEx, a schema
+read from Ecto schemas, parts of nodes dragged out onto the page, and a
+canvas of 10,000 nodes that pans at 60 frames a second.
+
 ### Added
 
 - The app hears what the person selects and sees: `on_select` with the
@@ -633,7 +643,10 @@ The first release.
   Japanese.
 - `hakushi.css` and the Sumi theme, `hakushi-sumi.css`.
 
-[Unreleased]: https://github.com/hattoriai/hakushi/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/hattoriai/hakushi/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/hattoriai/hakushi/releases/tag/v0.8.0
+[0.7.0]: https://github.com/hattoriai/hakushi/releases/tag/v0.7.0
+[0.6.0]: https://github.com/hattoriai/hakushi/releases/tag/v0.6.0
 [0.5.0]: https://github.com/hattoriai/hakushi/releases/tag/v0.5.0
 [0.4.0]: https://github.com/hattoriai/hakushi/releases/tag/v0.4.0
 [0.3.1]: https://github.com/hattoriai/hakushi/releases/tag/v0.3.1

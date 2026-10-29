@@ -1,5 +1,20 @@
 # Upgrading
 
+## To Hakushi 0.8
+
+Update `{:hakushi, "~> 0.8"}`. A canvas's code stays as it was, with one
+thing to know: an `on_change` that returns `{:ok, %Hakushi.Change{}}` now
+makes that change happen in place of the person's (it was taken as `:ok`
+before). Any other `{:ok, term}` takes the change, as before. A graph
+kept as JSON (`Hakushi.Graph.dump/1`) loads as it was.
+
+What is new is opt-in: `on_select`, `on_viewport` and `notify`; marks
+(`Hakushi.Live.mark/3`); `Hakushi.Graph`'s reading along the edges; the
+`menu`; `compare` and `Hakushi.History`; drill-down (`opens`); the
+JavaScript API; an edge's `points`, `path: "routed"` and the
+`:edge_label` slot; `Hakushi.Kits.Schema.from_ecto/2`; and `drag_out`.
+See the [Changelog](https://github.com/hattoriai/hakushi/blob/main/CHANGELOG.md).
+
 ## To Hakushi 0.7, on Issho 0.5
 
 Update `{:hakushi, "~> 0.7"}`, and `{:issho, "~> 0.5"}` if your app
