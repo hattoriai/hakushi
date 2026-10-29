@@ -4,7 +4,7 @@
 
 export type Side = "left" | "right" | "top" | "bottom";
 export type HandleKind = "source" | "target" | "both";
-export type PathKind = "bezier" | "smooth" | "step" | "straight";
+export type PathKind = "bezier" | "smooth" | "step" | "straight" | "routed";
 
 export interface Rules {
   loops: boolean;

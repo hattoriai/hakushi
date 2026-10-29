@@ -10,7 +10,8 @@
 // them (the place of a node being dragged, its selection, its culling).
 
 import { editable, el, interactive, isApple, numberAttr, prefersReducedMotion, svg } from "./dom";
-import { contains, edgePath, edgePathThrough, facing, fromCorners, grow, intersects, sidePoint, union } from "./geometry";
+import { contains, cornersPath, edgePath, edgePathThrough, facing, fromCorners, grow, intersects, sidePoint, union } from "./geometry";
+import { routeAround } from "./route";
 import { arrange, type Arrangement } from "./arrange";
 import { exportImage, type ExportOptions } from "./export";
 import { icons } from "./icons";
@@ -23,6 +24,7 @@ import { check } from "./rules";
 import { align, snapToGrid, type Guide } from "./snap";
 import { SpatialIndex } from "./spatial";
 import { clientTool, type ClientTool, type ToolContext } from "./tools";
+import type { EdgeGeometry } from "./geometry";
 import type { CanvasEvents, Config, EdgeInfo, EdgeModel, End, Handle, HandleKind, Live, MenuItem, NodeInfo, NodeModel, Person, Point, Rect, Side, Tool, View } from "./types";
 import { centerOn, clamp, fit, readableView, reveal, toCanvas, visible, zoomAt } from "./view";
 
@@ -32,6 +34,8 @@ const READABLE_ZOOM = 0.6;
 const CULL_FROM = 150;
 // How far around the screen nodes stay laid out, in pixels.
 const CULL_MARGIN = 300;
+// How far past the box of its ends a routed edge looks for nodes in its way.
+const ROUTE_REACH = 160;
 // A pointer that moves less than this is a click.
 const CLICK_SLOP = 3;
 // How near a handle the pointer must come to end an edge on it, in pixels.
@@ -192,6 +196,9 @@ export class Canvas {
   // place without looking at each; the nodes laid out, and the edges shown.
   private nodeIndex = new SpatialIndex();
   private edgeIndex = new SpatialIndex();
+  // How many edges are routed around the nodes: none, and a node moved
+  // need not look for the edges it is in the way of.
+  private routed = 0;
   private laidOut = new Set<string>();
   private shownEdges = new Set<string>();
   private dirty = new Set<string>();
@@ -746,6 +753,7 @@ export class Canvas {
   private readEdges() {
     this.edges.clear();
     this.byNode.clear();
+    this.routed = 0;
     for (const element of this.edgeData.children) this.readEdge(element as HTMLElement);
     for (const id of [...this.edgeViews.keys()]) if (!this.edges.has(id)) this.dropEdgeView(id);
     this.allDirty = true;
@@ -792,6 +800,7 @@ export class Canvas {
   }
 
   private index(edge: EdgeModel) {
+    if (edge.path === "routed") this.routed++;
     for (const node of [edge.source, edge.target]) {
       let set = this.byNode.get(node);
       if (!set) this.byNode.set(node, (set = new Set()));
@@ -800,6 +809,7 @@ export class Canvas {
   }
 
   private unindex(edge: EdgeModel) {
+    if (edge.path === "routed") this.routed--;
     this.byNode.get(edge.source)?.delete(edge.id);
     this.byNode.get(edge.target)?.delete(edge.id);
   }
@@ -807,8 +817,16 @@ export class Canvas {
   private touchNode(id: string) {
     this.layoutVersion++;
     const node = this.nodes.get(id);
+    const was = this.nodeIndex.get(id);
     if (node) this.nodeIndex.set(id, this.rect(node));
     for (const edge of this.byNode.get(id) ?? []) this.dirty.add(edge);
+    // The routed edges it was, or is, in the way of.
+    if (this.routed > 0) {
+      for (const box of [was, node && this.rect(node)]) {
+        if (!box) continue;
+        for (const edge of this.edgeIndex.query(box)) if (this.edges.get(edge)?.path === "routed") this.dirty.add(edge);
+      }
+    }
   }
 
   private observe() {
@@ -1118,8 +1136,10 @@ export class Canvas {
         continue;
       }
       const view = this.edgeView(edge);
-      const path = edgePathThrough(edge.path, geometry.from, geometry.fromSide, edge.points, geometry.to, geometry.toSide);
-      view.box = grow(union([fromCorners(geometry.from, geometry.to), ...edge.points.map((p) => ({ ...p, width: 0, height: 0 }))])!, 80);
+      const { path, corners, around } = this.pathOf(edge, geometry);
+      view.box = grow(union([fromCorners(geometry.from, geometry.to), ...[...edge.points, ...corners].map((p) => ({ ...p, width: 0, height: 0 }))])!, 80);
+      // A routed edge is drawn again when a node comes near enough to be in its way.
+      if (around) view.box = union([view.box, around])!;
       this.edgeIndex.set(id, view.box);
       // Written only when they change: a path written again is laid out and painted again.
       if (view.d !== path.d) {
@@ -1335,6 +1355,23 @@ export class Canvas {
   private center(node: NodeModel): Point {
     const at = this.placeOf(node);
     return { x: at.x + node.width / 2, y: at.y + node.height / 2 };
+  }
+
+  // An edge's path. A routed one with no points of its own goes around the
+  // nodes near its ends, but those it joins (and the groups, drawn under
+  // edges): `around` is where a node would be in its way.
+  private pathOf(edge: EdgeModel, geometry: { from: Point; fromSide: Side; to: Point; toSide: Side }): { path: EdgeGeometry; corners: Point[]; around: Rect | null } {
+    if (edge.path !== "routed" || edge.points.length > 0) return { path: edgePathThrough(edge.path, geometry.from, geometry.fromSide, edge.points, geometry.to, geometry.toSide), corners: [], around: null };
+    const around = grow(fromCorners(geometry.from, geometry.to), ROUTE_REACH);
+    const ends = new Set([...this.ancestors(edge.source), ...this.ancestors(edge.target)]);
+    const boxes: Rect[] = [];
+    for (const id of this.nodeIndex.query(around)) {
+      const node = this.nodes.get(id);
+      if (!node || node.group || ends.has(id) || this.gone.has(id)) continue;
+      boxes.push(this.rect(node));
+    }
+    const corners = routeAround(geometry.from, geometry.fromSide, geometry.to, geometry.toSide, boxes);
+    return { path: cornersPath(corners), corners, around };
   }
 
   private rect(node: NodeModel): Rect {
@@ -3938,7 +3975,7 @@ export class Canvas {
     const edge = this.edges.get(id);
     const geometry = edge && this.geometry(edge);
     if (!edge || !geometry) return;
-    const middle = edgePathThrough(edge.path, geometry.from, geometry.fromSide, edge.points, geometry.to, geometry.toSide).label;
+    const middle = this.pathOf(edge, geometry).path.label;
     const input = el("input", { class: "hakushi-edge-input", type: "text", "aria-label": this.messages.t("label"), value: edge.label ?? "" });
     input.style.translate = `${middle.x}px ${middle.y}px`;
     this.labelsEl.append(input);
