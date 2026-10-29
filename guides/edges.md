@@ -76,6 +76,30 @@ the handles it may end on show. The edge keeps its id, its label and its
 data. On the server it is a `:reconnect` change, which the rules check
 with the edge's new ends and `on_change` sees; ⌘Z puts it back.
 
+## A label of your own
+
+An edge's `label` is a text on its middle, which people set with a
+double click. An `:edge_label` slot draws each edge's label instead, in
+your own HEEx, from the edge (`:let`): a badge of its `data`, an icon, a
+button. It is rendered on the server, as a node is, and the canvas puts
+it on the middle of its edge, wherever the edge goes; a click on it
+selects the edge, and its fields and buttons are theirs. An edge whose
+slot draws nothing has no label.
+
+```heex
+<.canvas id="flow" graph={@graph}>
+  <:edge_label :let={edge}>
+    <span :if={edge.label} class="way">
+      {edge.label}
+      <button type="button" phx-click="remove_way" phx-value-edge={edge.id}>×</button>
+    </span>
+  </:edge_label>
+</.canvas>
+```
+
+The label has no frame of Hakushi's: give it your own look. A label is
+drawn again when its edge changes, as a node is when it does.
+
 ## Bending an edge
 
 A selected edge shows a point between each two of the points it goes

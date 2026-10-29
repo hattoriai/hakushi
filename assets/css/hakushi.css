@@ -784,10 +784,29 @@
 }
 
 /* The labels of the edges. */
-.hakushi-labels {
+.hakushi-labels,
+.hakushi-edge-data {
   position: absolute;
   top: 0;
   left: 0;
+}
+
+/* The edges' data, which the browser reads: unseen, but the labels of the
+   app's own (an :edge_label slot), placed on their edges. */
+.hakushi-edge-data > i:not(.hakushi-edge-label-own) {
+  display: none;
+}
+
+.hakushi-edge-label-own {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-style: normal;
+  white-space: normal;
+}
+
+.hakushi-edge-label-own:empty {
+  display: none;
 }
 
 .hakushi-edge-label,

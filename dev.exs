@@ -1041,6 +1041,10 @@ defmodule HakushiDev.Layouts do
 
           .people-strip { display: flex; align-items: center; }
           .people-strip span { display: grid; place-items: center; width: 1.75rem; height: 1.75rem; margin-left: -6px; border: 2px solid var(--atelier-bg); border-radius: 99px; color: #fff; font-size: 0.625rem; font-weight: 600; }
+          .way-label { display: inline-flex; align-items: center; gap: 4px; padding: 1px 4px 1px 8px; border-radius: 99px; background: var(--atelier-card); border: 1px solid var(--atelier-line); font-size: 0.75rem; font-weight: 600; color: var(--atelier-muted); }
+          .way-label[data-way="yes"] { color: #2e6b5c; border-color: #2e6b5c55; }
+          .way-label[data-way="no"] { color: #b5643c; border-color: #b5643c55; }
+          .way-label button { border: 0; background: none; color: inherit; cursor: pointer; font: inherit; padding: 0 2px; }
           .ruler-line { stroke: var(--atelier-accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
           .ruler-text { fill: var(--atelier-accent); font: 600 13px system-ui; text-anchor: middle; }
           .scale-node { padding: 0.5rem 0.75rem; border: 1px solid var(--atelier-line); border-radius: 8px; background: var(--atelier-card); font-size: 0.8125rem; width: 9rem; position: relative; }
@@ -1533,6 +1537,12 @@ defmodule HakushiDev.WorkflowLive do
     end
   end
 
+  # A button of an edge's label (the canvas's :edge_label slot): the edge goes.
+  def handle_event("drop_edge", %{"edge" => edge}, socket) do
+    Hakushi.Live.change("workflow", Hakushi.Change.delete(edges: [edge]))
+    {:noreply, socket}
+  end
+
   def handle_event("then", %{"version" => version}, socket) do
     {:noreply, assign(socket, :then, String.to_integer(version))}
   end
@@ -1685,6 +1695,12 @@ defmodule HakushiDev.WorkflowLive do
             <footer><i></i> {status(node.data.status)}</footer>
           </div>
         </:node>
+        <:edge_label :let={edge}>
+          <span :if={edge.label} class="way-label" data-way={edge.source_handle}>
+            {edge.label}
+            <button :if={!@readonly} type="button" phx-click="drop_edge" phx-value-edge={edge.id} aria-label={"Remove the way #{edge.label}"}>×</button>
+          </span>
+        </:edge_label>
       </.canvas>
     </.app>
     """

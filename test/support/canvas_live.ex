@@ -71,6 +71,7 @@ defmodule HakushiTest.CanvasLive do
        rewrite: params["rewrite"],
        notify: params["notify"] == "true",
        menu: params["menu"],
+       edge_label: params["edge_label"] == "true",
        readonly: readonly(params["readonly"]),
        way: params["layout"] && String.to_existing_atom(params["layout"]),
        tidy: params["tidy"] == "true"
@@ -244,6 +245,9 @@ defmodule HakushiTest.CanvasLive do
           </div>
         </div>
       </:node>
+      <:edge_label :if={@edge_label} :let={edge}>
+        <span class="fk-badge" data-fk={edge.id}>{edge.source_handle} → {edge.target_handle}</span>
+      </:edge_label>
       <:empty>Drop a table here.</:empty>
     </.canvas>
     <.canvas_item for="schema" item="table">New table</.canvas_item>

@@ -97,6 +97,8 @@ interface EdgeView {
   line: SVGPathElement;
   hit: SVGPathElement;
   label: HTMLElement | null;
+  // The label is the server's (an :edge_label slot): placed here, never removed here.
+  own: boolean;
   shown: boolean;
   // Around the path: to cull it.
   box: Rect;
@@ -1117,7 +1119,18 @@ export class Canvas {
       toggle(view.g, "data-animated", edge.animated);
       this.drawMark(view, edge);
       toggle(view.g, "data-ui-faint", !!(this.nodes.get(edge.source)?.faint || this.nodes.get(edge.target)?.faint));
-      if (edge.label) {
+      // A label of the app's own (an :edge_label slot): the server's element.
+      const own = this.edgeData.querySelector<HTMLElement>(`:scope > .hakushi-edge-label-own[data-id="${CSS.escape(id)}"]`);
+      if (own) {
+        if (view.label && !view.own) view.label.remove();
+        view.label = own;
+        view.own = true;
+        own.hidden = this.gone.has(id);
+        own.style.translate = `${path.label.x}px ${path.label.y}px`;
+        toggle(own, "data-ui-selected", this.selectedEdges.has(id));
+      } else if (edge.label) {
+        if (view.own) view.label = null;
+        view.own = false;
         if (!view.label) {
           view.label = el("div", { class: "hakushi-edge-label", "data-edge": id });
           this.labelsEl.append(view.label);
@@ -1129,8 +1142,9 @@ export class Canvas {
         toggle(view.label, "data-mark-dim", edge.mark.dim);
         toggle(view.label, "data-lit", edge.mark.lit);
       } else if (view.label) {
-        view.label.remove();
+        if (!view.own) view.label.remove();
         view.label = null;
+        view.own = false;
       }
       if (!viewChanged) this.showEdge(view, all || intersects(view.box, area) || raised);
     }
@@ -1255,7 +1269,7 @@ export class Canvas {
       const line = svg("path", { class: "hakushi-edge-line" });
       g.append(hit, line);
       this.edgesG.append(g);
-      view = { g, line, hit, label: null, shown: true, box: { x: 0, y: 0, width: 0, height: 0 }, d: "", marker: null };
+      view = { g, line, hit, label: null, own: false, shown: true, box: { x: 0, y: 0, width: 0, height: 0 }, d: "", marker: null };
       this.edgeViews.set(edge.id, view);
     }
     return view;
@@ -1265,7 +1279,7 @@ export class Canvas {
     const view = this.edgeViews.get(id);
     if (!view) return;
     view.g.remove();
-    view.label?.remove();
+    if (!view.own) view.label?.remove();
     this.edgeViews.delete(id);
   }
 
@@ -1382,9 +1396,7 @@ export class Canvas {
         }
         // Its points, to drag (a double click takes one away), and between
         // them the places to drag a new one out of the line from.
-        const all = [geometry.from, ...edge.points, geometry.to];
-        for (let i = 0; i < all.length - 1; i++) {
-          const m = { x: (all[i].x + all[i + 1].x) / 2, y: (all[i].y + all[i + 1].y) / 2 };
+        for (const m of this.newPointSpots(edge, geometry)) {
           this.overlay.append(svg("circle", { class: "hakushi-waypoint-new", "data-edge": id, cx: `${m.x}`, cy: `${m.y}`, r: `${4 / this.view.zoom}` }));
         }
         edge.points.forEach((p, i) => {
@@ -3016,6 +3028,9 @@ export class Canvas {
     const edgeEl = target.closest<SVGGElement>(".hakushi-edge");
     const labelEl = target.closest<HTMLElement>(".hakushi-edge-label");
 
+    // The fields and buttons of a label of the app's own are theirs.
+    if (labelEl && interactive(target, labelEl)) return;
+
     // The middle button, or Space held: pan, wherever.
     if (event.button === 1 || this.space) {
       event.preventDefault();
@@ -3198,11 +3213,18 @@ export class Canvas {
     const near = (q: Point) => Math.hypot(q.x * this.view.zoom + this.view.x - p.x, q.y * this.view.zoom + this.view.y - p.y) <= 8;
     const at = edge.points.findIndex(near);
     if (at >= 0) return { edge: id, index: at, inserted: false };
+    const spots = this.newPointSpots(edge, geometry);
+    const i = spots.findIndex(near);
+    return i >= 0 ? { edge: id, index: i, inserted: true } : null;
+  }
+
+  // Where a new point of an edge is dragged from: the middle of each piece
+  // between two of its points (its ends first); a third of the way, on an
+  // edge with a label, which sits on its middle.
+  private newPointSpots(edge: EdgeModel, geometry: { from: Point; to: Point }): Point[] {
     const all = [geometry.from, ...edge.points, geometry.to];
-    for (let i = 0; i < all.length - 1; i++) {
-      if (near({ x: (all[i].x + all[i + 1].x) / 2, y: (all[i].y + all[i + 1].y) / 2 })) return { edge: id, index: i, inserted: true };
-    }
-    return null;
+    const k = this.edgeViews.get(edge.id)?.label ? 1 / 3 : 1 / 2;
+    return all.slice(0, -1).map((a, i) => ({ x: a.x + (all[i + 1].x - a.x) * k, y: a.y + (all[i + 1].y - a.y) * k }));
   }
 
   private startBend(event: PointerEvent, id: string, index: number, inserted: boolean, at: Point) {
