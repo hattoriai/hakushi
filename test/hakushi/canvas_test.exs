@@ -531,6 +531,26 @@ defmodule Hakushi.CanvasTest do
     end
   end
 
+  describe "a label of the app's own" do
+    test "an :edge_label slot draws each edge's label, with the edge's data" do
+      {view, html} = open("?edge_label=true")
+      assert html =~ ~r/class="hakushi-edge-label hakushi-edge-label-own"[^>]*data-id="fk"/
+      assert html =~ ~s(<span class="fk-badge" data-fk="fk">user_id → id</span>)
+      # The edge as it was: read by the browser, and the tests.
+      assert [%{id: "fk", source: "orders"}] = edges(view, "schema")
+
+      # A new edge has one too.
+      assert :ok = connect(view, "schema", "note", {"users", "id"})
+      assert length(Regex.scan(~r/class="fk-badge"/, render(view))) == 2
+    end
+
+    test "without the slot, the edges' data is no label" do
+      {_view, html} = open()
+      refute html =~ "hakushi-edge-label-own"
+      refute html =~ "fk-badge"
+    end
+  end
+
   describe "the points an edge goes through" do
     test "people bend an edge, and straighten it again" do
       {view, _html} = open()

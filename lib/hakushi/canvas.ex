@@ -1519,30 +1519,37 @@ defmodule Hakushi.Canvas do
              the nodes: the whole of each, where it goes under another node. --%>
         <svg id={@id <> "-svg-raised"} class="hakushi-edges hakushi-edges-raised" phx-update="ignore" aria-hidden="true"></svg>
         <div id={@id <> "-labels"} class="hakushi-labels" phx-update="ignore"></div>
+        <%!-- The edges' data, which the browser draws them by; with an
+             :edge_label slot, each one's label too, which it places on
+             the edge (the style and data-ui-* are the browser's). --%>
+        <div id={@id <> "-edge-data"} class="hakushi-edge-data" phx-update="stream">
+          <i
+            :for={{dom_id, edge} <- @streams.edges}
+            id={dom_id}
+            class={@edge_label_slot != [] && "hakushi-edge-label hakushi-edge-label-own"}
+            phx-mounted={@edge_label_slot != [] && JS.ignore_attributes(["style", "data-ui-*"])}
+            data-id={edge.id}
+            data-edge={edge.id}
+            data-source={edge.source}
+            data-source-handle={edge.source_handle}
+            data-target={edge.target}
+            data-target-handle={edge.target_handle}
+            data-path={edge.path}
+            data-label={edge.label}
+            data-marker={edge.marker}
+            data-animated={edge.animated && "true"}
+            data-points={edge.points != [] && Enum.map_join(edge.points, " ", fn [x, y] -> "#{x},#{y}" end)}
+            data-mark-status={mark(@marks.edges, edge.id, :status)}
+            data-mark-highlight={mark(@marks.edges, edge.id, :highlight) && "true"}
+            data-mark-color={mark_color_value(@marks.edges, edge.id)}
+            data-mark-dim={mark(@marks.edges, edge.id, :dim) && "true"}
+            data-mark-title={mark(@marks.edges, edge.id, :title)}
+            data-lit={lit?(@spotlight, :edges, edge.id) && "true"}
+            data-diff={@diff.edges[edge.id]}
+          >{if @edge_label_slot != [], do: render_slot(@edge_label_slot, edge)}</i>
+        </div>
       </div>
-      <div id={@id <> "-edge-data"} phx-update="stream" hidden>
-        <i
-          :for={{dom_id, edge} <- @streams.edges}
-          id={dom_id}
-          data-id={edge.id}
-          data-source={edge.source}
-          data-source-handle={edge.source_handle}
-          data-target={edge.target}
-          data-target-handle={edge.target_handle}
-          data-path={edge.path}
-          data-label={edge.label}
-          data-marker={edge.marker}
-          data-animated={edge.animated && "true"}
-          data-points={edge.points != [] && Enum.map_join(edge.points, " ", fn [x, y] -> "#{x},#{y}" end)}
-          data-mark-status={mark(@marks.edges, edge.id, :status)}
-          data-mark-highlight={mark(@marks.edges, edge.id, :highlight) && "true"}
-          data-mark-color={mark_color_value(@marks.edges, edge.id)}
-          data-mark-dim={mark(@marks.edges, edge.id, :dim) && "true"}
-          data-mark-title={mark(@marks.edges, edge.id, :title)}
-          data-lit={lit?(@spotlight, :edges, edge.id) && "true"}
-          data-diff={@diff.edges[edge.id]}
-        ></i>
-      </div>
+
       <div :if={@people != [] and @show_people} class="hakushi-people" data-hakushi-people>
         <.dynamic_tag
           :for={person <- @people}

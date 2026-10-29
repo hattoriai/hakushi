@@ -303,6 +303,13 @@ defmodule Hakushi.Components do
         "when `true`, people open these nodes (a double click, ⌘↓, an `opener/1`): the canvas's `on_open`, see [Drill-down](drill-down.md)"
   end
 
+  slot :edge_label,
+    doc: """
+    draws the label of each edge, in the place of its text (`:let` gets the `Hakushi.Edge`): \
+    its `label`, a badge of its `data`, a button; nothing for an edge without one. See \
+    [Edges](edges.md#a-label-of-your-own)\
+    """
+
   slot :person,
     doc:
       "draws a person on a shared canvas (`:let` gets a map with \"id\", \"name\", \"color\", \"avatar\")"
@@ -357,6 +364,7 @@ defmodule Hakushi.Components do
       class={@class}
       rest={@rest}
       node_slots={@node}
+      edge_label_slot={@edge_label}
       person_slot={@person}
       empty_slot={@empty}
     />

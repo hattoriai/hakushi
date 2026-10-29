@@ -94,6 +94,10 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   curve square to its ends). A change as any (`:update` of `points`),
   kept in JSON and in Markdown. `Hakushi.Test.bend/4`, and `:points` in
   `Hakushi.Test.edges/2`. See the Edges guide.
+- An `:edge_label` slot draws each edge's label in the app's own HEEx
+  (`:let` gets the edge), rendered on the server and placed by the canvas
+  on the middle of its edge: a click on it selects the edge, and its
+  fields and buttons are theirs. See the Edges guide.
 
 ### Changed
 
