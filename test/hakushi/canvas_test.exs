@@ -16,6 +16,15 @@ defmodule Hakushi.CanvasTest do
     {view, html}
   end
 
+  # The reply of the last event sent with render_hook.
+  defp reply do
+    receive do
+      {_ref, {:reply, reply}} -> reply
+    after
+      1000 -> flunk("no reply")
+    end
+  end
+
   test "renders the nodes with their slots, the edges and the config" do
     {view, html} = open()
 
@@ -249,6 +258,64 @@ defmodule Hakushi.CanvasTest do
       render_click(view, "app_layout", %{"direction" => "down"})
       assert_push_event(view, "hakushi:layout", %{"direction" => "down"} = payload)
       refute Map.has_key?(payload, "algorithm")
+    end
+  end
+
+  describe "on_change gives back another change" do
+    test "the change it gives back is the one that applies, and that undoes" do
+      {view, _html} = open("?rewrite=snap")
+
+      assert %{"ok" => true, "rewritten" => true} =
+               view
+               |> element("#schema-hook")
+               |> render_hook("hakushi:change", %{
+                 "op" => "move",
+                 "nodes" => [%{"id" => "note", "x" => 13, "y" => 297}]
+               })
+               |> then(fn _html -> reply() end)
+
+      # Asked about the person's change, then about its own, which it takes.
+      assert_receive {:on_change, %{op: :move, nodes: [%{x: 13}]}, _context}
+      assert_receive {:on_change, %{op: :move, nodes: [%{x: 10, y: 300}]}, %{result: result}}
+      assert Hakushi.Graph.node(result, "note").x == 10
+      assert %{x: 10, y: 300} = Enum.find(nodes(view, "schema"), &(&1.id == "note"))
+
+      assert :ok = undo(view, "schema")
+      assert %{x: 0, y: 300} = Enum.find(nodes(view, "schema"), &(&1.id == "note"))
+    end
+
+    test "a change it takes as it is was not rewritten" do
+      {view, _html} = open("?rewrite=snap")
+
+      view
+      |> element("#schema-hook")
+      |> render_hook("hakushi:change", %{
+        "op" => "move",
+        "nodes" => [%{"id" => "note", "x" => 20, "y" => 30}]
+      })
+
+      assert reply() == %{"ok" => true}
+      assert_receive {:on_change, %{op: :move}, _context}
+      refute_receive {:on_change, _change, _context}
+    end
+
+    test "the change it gives back goes by the rules" do
+      {view, _html} = open("?rewrite=loop")
+
+      assert {:error, "A node cannot connect to itself."} =
+               connect(view, "schema", "note", "users")
+
+      assert length(edges(view, "schema")) == 1
+    end
+
+    test "a change it never takes as it is does not apply" do
+      {view, _html} = open("?rewrite=never")
+
+      assert ExUnit.CaptureLog.capture_log(fn ->
+               assert {:error, _message} = move(view, "schema", "note", {1, 1})
+             end) =~ "on_change gave back another change 5 times"
+
+      assert %{x: 0, y: 300} = Enum.find(nodes(view, "schema"), &(&1.id == "note"))
     end
   end
 

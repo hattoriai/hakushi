@@ -1186,7 +1186,7 @@ defmodule HakushiDev.SchemaLive do
   alias Hakushi.{Change, Graph}
 
   @impl true
-  def mount(_params, _session, socket) do
+  def mount(params, _session, socket) do
     graph = HakushiDev.Store.get("schema", socket.assigns.room)
     doc = topic("schema", socket.assigns.room)
 
@@ -1200,7 +1200,17 @@ defmodule HakushiDev.SchemaLive do
       Issho.Live.subscribe(doc, :self, events: ["canvas.*"])
     end
 
-    {:ok, assign(socket, graph: graph, now: graph, doc: doc, selected: [], zoom: nil)}
+    # ?grid=app: the app keeps the tables on the paper's squares, giving
+    # back another move for one off them (on_change).
+    {:ok,
+     assign(socket,
+       graph: graph,
+       now: graph,
+       doc: doc,
+       selected: [],
+       zoom: nil,
+       app_grid: params["grid"] == "app"
+     )}
   end
 
   @impl true
@@ -1278,6 +1288,18 @@ defmodule HakushiDev.SchemaLive do
     :ok
   end
 
+  # The tables on the squares of 20: a move off them is given back on them,
+  # and saved when it comes back as it is.
+  def on_grid(%Change{op: :move, nodes: places} = change, context, room) do
+    on_grid = Enum.map(places, &%{&1 | x: round(&1.x / 20) * 20, y: round(&1.y / 20) * 20})
+
+    if on_grid == places,
+      do: on_change(change, context, room),
+      else: {:ok, %{change | nodes: on_grid}}
+  end
+
+  def on_grid(change, context, room), do: on_change(change, context, room)
+
   defp column(graph, table, name) do
     with %{data: %{columns: columns}} <- Graph.node(graph, table),
          do: Enum.find(columns, &(&1.name == name))
@@ -1324,7 +1346,7 @@ defmodule HakushiDev.SchemaLive do
       <.canvas
         id="schema"
         graph={@graph}
-        on_change={&on_change(&1, &2, @room)}
+        on_change={if @app_grid, do: &on_grid(&1, &2, @room), else: &on_change(&1, &2, @room)}
         on_select={&send(self(), {:selected, &1})}
         on_viewport={&send(self(), {:viewport, &1})}
         new_node={&new_node/2}

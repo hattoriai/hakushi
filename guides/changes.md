@@ -55,9 +55,41 @@ alone, `by` is the canvas's `user`. (`user`, the change's `by`, is there
 too, as in 0.2, and goes in a later version.) It returns:
 
 * `:ok`, or `{:ok, anything}`: the change happens;
+* `{:ok, %Hakushi.Change{}}`: another change happens in its place (see
+  below);
 * `{:error, reason}`: it does not, and `reason` (a string) is shown;
 * `{:error, changeset}`: it does not, and the changeset's first error is
   shown.
+
+### Another change in its place
+
+`on_change` may give back another change, to happen in place of the one
+it was given: a move put on the app's own grid, a node kept inside its
+frame, a label trimmed, a delete that takes more with it. That change
+goes the same way: the graph, the rules, and `on_change` again, which
+saves it when it takes it as it is (`:ok`, or the same change back).
+
+```elixir
+def change(%Hakushi.Change{op: :move, nodes: places} = change, %{result: graph}, flow) do
+  on_grid = Enum.map(places, &%{&1 | x: round(&1.x / 20) * 20, y: round(&1.y / 20) * 20})
+
+  if on_grid == places,
+    do: Flows.save_graph(flow, graph),
+    else: {:ok, %{change | nodes: on_grid}}
+end
+```
+
+The person sees the change that happened, not theirs: the node goes from
+where they let it go to where the app put it. Their undo takes back
+what happened. A change the rules refuse is refused, with its reason,
+and the person's does not happen either. `on_change` gives back another
+change five times at most; after that nothing happens, and the canvas
+logs the last one.
+
+The change given back keeps the person's `by`, and has one `op`, as any
+change: a move may become another move, a delete a delete of more nodes.
+On a shared canvas, it is the change everyone sees, whoever made the
+first: a person, an agent, or the app (`Hakushi.Issho.change/4`).
 
 ### On a shared canvas, with Issho
 

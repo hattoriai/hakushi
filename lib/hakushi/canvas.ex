@@ -738,7 +738,7 @@ defmodule Hakushi.Canvas do
 
     with {:ok, %{} = node} <- result,
          node = node |> with_id() |> Node.new() |> in_group(socket.assigns.graph, place[:parent]),
-         {socket, {:ok, _inverse}} <- commit(socket, Change.add([node]), true) do
+         {socket, {:ok, _inverse, _rewritten}} <- commit(socket, Change.add([node]), true) do
       push_file(socket, ref, %{"id" => node.id})
     else
       {socket, {:error, message}} ->
@@ -897,10 +897,12 @@ defmodule Hakushi.Canvas do
 
   # An undo or a redo that applied goes on the other list, and selects the
   # nodes it brought back or moved.
-  defp stepped({socket, {:ok, inverse}}, change, to) do
+  defp stepped({socket, {:ok, inverse, rewritten}}, change, to) do
     {node_ids, _edge_ids} = Change.ids(change)
     select = if change.op == :delete, do: [], else: node_ids
-    {:reply, %{"ok" => true, "select" => select}, update(socket, to, &[inverse | &1])}
+
+    {:reply, rewritten(%{"ok" => true, "select" => select}, rewritten),
+     update(socket, to, &[inverse | &1])}
   end
 
   defp stepped({socket, {:error, message}}, _change, _to),
@@ -908,16 +910,22 @@ defmodule Hakushi.Canvas do
 
   defp reply(result, extra \\ %{})
 
-  defp reply({socket, {:ok, _inverse}}, extra),
-    do: {:reply, Map.merge(%{"ok" => true}, extra), socket}
+  defp reply({socket, {:ok, _inverse, rewritten}}, extra),
+    do: {:reply, rewritten(Map.merge(%{"ok" => true}, extra), rewritten), socket}
 
   defp reply({socket, {:error, message}}, _extra), do: {:reply, %{"error" => message}, socket}
 
+  # A change on_change gave back another for: the browser reads again what
+  # it showed of the person's.
+  defp rewritten(reply, true), do: Map.put(reply, "rewritten", true)
+  defp rewritten(reply, false), do: reply
+
   # A change, here or through the room of a shared canvas: the one place
   # where the two differ. A person's own change (`record`) goes on their
-  # undo list (but a `:quiet` one, which is theirs, does not). On a shared
-  # canvas, its inverse is of the graph this canvas has; the change itself
-  # shows when the room sends it back.
+  # undo list (but a `:quiet` one, which is theirs, does not), as it
+  # applied: on_change may have given back another in its place. On a
+  # shared canvas, its inverse is of the graph this canvas has; the change
+  # itself shows when the room sends it back.
   defp commit(socket, %Change{} = change, record) do
     change = if record, do: %{change | by: person(socket)}, else: change
 
@@ -932,20 +940,22 @@ defmodule Hakushi.Canvas do
           })
 
         doc ->
+          Hakushi.Issho.take_rewritten()
+
           with {:ok, _graph, _change, inverse} <-
                  Commit.check_and_apply(socket.assigns.graph, change, socket.assigns.rules),
                {:ok, _receipt} <- Actions.commit(socket.assigns.room, doc, change) do
-            {:ok, inverse}
+            shared_inverse(socket, inverse, Hakushi.Issho.take_rewritten())
           end
       end
 
     case result do
-      {:ok, graph, change, inverse} ->
+      {:ok, graph, change, inverse, rewritten} ->
         socket = socket |> show(graph, change) |> clear_notice() |> remember(record, inverse)
-        {socket, {:ok, inverse}}
+        {socket, {:ok, inverse, rewritten}}
 
-      {:ok, inverse} ->
-        {socket |> clear_notice() |> remember(record, inverse), {:ok, inverse}}
+      {:ok, inverse, rewritten} ->
+        {socket |> clear_notice() |> remember(record, inverse), {:ok, inverse, rewritten}}
 
       {:error, reason} ->
         message = Messages.reason(socket.assigns.messages, reason)
@@ -954,6 +964,19 @@ defmodule Hakushi.Canvas do
          {:error, message}}
     end
   end
+
+  # The inverse of the change the room took: the person's, or the one
+  # on_change gave back in its place.
+  defp shared_inverse(_socket, inverse, nil), do: {:ok, inverse, false}
+
+  defp shared_inverse(socket, inverse, [%Change{} = other]) do
+    case Commit.check_and_apply(socket.assigns.graph, other, socket.assigns.rules) do
+      {:ok, _graph, _change, inverse} -> {:ok, inverse, true}
+      {:error, _reason} -> {:ok, inverse, true}
+    end
+  end
+
+  defp shared_inverse(_socket, inverse, _others), do: {:ok, inverse, true}
 
   defp remember(socket, record, _inverse) when record in [false, :quiet], do: socket
 

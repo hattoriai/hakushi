@@ -302,27 +302,62 @@ if Code.ensure_loaded?(Issho.Engine) do
       end
     end
 
-    # Each change is asked about with the graph the ones before it made.
-    defp ask_each([], _graph, _rules, _on_change, _who), do: :ok
+    # Each change is asked about with the graph the ones before it made. A
+    # change on_change gives back another for refuses the transaction, with
+    # the transaction to make in its place (see rewritable/2).
+    defp ask_each(changes, graph, rules, on_change, who),
+      do: ask_each(changes, [], graph, rules, on_change, who)
 
-    defp ask_each([change | rest], graph, rules, on_change, who) do
-      with {:ok, result} <- ask(graph, change, rules, on_change, who),
-           do: ask_each(rest, result, rules, on_change, who)
+    defp ask_each([], _done, _graph, _rules, _on_change, _who), do: :ok
+
+    defp ask_each([change | rest], done, graph, rules, on_change, who) do
+      case ask(graph, change, rules, on_change, who) do
+        {:ok, result} -> ask_each(rest, [change | done], result, rules, on_change, who)
+        {:rewrite, other} -> {:error, {:rewritten, Enum.reverse(done, [other | rest])}}
+        {:error, reason} -> {:error, reason}
+      end
     end
 
     defp ask(graph, change, rules, on_change, {canvas, by}) do
-      with {:ok, result, applied, _inverse} <- Commit.check_and_apply(graph, change, rules),
-           :ok <-
-             Commit.ask(on_change, applied, %{
-               graph: graph,
-               result: result,
-               by: by,
-               user: change.by,
-               canvas: canvas
-             }) do
-        {:ok, result}
+      with {:ok, result, applied, _inverse} <- Commit.check_and_apply(graph, change, rules) do
+        context = %{graph: graph, result: result, by: by, user: change.by, canvas: canvas}
+
+        case Commit.ask(on_change, applied, context) do
+          :ok -> {:ok, result}
+          other -> other
+        end
       end
     end
+
+    @rewritten {__MODULE__, :rewritten}
+
+    @doc false
+    # A transaction of the room (`transact`, of a list of changes), made
+    # again with the changes on_change gave back in place of its own, until
+    # it takes them. The last of those stay in the process, for the canvas
+    # that made the change (take_rewritten/0).
+    @spec rewritable([Change.t()], ([Change.t()] -> result)) :: result | {:error, :failed}
+          when result: term()
+    def rewritable(changes, transact), do: rewritable(changes, transact, 0)
+
+    defp rewritable(changes, transact, round) do
+      case transact.(changes) do
+        {:error, {:rewritten, others}} ->
+          Commit.rewrite(round, others, fn others ->
+            Process.put(@rewritten, others)
+            rewritable(others, transact, round + 1)
+          end)
+
+        other ->
+          other
+      end
+    end
+
+    @doc false
+    # The changes on_change gave back for the last transaction of this
+    # process, or nil, once.
+    @spec take_rewritten() :: [Change.t()] | nil
+    def take_rewritten, do: Process.delete(@rewritten)
 
     @doc """
     Makes your app's own change on a shared canvas: the way of a person's
@@ -352,7 +387,7 @@ if Code.ensure_loaded?(Issho.Engine) do
           changes = Enum.map(changes, fn %Change{} = change -> %{change | by: nil} end)
           author = Keyword.get(opts, :author, "server")
 
-          case Issho.transact(instance, document, changes, author: author) do
+          case rewritable(changes, &Issho.transact(instance, document, &1, author: author)) do
             {:ok, _receipt} -> :ok
             {:error, reason} -> {:error, reason}
           end

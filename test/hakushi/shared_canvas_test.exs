@@ -34,6 +34,52 @@ defmodule Hakushi.SharedCanvasTest do
     :sys.get_state(view.pid)
   end
 
+  test "a change on_change gives back another for is that one, for everyone" do
+    topic = topic()
+    # The first canvas gives the document its on_change: one that snaps.
+    ada = open(topic, "ada", nil, "&rewrite=snap")
+    grace = open(topic, "grace")
+
+    assert :ok = move(grace, "schema", "note", {13, 297})
+    settle(ada)
+
+    for view <- [ada, grace],
+        do: assert(%{x: 10, y: 300} = Enum.find(nodes(view, "schema"), &(&1.id == "note")))
+
+    # The person's undo takes back what applied.
+    assert :ok = undo(grace, "schema")
+    settle(ada)
+    assert %{x: 0, y: 300} = Enum.find(nodes(ada, "schema"), &(&1.id == "note"))
+
+    # The app's own change goes the same way.
+    document = "canvas:" <> topic
+    change = Hakushi.Change.move([{"note", 44, 46}])
+    assert :ok = Hakushi.Issho.change(HakushiTest.Issho, document, change)
+    graph = Hakushi.Issho.graph(HakushiTest.Issho, document)
+    assert %{x: 40, y: 50} = Hakushi.Graph.node(graph, "note")
+  end
+
+  test "an agent's change that on_change gives back another for is that one" do
+    topic = topic()
+    ada = open(topic, "ada", nil, "&rewrite=snap")
+    Application.put_env(:hakushi, Hakushi.Issho, travel: false)
+    on_exit(fn -> Application.delete_env(:hakushi, Hakushi.Issho) end)
+    tools = Hakushi.Issho.tools()
+    agent = Context.new(HakushiTest.Issho, %{id: "assistant", name: "Assistant", kind: :agent})
+    canvas = "canvas:" <> topic
+
+    # A tool's change (a drag), and an action's (an update with a place).
+    move = %{"canvas" => canvas, "node" => "note", "x" => 41, "y" => 79}
+    assert {:ok, _} = Issho.Tools.call(tools, "move_node", move, agent)
+    settle(ada)
+    assert %{x: 40, y: 80} = Enum.find(nodes(ada, "schema"), &(&1.id == "note"))
+
+    update = %{"canvas" => canvas, "node" => "note", "x" => 66, "y" => 4}
+    assert {:ok, _} = Issho.Tools.call(tools, "update_node", update, agent)
+    settle(ada)
+    assert %{x: 70, y: 0} = Enum.find(nodes(ada, "schema"), &(&1.id == "note"))
+  end
+
   test "people on one topic share the changes, in one room" do
     topic = topic()
     ada = open(topic, "ada")

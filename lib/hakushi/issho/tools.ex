@@ -48,7 +48,10 @@ if Code.ensure_loaded?(Issho.Tool) do
       identity = Issho.Identity.new(canvas.ctx.actor)
       who = %{id: identity.key, name: identity.name}
 
-      case Participant.transact(canvas.participant, canvas.canvas, [%{change | by: who}]) do
+      case Hakushi.Issho.rewritable(
+             [%{change | by: who}],
+             &Participant.transact(canvas.participant, canvas.canvas, &1)
+           ) do
         {:ok, _receipt} -> :ok
         {:error, reason} -> Context.error(reason)
       end
