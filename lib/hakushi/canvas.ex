@@ -123,7 +123,8 @@ defmodule Hakushi.Canvas do
        tidy: false,
        places: %{},
        marks: %{nodes: %{}, edges: %{}},
-       spotlight: nil
+       spotlight: nil,
+       diff: %{nodes: %{}, edges: %{}}
      )}
   end
 
@@ -153,8 +154,13 @@ defmodule Hakushi.Canvas do
 
     socket = assign(socket, :rules, Rules.new(assigns[:rules] || socket.assigns[:rules]))
 
+    compare = socket.assigns[:compare]
+
     socket =
       cond do
+        compare != nil ->
+          compared(socket, compare, assigns.graph)
+
         not socket.assigns.configured ->
           start(socket, assigns.graph)
 
@@ -169,6 +175,65 @@ defmodule Hakushi.Canvas do
       end
 
     {:ok, socket}
+  end
+
+  # A canvas that compares (`compare`): its graph, with what the old one
+  # had and it has not (the nodes and edges removed, shown as ghosts), and
+  # what each node and edge is to the old (`diff`). Shown whole again when
+  # either changes.
+  defp compared(socket, old, %Graph{} = graph) do
+    if socket.assigns.configured and socket.assigns.given == {old, graph} do
+      socket
+    else
+      {shown, diff} = overlay(old, graph)
+      socket = assign(socket, given: {old, graph}, diff: diff)
+
+      if socket.assigns.configured,
+        do: reset(socket, shown),
+        else: start(socket, shown)
+    end
+  end
+
+  @doc false
+  # The graph and the old one together, and what each node and edge of it
+  # is to the old: :added, :removed, :changed or :moved (as
+  # Hakushi.Graph.compare/2 says it).
+  @spec overlay(Graph.t(), Graph.t()) :: {Graph.t(), %{nodes: map(), edges: map()}}
+  def overlay(%Graph{} = old, %Graph{} = graph) do
+    compared = Graph.compare(old, graph)
+    removed = MapSet.new(compared.removed.nodes)
+
+    ghosts =
+      for id <- compared.removed.nodes do
+        node = Graph.node(old, id)
+        parent = node.parent
+        kept = parent && (Map.has_key?(graph.nodes, parent) or MapSet.member?(removed, parent))
+        %{node | locked: true, parent: if(kept, do: parent)}
+      end
+
+    ghost_edges = Enum.map(compared.removed.edges, &Graph.edge(old, &1))
+
+    shown =
+      Graph.new(
+        nodes: Graph.nodes(graph) ++ ghosts,
+        edges: Graph.edges(graph) ++ ghost_edges,
+        paper: graph.paper
+      )
+
+    statuses = fn ids, status -> Map.new(ids, &{&1, status}) end
+
+    nodes =
+      statuses.(compared.moved, :moved)
+      |> Map.merge(statuses.(Map.keys(compared.changed.nodes), :changed))
+      |> Map.merge(statuses.(compared.added.nodes, :added))
+      |> Map.merge(statuses.(compared.removed.nodes, :removed))
+
+    edges =
+      statuses.(Map.keys(compared.changed.edges), :changed)
+      |> Map.merge(statuses.(compared.added.edges, :added))
+      |> Map.merge(statuses.(compared.removed.edges, :removed))
+
+    {shown, %{nodes: nodes, edges: edges}}
   end
 
   defp start(socket, %Graph{} = graph) do
@@ -1349,6 +1414,7 @@ defmodule Hakushi.Canvas do
       data-background={@paper_background}
       data-tidy={@tidy && "true"}
       data-spotlight={@spotlight && "true"}
+      data-compare={@compare && "true"}
       role="application"
       tabindex="0"
       aria-roledescription={@messages["canvas"]}
@@ -1394,6 +1460,7 @@ defmodule Hakushi.Canvas do
             data-mark-highlight={mark(@marks.nodes, node.id, :highlight) && "true"}
             data-mark-dim={mark(@marks.nodes, node.id, :dim) && "true"}
             data-lit={lit?(@spotlight, :nodes, node.id) && "true"}
+            data-diff={@diff.nodes[node.id]}
             title={mark(@marks.nodes, node.id, :title)}
             style={node_style(node) <> mark_color(@marks.nodes, node.id)}
             tabindex="-1"
@@ -1449,6 +1516,7 @@ defmodule Hakushi.Canvas do
           data-mark-dim={mark(@marks.edges, edge.id, :dim) && "true"}
           data-mark-title={mark(@marks.edges, edge.id, :title)}
           data-lit={lit?(@spotlight, :edges, edge.id) && "true"}
+          data-diff={@diff.edges[edge.id]}
         ></i>
       </div>
       <div :if={@people != [] and @show_people} class="hakushi-people" data-hakushi-people>

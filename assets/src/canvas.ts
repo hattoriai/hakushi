@@ -749,6 +749,7 @@ export class Canvas {
         dim: element.dataset.markDim === "true",
         title: element.dataset.markTitle ?? null,
         lit: element.dataset.lit === "true",
+        diff: element.dataset.diff ?? null,
       },
     };
     this.edges.set(id, edge);
@@ -1212,6 +1213,8 @@ export class Canvas {
     toggle(view.g, "data-mark-highlight", mark.highlight);
     toggle(view.g, "data-mark-dim", mark.dim);
     toggle(view.g, "data-lit", mark.lit);
+    if (mark.diff) view.g.dataset.diff = mark.diff;
+    else view.g.removeAttribute("data-diff");
     if (mark.color) view.g.style.setProperty("--hakushi-mark", mark.color);
     else view.g.style.removeProperty("--hakushi-mark");
     let title = view.g.querySelector(":scope > title");

@@ -87,6 +87,12 @@
   --hakushi-mark-waiting: var(--hakushi-muted);
   --hakushi-mark-highlight: var(--hakushi-accent);
   --hakushi-mark-dim: 0.32;
+  /* A canvas that compares (its `compare`): what was added, removed,
+     changed and moved since the older graph. */
+  --hakushi-diff-added: var(--hakushi-ink-green);
+  --hakushi-diff-removed: var(--hakushi-ink-red);
+  --hakushi-diff-changed: var(--hakushi-ink-orange);
+  --hakushi-diff-moved: var(--hakushi-accent);
 }
 
 /*
@@ -2265,4 +2271,52 @@
   .hakushi-edge[data-mark-status="running"] .hakushi-edge-line {
     animation: none;
   }
+}
+
+/* -- Versions (a canvas's compare) -------------------------------------------
+   What each node and edge is to the older graph: added, changed or moved,
+   a ring of its colour; removed, a ghost of it, dashed. */
+
+.hakushi-node[data-diff="added"] {
+  --hakushi-diff: var(--hakushi-diff-added);
+}
+
+.hakushi-node[data-diff="changed"] {
+  --hakushi-diff: var(--hakushi-diff-changed);
+}
+
+.hakushi-node[data-diff="moved"] {
+  --hakushi-diff: var(--hakushi-diff-moved);
+}
+
+.hakushi-node:is([data-diff="added"], [data-diff="changed"]):not([data-ui-selected]) {
+  box-shadow: 0 0 0 2px var(--hakushi-diff);
+}
+
+.hakushi-node[data-diff="moved"]:not([data-ui-selected]) {
+  outline: 2px dotted var(--hakushi-diff);
+  outline-offset: 3px;
+}
+
+.hakushi-node[data-diff="removed"] {
+  opacity: 0.45;
+  outline: 2px dashed var(--hakushi-diff-removed);
+  outline-offset: 3px;
+  filter: grayscale(1);
+}
+
+.hakushi-edge[data-diff="added"] .hakushi-edge-line {
+  stroke: var(--hakushi-diff-added);
+  stroke-width: calc(var(--hakushi-edge-width) + 0.5px);
+}
+
+.hakushi-edge[data-diff="changed"] .hakushi-edge-line {
+  stroke: var(--hakushi-diff-changed);
+  stroke-width: calc(var(--hakushi-edge-width) + 0.5px);
+}
+
+.hakushi-edge[data-diff="removed"] .hakushi-edge-line {
+  stroke: var(--hakushi-diff-removed);
+  stroke-dasharray: 5 4;
+  opacity: 0.6;
 }

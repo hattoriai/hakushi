@@ -411,6 +411,27 @@ defmodule Hakushi.Test do
   defp highlight(_none, _style), do: nil
 
   @doc """
+  What each node and edge of the canvas `id` is to the older graph it
+  compares to (its `compare`): `%{nodes: %{id => status}, edges: %{id =>
+  status}}`, where a status is `:added`, `:removed`, `:changed` or
+  `:moved`, for those that are any.
+  """
+  @spec diff(struct(), String.t()) :: %{nodes: map(), edges: map()}
+  def diff(view, id) do
+    statuses = fn selector ->
+      for item <- query(view, id, selector),
+          status = attribute(item, "data-diff"),
+          into: %{},
+          do: {attribute(item, "data-id"), String.to_existing_atom(status)}
+    end
+
+    %{
+      nodes: statuses.(".hakushi-nodes > .hakushi-node"),
+      edges: statuses.("##{id}-edge-data > i")
+    }
+  end
+
+  @doc """
   The menu of the canvas `id` (`Hakushi.Menu`), as a right click opens
   it: `kind` (`:node`, `:edge` or `:canvas`), the `nodes` and `edges`
   selected and the point it is `at`. Gives its items as the person sees

@@ -96,6 +96,14 @@ defmodule Hakushi.Components do
     [Changes](changes.md#hearing-of-the-changes)\
     """
 
+  attr :compare, Hakushi.Graph,
+    default: nil,
+    doc: """
+    an older graph to show `graph` against: the nodes and edges added, changed and moved since \
+    it are marked, and those removed are shown as ghosts. A canvas that compares changes \
+    nothing (it is read-only), and is not shared. See [Versions](versions.md)\
+    """
+
   attr :menu, :any,
     default: nil,
     doc: """
@@ -307,8 +315,9 @@ defmodule Hakushi.Components do
       tidy={@tidy}
       export={@export}
       controls={@controls}
-      readonly={@readonly != false}
-      arrange={@readonly == :arrange}
+      readonly={@readonly != false or @compare != nil}
+      arrange={@readonly == :arrange and @compare == nil}
+      compare={@compare}
       follow={@join == nil or @join.follow}
       show_people={@join == nil or @join.people}
       label={@label}
@@ -339,6 +348,13 @@ defmodule Hakushi.Components do
       raise(
         ArgumentError,
         "<.canvas follow={...}> was removed in Hakushi 0.3: give it issho={[..., follow: false]}"
+      )
+
+  defp with_join(%{issho: issho, compare: compare}) when issho != nil and compare != nil,
+    do:
+      raise(
+        ArgumentError,
+        "<.canvas compare={...}> shows a version, alone: give it no issho"
       )
 
   defp with_join(%{issho: nil} = assigns), do: assign(assigns, :join, nil)
