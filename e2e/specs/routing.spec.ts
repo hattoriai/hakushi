@@ -1,23 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
-import { center, drag, node, openCanvas } from "./support";
+import { alongEdge, center, drag, node, openCanvas } from "./support";
 
 // A routed edge goes around the nodes in its way: a node dragged onto its
 // line, and away again.
 
 // Points along an edge's line, on the screen.
-function along(page: Page, canvas: string, id: string) {
-  return page.locator(`#${canvas} .hakushi-edge[data-edge="${id}"] .hakushi-edge-line`).evaluate((path) => {
-    const line = path as SVGPathElement;
-    const m = line.getScreenCTM()!;
-    const total = line.getTotalLength();
-    const out = [];
-    for (let i = 0; i <= 200; i++) {
-      const p = line.getPointAtLength((total * i) / 200);
-      out.push({ x: p.x * m.a + m.e, y: p.y * m.d + m.f });
-    }
-    return out;
-  });
-}
+const along = (page: Page, canvas: string, id: string) => alongEdge(page, canvas, id, Array.from({ length: 201 }, (_, i) => i / 200));
 
 const edgeOf = (page: Page, source: string, target: string) => page.locator(`#workflow-edge-data > i[data-source="${source}"][data-target="${target}"]`).getAttribute("data-id");
 
