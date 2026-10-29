@@ -2320,3 +2320,74 @@
   stroke-dasharray: 5 4;
   opacity: 0.6;
 }
+
+/* -- Opening a node (a slot that opens) ----------------------------------------
+   Its opener, a button in it; and where a canvas is among canvases
+   (canvas_path/1), its breadcrumbs. */
+
+.hakushi-node[data-opens] {
+  cursor: zoom-in;
+}
+
+.hakushi-opener {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--hakushi-radius);
+  background: transparent;
+  color: var(--hakushi-muted);
+  cursor: pointer;
+}
+
+.hakushi-opener:hover {
+  background: color-mix(in oklab, var(--hakushi-text) 8%, transparent);
+  color: var(--hakushi-text);
+}
+
+.hakushi-opener:focus-visible {
+  outline: 2px solid var(--hakushi-accent);
+  outline-offset: 1px;
+}
+
+.hakushi-path ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--hakushi-font);
+  font-size: var(--hakushi-font-size);
+}
+
+.hakushi-path li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--hakushi-muted);
+}
+
+.hakushi-path li + li::before {
+  content: "›";
+  color: var(--hakushi-muted);
+}
+
+.hakushi-path a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.hakushi-path a:hover {
+  color: var(--hakushi-text);
+  text-decoration: underline;
+}
+
+.hakushi-path [aria-current="page"] {
+  color: var(--hakushi-text);
+  font-weight: 600;
+}

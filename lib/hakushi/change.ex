@@ -234,6 +234,48 @@ defmodule Hakushi.Change do
   defp string_or_nil(_value), do: nil
 
   @doc """
+  A change of the inside of a group (a canvas of `Hakushi.Graph.subgraph/2`),
+  as a change of the graph the group is in: its places from the group's
+  corner, its nodes in no group in the group. For an app whose group is
+  opened as a canvas of its own while the canvas it is in is shared (its
+  room has the graph): the change goes there (`Hakushi.Issho.change/4`).
+
+      Hakushi.Change.lift(change, Hakushi.Graph.node(board, "signage"))
+  """
+  @spec lift(t(), Node.t()) :: t()
+  def lift(%__MODULE__{op: op} = change, %Node{} = group) when op in [:add, :connect] do
+    %{change | nodes: Enum.map(change.nodes, &lift_node(Node.new(&1), group))}
+  end
+
+  def lift(%__MODULE__{op: op} = change, %Node{} = group) when op in [:move, :update] do
+    %{change | nodes: Enum.map(change.nodes, &lift_place(&1, group))}
+  end
+
+  def lift(%__MODULE__{} = change, %Node{}), do: change
+
+  defp lift_node(node, group),
+    do: %{node | x: node.x + group.x, y: node.y + group.y, parent: node.parent || group.id}
+
+  defp lift_place(place, group) do
+    place
+    |> lift_key(:x, group.x)
+    |> lift_key(:y, group.y)
+    |> then(fn place ->
+      case place do
+        %{parent: nil} -> %{place | parent: group.id}
+        place -> place
+      end
+    end)
+  end
+
+  defp lift_key(place, key, by) do
+    case place do
+      %{^key => value} when is_number(value) -> %{place | key => value + by}
+      place -> place
+    end
+  end
+
+  @doc """
   The change as JSON-able maps, with string keys, to keep it (a version
   of `Hakushi.History`, a log of the app's own). The `data` of its nodes
   and edges goes as it is, so it must be JSON-able itself; `by` keeps its

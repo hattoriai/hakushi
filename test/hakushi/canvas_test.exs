@@ -482,6 +482,55 @@ defmodule Hakushi.CanvasTest do
     end
   end
 
+  describe "opening a node" do
+    test "a node of a slot that opens calls on_open, and up calls on_up" do
+      {view, html} = open("?notify=true")
+      assert html =~ ~r/data-id="users"[^>]*data-opens="true"/
+      refute html =~ ~r/data-id="note"[^>]*data-opens/
+      assert html =~ "&quot;up&quot;:true"
+
+      assert :ok = open_node(view, "schema", "users")
+      assert_receive {:on_open, %{canvas: "schema", node: "users"}}
+      assert_receive {Hakushi, "schema", {:opened, "users"}}
+
+      # A node of a slot that does not open, and none at all.
+      assert {:error, nil} = open_node(view, "schema", "note")
+      assert {:error, nil} = open_node(view, "schema", "gone")
+      refute_receive {:on_open, _}
+
+      assert :ok = go_up(view, "schema")
+      assert_receive {:on_up, %{canvas: "schema"}}
+      assert_receive {Hakushi, "schema", :up}
+    end
+
+    test "a read-only canvas opens too" do
+      {view, _html} = open("?readonly=true")
+      assert :ok = open_node(view, "schema", "orders")
+      assert_receive {:on_open, %{node: "orders"}}
+    end
+
+    test "an opener, and the path of canvases" do
+      html = render_component(&Hakushi.Components.opener/1, %{})
+      assert html =~ ~s(data-hakushi-open)
+      assert html =~ ~s(aria-label="Open")
+
+      assert render_component(&Hakushi.Components.opener/1, locale: "fr") =~
+               ~s(aria-label="Ouvrir")
+
+      html =
+        render_component(&Hakushi.Components.canvas_path/1,
+          step: [
+            %{inner_block: fn _, _ -> "Invoices" end, patch: "/flows/1", __slot__: :step},
+            %{inner_block: fn _, _ -> "Check" end, __slot__: :step}
+          ]
+        )
+
+      assert html =~ ~r{<a href="/flows/1"[^>]*>\s*Invoices}
+      assert html =~ ~r{<span aria-current="page">\s*Check}
+      assert html =~ ~s(aria-label="Where you are")
+    end
+  end
+
   describe "align and distribute" do
     test "the app lines up and spaces out nodes, in the person's browser" do
       {view, _html} = open()

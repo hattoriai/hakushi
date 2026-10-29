@@ -222,6 +222,8 @@ defmodule HakushiTest.CanvasLive do
       notify={@notify && @test}
       menu={menu(@menu)}
       on_menu={@test && (&send(@test, {:on_menu, &1, &2}))}
+      on_open={@test && (&send(@test, {:on_open, &1}))}
+      on_up={@test && (&send(@test, {:on_up, &1}))}
       new_node={&new_node/2}
       issho={@issho}
       user={@user}
@@ -232,7 +234,7 @@ defmodule HakushiTest.CanvasLive do
       papers={[:dots, :lines, %{name: "iso", label: "Isometric"}]}
       label="Schema"
     >
-      <:node type="table" :let={node}>
+      <:node type="table" opens :let={node}>
         <div class="table">
           <strong>{node.data.name}</strong>
           <div :for={column <- node.data.columns} class="relative" data-column={column}>
