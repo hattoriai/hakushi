@@ -70,6 +70,7 @@ defmodule HakushiTest.CanvasLive do
        user: user(params),
        rewrite: params["rewrite"],
        notify: params["notify"] == "true",
+       menu: params["menu"],
        readonly: readonly(params["readonly"]),
        way: params["layout"] && String.to_existing_atom(params["layout"]),
        tidy: params["tidy"] == "true"
@@ -87,6 +88,30 @@ defmodule HakushiTest.CanvasLive do
       {String.to_existing_atom(key), value}
     end
   end
+
+  # ?menu=default: Hakushi's own; ?menu=app: the app's, with its own items.
+  defp menu("default"), do: true
+  defp menu("app"), do: &app_menu/1
+  defp menu(_none), do: nil
+
+  defp app_menu(%{kind: :node, nodes: [_one]}),
+    do: [
+      %{id: "inspect", label: "Inspect", icon: "table", shortcut: "I"},
+      :separator,
+      :copy,
+      :delete
+    ]
+
+  defp app_menu(%{kind: :node}), do: [:separator, :copy, :delete, :separator]
+
+  defp app_menu(%{kind: :edge}),
+    do: [
+      :label,
+      %{id: "explain", label: "Explain", disabled: true},
+      %{id: "cut", label: "Cut it", danger: true}
+    ]
+
+  defp app_menu(%{kind: :canvas}), do: []
 
   defp readonly("true"), do: true
   defp readonly("arrange"), do: :arrange
@@ -181,6 +206,8 @@ defmodule HakushiTest.CanvasLive do
       on_select={@test && (&send(@test, {:on_select, &1}))}
       on_viewport={@test && (&send(@test, {:on_viewport, &1}))}
       notify={@notify && @test}
+      menu={menu(@menu)}
+      on_menu={@test && (&send(@test, {:on_menu, &1, &2}))}
       new_node={&new_node/2}
       issho={@issho}
       user={@user}

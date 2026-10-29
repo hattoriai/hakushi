@@ -46,6 +46,12 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `topological_sort/1` (the order a flow runs in, or a cycle),
   `cycle/1`, `path/4` and `edges_along/3` (the shortest way between two
   nodes), and `components/1`. See the Edges guide.
+- A menu of the canvas's own on a right click (`menu`, `on_menu`,
+  `Hakushi.Menu`): for a node, an edge or the paper, of the canvas's own
+  actions (copy, paste, delete, fit, tidy up…) and the app's own items,
+  which call `on_menu`. The menu key and Shift+F10 open it from the
+  keyboard. `Hakushi.Test.menu/3` and `pick/4` open it and choose in it.
+  See the Navigation guide.
 
 ### Changed
 

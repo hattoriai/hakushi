@@ -43,6 +43,8 @@ export interface Config {
   reportSelect?: boolean;
   /** Whether the app hears where the person's view comes to rest (the canvas's `on_viewport`). */
   reportView?: boolean;
+  /** Whether a right click opens the canvas's menu (the canvas's `menu`, Hakushi.Menu), not the browser's. */
+  menu?: boolean;
   live: boolean;
   user: string | null;
   /** The tools of the kits, for the bar of tools (Hakushi.Kit's `tools/1`). */
@@ -189,4 +191,20 @@ export interface Person {
 /** What the browser asks of the server. */
 export interface Live {
   push(event: string, payload: object, onReply?: (reply: Record<string, unknown>) => void): void;
+}
+
+/**
+ * An item of the canvas's menu (Hakushi.Menu): a line between items, an
+ * action of the canvas's own (`action`), or the app's own (`id`), with an
+ * icon (SVG), the words of its keys, and whether it deletes or is disabled.
+ */
+export interface MenuItem {
+  separator?: boolean;
+  action?: string;
+  id?: string;
+  label?: string;
+  icon?: string | null;
+  shortcut?: string | null;
+  danger?: boolean;
+  disabled?: boolean;
 }

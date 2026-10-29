@@ -96,6 +96,20 @@ defmodule Hakushi.Components do
     [Changes](changes.md#hearing-of-the-changes)\
     """
 
+  attr :menu, :any,
+    default: nil,
+    doc: """
+    the menu of a right click on a node, an edge or the paper: `fn target -> items end`, or \
+    `true` for Hakushi's own items; none (the browser's) without it. See `Hakushi.Menu`\
+    """
+
+  attr :on_menu, :any,
+    default: nil,
+    doc: """
+    `fn id, target -> any end`: called when the person chooses an item of the app's own in the \
+    menu, with its `id` and the target (`Hakushi.Menu`), in the LiveView's process\
+    """
+
   attr :new_node, :any,
     default: nil,
     doc: """
@@ -272,6 +286,8 @@ defmodule Hakushi.Components do
       on_select={@on_select}
       on_viewport={@on_viewport}
       notify={@notify}
+      menu={@menu}
+      on_menu={@on_menu}
       new_node={@new_node}
       rules={@rules}
       kits={@kits}

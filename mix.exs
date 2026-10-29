@@ -165,7 +165,14 @@ defmodule Hakushi.MixProject do
         ]
       ],
       groups_for_modules: [
-        Canvas: [Hakushi, Hakushi.Components, Hakushi.Canvas, Hakushi.Live, Hakushi.Messages],
+        Canvas: [
+          Hakushi,
+          Hakushi.Components,
+          Hakushi.Canvas,
+          Hakushi.Live,
+          Hakushi.Menu,
+          Hakushi.Messages
+        ],
         Kits: [
           Hakushi.Kit,
           Hakushi.Kits.Schema,

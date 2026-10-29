@@ -411,6 +411,47 @@ defmodule Hakushi.Test do
   defp highlight(_none, _style), do: nil
 
   @doc """
+  The menu of the canvas `id` (`Hakushi.Menu`), as a right click opens
+  it: `kind` (`:node`, `:edge` or `:canvas`), the `nodes` and `edges`
+  selected and the point it is `at`. Gives its items as the person sees
+  them: the actions of the canvas's own as atoms (`:delete`), the app's
+  own as their ids, and `:separator`.
+  """
+  @spec menu(struct(), String.t(), keyword()) :: [atom() | String.t()]
+  def menu(view, id, target) do
+    %{"items" => items} = event(view, id, "hakushi:menu", menu_target(target))
+
+    Enum.map(items, fn
+      %{"separator" => true} -> :separator
+      %{"action" => action} -> String.to_existing_atom(action)
+      %{"id" => item} -> item
+    end)
+  end
+
+  @doc """
+  Chooses an item of the app's own in the menu of the canvas `id`, as a
+  person does: opens the menu of the target (as `menu/3`), and chooses
+  the item `item`, whose `on_menu` the canvas calls. `{:error, nil}` for
+  an item the menu does not have.
+  """
+  @spec pick(struct(), String.t(), String.t(), keyword()) :: :ok | {:error, nil}
+  def pick(view, id, item, target) do
+    _items = menu(view, id, target)
+    result(event(view, id, "hakushi:menu-pick", Map.put(menu_target(target), "id", item)))
+  end
+
+  defp menu_target(target) do
+    {x, y} = Keyword.get(target, :at, {0, 0})
+
+    %{
+      "kind" => target |> Keyword.get(:kind, :canvas) |> Atom.to_string(),
+      "nodes" => Keyword.get(target, :nodes, []),
+      "edges" => Keyword.get(target, :edges, []),
+      "at" => [x, y]
+    }
+  end
+
+  @doc """
   Selects nodes, and edges, as a person does with a click or a box: the
   canvas's `on_select` hears it. To select from the app, as
   `Hakushi.Live.select/3` does, assert its push of `"hakushi:select"`.

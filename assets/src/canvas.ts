@@ -20,7 +20,7 @@ import { Messages } from "./messages";
 import { Minimap } from "./minimap";
 import { check } from "./rules";
 import { align, snapToGrid, type Guide } from "./snap";
-import type { Config, EdgeModel, End, Handle, HandleKind, Live, NodeModel, Person, Point, Rect, Side, Tool, View } from "./types";
+import type { Config, EdgeModel, End, Handle, HandleKind, Live, MenuItem, NodeModel, Person, Point, Rect, Side, Tool, View } from "./types";
 import { centerOn, clamp, fit, readableView, reveal, toCanvas, visible, zoomAt } from "./view";
 
 // The smallest zoom a canvas that should be read (fit "readable") opens at.
@@ -1550,6 +1550,170 @@ export class Canvas {
     event.stopPropagation();
   }
 
+  // -- The menu ------------------------------------------------------------------
+  //
+  // A right click on a node, an edge or the paper (or the menu key, or
+  // Shift+F10, on what is selected) asks the server for the canvas's menu
+  // of it (Hakushi.Menu): the actions of the canvas's own, which it runs
+  // here, and the app's, which go back to the server.
+
+  private contextMenu: HTMLElement | null = null;
+  private menuSeq = 0;
+  private keyMenuAt = -Infinity;
+
+  private onContextMenu(event: MouseEvent) {
+    if (this.gesture) {
+      event.preventDefault();
+      return;
+    }
+    if (!this.config.menu) return;
+    const target = event.target as Element;
+    // The canvas's own controls, and a field of a node (to paste in), keep the browser's.
+    if (target.closest(".hakushi-controls, .hakushi-tools, .hakushi-paper-menu, .hakushi-minimap, .hakushi-edge-input, .hakushi-style-panel, [data-hakushi-people], .hakushi-following") || editable(target)) return;
+    event.preventDefault();
+    // The menu key opened it already.
+    if (performance.now() - this.keyMenuAt < 500) return;
+    const nodeEl = target.closest<HTMLElement>(".hakushi-node");
+    const node = nodeEl && this.nodesEl.contains(nodeEl) ? this.nodes.get(nodeEl.dataset.id || "") : undefined;
+    const edgeId = target.closest<SVGGElement>(".hakushi-edge")?.dataset.edge ?? target.closest<HTMLElement>(".hakushi-edge-label")?.dataset.edge;
+    let kind: "node" | "edge" | "canvas" = "canvas";
+    if (node) {
+      kind = "node";
+      if (!this.selected.has(node.id)) this.select([node.id]);
+    } else if (edgeId && this.edges.has(edgeId)) {
+      kind = "edge";
+      if (!this.selectedEdges.has(edgeId)) {
+        this.setSelection(new Set());
+        this.selectedEdges = new Set([edgeId]);
+        this.selectionChanged();
+      }
+    }
+    this.root.focus({ preventScroll: true });
+    this.openMenu(kind, this.local(event), this.canvasPoint(event));
+  }
+
+  // The menu of what is selected: the focused node's, else the selection's, else the paper's.
+  private menuFromKeyboard() {
+    this.keyMenuAt = performance.now();
+    const focused = this.focusedNode();
+    if (focused && !this.selected.has(focused.id)) this.select([focused.id]);
+    const first = focused ?? (this.selected.size ? this.nodes.get([...this.selected][0]) : undefined);
+    const edge = !first && this.selectedEdges.size ? this.edges.get([...this.selectedEdges][0]) : undefined;
+    const geometry = edge ? this.geometry(edge) : null;
+    let at: Point;
+    if (first) at = this.center(first);
+    else if (geometry) at = { x: (geometry.from.x + geometry.to.x) / 2, y: (geometry.from.y + geometry.to.y) / 2 };
+    else at = toCanvas(this.view, this.size.width / 2, this.size.height / 2);
+    const screen = { x: at.x * this.view.zoom + this.view.x, y: at.y * this.view.zoom + this.view.y };
+    this.openMenu(first ? "node" : geometry ? "edge" : "canvas", screen, at);
+  }
+
+  private openMenu(kind: "node" | "edge" | "canvas", screen: Point, at: Point) {
+    this.closeMenu();
+    const seq = ++this.menuSeq;
+    const target = { kind, nodes: [...this.selected], edges: [...this.selectedEdges], at: [round(at.x), round(at.y)] };
+    this.live.push("hakushi:menu", target, (reply) => {
+      const items = Array.isArray(reply.items) ? (reply.items as MenuItem[]) : [];
+      if (seq !== this.menuSeq || !items.length) return;
+      this.showMenu(items, target, screen);
+    });
+  }
+
+  private showMenu(items: MenuItem[], target: Record<string, unknown>, screen: Point) {
+    const menu = el("div", { class: "hakushi-paper-menu hakushi-context-menu", role: "menu", "aria-label": this.messages.t("menu") });
+    for (const item of items) {
+      if (item.separator) {
+        menu.append(el("div", { class: "hakushi-menu-separator", role: "separator" }));
+        continue;
+      }
+      const shortcut = item.action ? actionKeys(item.action) : item.shortcut;
+      const button = el("button", { type: "button", role: "menuitem", class: "hakushi-paper-item hakushi-menu-item", tabindex: "-1" }, [
+        el("span", { class: "hakushi-menu-icon", "aria-hidden": "true" }),
+        el("span", { class: "hakushi-menu-label" }, [item.label ?? ""]),
+      ]);
+      // An icon of Hakushi.Icons, which the server drew.
+      if (item.icon) button.firstElementChild!.innerHTML = item.icon;
+      if (shortcut) button.append(el("kbd", { class: "hakushi-menu-keys" }, [shortcut]));
+      if (item.action) button.dataset.action = item.action;
+      if (item.id) button.dataset.item = item.id;
+      if (item.danger || item.action === "delete") button.setAttribute("data-danger", "");
+      if (item.disabled) button.setAttribute("aria-disabled", "true");
+      button.addEventListener("click", () => {
+        if (item.disabled) return;
+        this.closeMenu();
+        this.root.focus({ preventScroll: true });
+        this.runMenu(item, target);
+      });
+      menu.append(button);
+    }
+    menu.addEventListener("pointerdown", (event) => event.stopPropagation());
+    menu.addEventListener("contextmenu", (event) => event.preventDefault());
+    menu.addEventListener("keydown", (event) => this.menuKey(event, menu, () => this.closeMenu(), this.root));
+    this.togglePaperMenu(false);
+    this.toggleLayoutMenu(false);
+    this.contextMenu = menu;
+    this.ui.append(menu);
+    // By the pointer, and inside the canvas.
+    const width = menu.offsetWidth;
+    const height = menu.offsetHeight;
+    menu.style.left = `${clamp(screen.x, 4, Math.max(4, this.size.width - width - 4))}px`;
+    menu.style.top = `${clamp(screen.y, 4, Math.max(4, this.size.height - height - 4))}px`;
+    document.addEventListener("pointerdown", this.closeMenuOutside, true);
+    this.root.addEventListener("wheel", this.closeMenuOutside, { passive: true });
+    menu.querySelector<HTMLElement>(".hakushi-menu-item:not([aria-disabled])")?.focus();
+  }
+
+  private closeMenuOutside = (event: Event) => {
+    if ((event.target as Element | null)?.closest?.(".hakushi-context-menu")) return;
+    this.closeMenu();
+  };
+
+  private closeMenu() {
+    this.menuSeq++;
+    if (!this.contextMenu) return;
+    this.contextMenu.remove();
+    this.contextMenu = null;
+    document.removeEventListener("pointerdown", this.closeMenuOutside, true);
+    this.root.removeEventListener("wheel", this.closeMenuOutside);
+  }
+
+  // An item chosen: an action of the canvas's own, here; the app's, on the server.
+  private runMenu(item: MenuItem, target: Record<string, unknown>) {
+    if (!item.action) {
+      this.push("hakushi:menu-pick", { ...target, id: item.id });
+      return;
+    }
+    const [x, y] = target.at as number[];
+    switch (item.action) {
+      case "copy":
+        return this.copy();
+      case "cut":
+        return this.copy(true);
+      case "paste":
+        if (!this.config.readonly) this.push("hakushi:paste", target.kind === "canvas" ? { x, y } : {});
+        return;
+      case "duplicate":
+        return this.duplicate();
+      case "delete":
+        return this.deleteSelection();
+      case "select_all":
+        return this.select([...this.order]);
+      case "label": {
+        const edge = (target.edges as string[])[0];
+        if (edge && !this.config.readonly) this.editLabel(edge);
+        return;
+      }
+      case "fit":
+        return this.glideTo(this.fitView(), true);
+      case "tidy":
+        return void this.layout();
+      case "undo":
+        return this.undo();
+      case "redo":
+        return this.redo();
+    }
+  }
+
   // -- The paper -----------------------------------------------------------------
   //
   // A menu of the papers the canvas offers, and of the sizes of their
@@ -2625,9 +2789,7 @@ export class Canvas {
       }
     });
     on(this.root, "focusin", (e) => this.focusIn(e));
-    on(this.root, "contextmenu", (e) => {
-      if (this.gesture) e.preventDefault();
-    });
+    on(this.root, "contextmenu", (e) => this.onContextMenu(e as MouseEvent));
     on(document, "pointerdown", (e) => this.itemDown(e as PointerEvent), { capture: true });
     on(document, "keydown", (e) => this.itemKey(e as KeyboardEvent));
     on(window, "scroll", () => (this.bounds = null), { capture: true, passive: true });
@@ -3588,6 +3750,13 @@ export class Canvas {
       return;
     }
 
+    // The menu of what is selected, by the keyboard.
+    if (this.config.menu && (key === "ContextMenu" || (key === "F10" && event.shiftKey))) {
+      event.preventDefault();
+      this.menuFromKeyboard();
+      return;
+    }
+
     if (key === " " && !this.space) {
       this.space = true;
       this.root.setAttribute("data-ui-space", "");
@@ -4264,7 +4433,9 @@ export class Canvas {
   destroy() {
     this.togglePaperMenu(false);
     this.toggleLayoutMenu(false);
+    this.closeMenu();
     clearTimeout(this.panTimer);
+    clearTimeout(this.viewTimer);
     for (const o of this.observers) o.disconnect();
     this.scheme?.removeEventListener("change", this.onScheme);
     for (const cleanup of this.cleanups) cleanup();
@@ -4325,6 +4496,36 @@ function hitsStroke(aim: SVGGeometryElement, x: number, y: number, reach: number
     if (Math.hypot(p.x - x, p.y - y) <= reach) return true;
   }
   return false;
+}
+
+// The keys of an action of the canvas's own, as its menu shows them.
+function actionKeys(action: string): string | null {
+  const apple = isApple();
+  const mod = (key: string, shift = false) => (apple ? `${shift ? "⇧" : ""}⌘${key}` : `Ctrl+${shift ? "Shift+" : ""}${key}`);
+  switch (action) {
+    case "copy":
+      return mod("C");
+    case "cut":
+      return mod("X");
+    case "paste":
+      return mod("V");
+    case "duplicate":
+      return mod("D");
+    case "delete":
+      return apple ? "⌫" : "Del";
+    case "select_all":
+      return mod("A");
+    case "fit":
+      return apple ? "⇧1" : "Shift+1";
+    case "tidy":
+      return apple ? "⇧L" : "Shift+L";
+    case "undo":
+      return mod("Z");
+    case "redo":
+      return mod("Z", true);
+    default:
+      return null;
+  }
 }
 
 // A selection, the same whatever the order of its ids.
