@@ -44,6 +44,9 @@ test("an agent works on a canvas as a person does, and the person sees it", asyn
   const from = (await log())[0].x;
   await agent(page, "move_node", { canvas, node: "invoices", x: 900, y: 520 });
   await expect.poll(() => place(page, "invoices")).toEqual({ x: 900, y: 520 });
+  // Where it is (data-x) is there at once; where it is drawn glides there
+  // after: wait until it is drawn where it lands too.
+  await expect.poll(async () => (await log()).some((e) => e.x === 900)).toBe(true);
   const entries = await log();
   const landed = entries.findIndex((e) => e.x === 900);
   const moving = entries.findIndex((e) => e.moving);
