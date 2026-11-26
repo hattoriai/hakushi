@@ -6,8 +6,11 @@ own: what the pointer does with them happens in the browser, and their
 changes go to the server as a person's do.
 
 ```js
-import { Hakushi, canvasOf, registerTool } from "hakushi"
+import { Hakushi, canvasOf, registerTool, registerLayout } from "hakushi"
 ```
+
+`registerLayout` gives the canvases a layout of the app's, as ELK
+(`hakushi/elk`): see [Layout and export](layout.md#elk).
 
 ## A canvas, from the page
 

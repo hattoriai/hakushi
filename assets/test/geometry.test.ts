@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { edgePath, edgePathThrough, facing, intersects, middleOf, route, union } from "../src/geometry";
+import { JUMP, crossings, edgePath, edgePathThrough, facing, intersects, jumpedPath, middleOf, route, union } from "../src/geometry";
 
 test("boxes", () => {
   assert.ok(intersects({ x: 0, y: 0, width: 10, height: 10 }, { x: 5, y: 5, width: 10, height: 10 }));
@@ -59,4 +59,36 @@ test("an edge bent through points: a line, steps, a curve", () => {
   assert.match(curve, /^M0,0C42\.7,0 /);
   assert.match(curve, / 100,80C/);
   assert.match(curve, / 200,0$/);
+});
+
+test("a horizontal line jumps over a vertical one it crosses, not over its ends", () => {
+  const across = [{ x: 0, y: 50 }, { x: 200, y: 50 }];
+  const down = [{ x: 100, y: 0 }, { x: 100, y: 100 }];
+  const touching = [{ x: 150, y: 50 }, { x: 150, y: 120 }];
+  const nearCorner = [{ x: 3, y: 0 }, { x: 3, y: 100 }];
+  const jumps = crossings(across, 8, [down, touching, nearCorner]);
+  assert.deepEqual([...jumps], [[0, [100]]]);
+  const d = jumpedPath(across, 8, jumps);
+  assert.equal(d, `M0,50L${100 - JUMP},50A${JUMP},${JUMP} 0 0 1 ${100 + JUMP},50L200,50`);
+});
+
+test("jumps go in the path's order, over the top either way, and not twice in one place", () => {
+  const back = [{ x: 300, y: 10 }, { x: 0, y: 10 }];
+  const others = [
+    [{ x: 100, y: 0 }, { x: 100, y: 20 }],
+    [{ x: 200, y: 0 }, { x: 200, y: 20 }],
+    [{ x: 203, y: 0 }, { x: 203, y: 20 }],
+  ];
+  const jumps = crossings(back, 0, others);
+  assert.deepEqual(jumps.get(0), [203, 100]);
+  assert.match(jumpedPath(back, 0, jumps), /A5,5 0 0 0 198,10/);
+});
+
+test("a vertical segment does not jump, and the paths along the axes give their corners", () => {
+  const down = [{ x: 100, y: 0 }, { x: 100, y: 100 }];
+  assert.equal(crossings(down, 0, [[{ x: 0, y: 50 }, { x: 200, y: 50 }]]).size, 0);
+  const step = edgePath("step", { x: 0, y: 0 }, "right", { x: 200, y: 100 }, "left");
+  assert.equal(step.radius, 0);
+  assert.ok(step.corners!.length >= 4);
+  assert.equal(edgePath("bezier", { x: 0, y: 0 }, "right", { x: 200, y: 100 }, "left").corners, undefined);
 });

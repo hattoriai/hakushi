@@ -77,6 +77,9 @@ export interface EdgeGeometry {
   d: string;
   /** The middle of the path, for its label. */
   label: Point;
+  /** For a path along the axes: its corners, and the radius of its round ones (for jumps). */
+  corners?: Point[];
+  radius?: number;
 }
 
 const round = (n: number) => Math.round(n * 10) / 10;
@@ -115,7 +118,8 @@ export function edgePathThrough(kind: PathKind, s: Point, sSide: Side, points: P
     case "smooth":
     case "routed": {
       const corners = elbows(s, sSide, points, t, tSide, 20);
-      return { d: roundedPath(corners, kind === "step" ? 0 : 8), label: middleOf(corners) };
+      const radius = kind === "step" ? 0 : 8;
+      return { d: roundedPath(corners, radius), label: middleOf(corners), corners, radius };
     }
     default:
       return spline(all, sSide, tSide);
@@ -197,7 +201,7 @@ function control(from: Point, side: Side, to: Point): Point {
 // corners of `radius` (0 for square ones).
 function orthogonal(s: Point, sSide: Side, t: Point, tSide: Side, radius: number): EdgeGeometry {
   const points = route(s, sSide, t, tSide, 20);
-  return { d: roundedPath(points, radius), label: middleOf(points) };
+  return { d: roundedPath(points, radius), label: middleOf(points), corners: points, radius };
 }
 
 /** The corners of a path along the axes. */
@@ -258,13 +262,61 @@ function simplify(points: Point[]): Point[] {
 
 /** The path through corners, with round ones, and its middle: a routed edge's. */
 export function cornersPath(points: Point[]): EdgeGeometry {
-  return { d: roundedPath(points, 8), label: middleOf(points) };
+  return { d: roundedPath(points, 8), label: middleOf(points), corners: points, radius: 8 };
 }
 
-function roundedPath(points: Point[], radius: number): string {
+/** The half width of a jump, where a line along the axes goes over another. */
+export const JUMP = 5;
+
+/**
+ * Where a path along the axes goes over others: on each of its horizontal
+ * segments (by index), the x of each vertical segment of another path that
+ * crosses it, in the order the path goes. Not at its corners, nor where the
+ * other only touches it (at one of its own ends), nor two jumps in one.
+ */
+export function crossings(points: Point[], radius: number, others: Point[][]): Map<number, number[]> {
+  const out = new Map<number, number[]>();
+  const margin = radius + JUMP + 1;
+  for (let i = 1; i < points.length; i++) {
+    const p = points[i - 1];
+    const q = points[i];
+    if (Math.abs(p.y - q.y) > 0.01) continue;
+    const lo = Math.min(p.x, q.x) + margin;
+    const hi = Math.max(p.x, q.x) - margin;
+    if (lo >= hi) continue;
+    const xs: number[] = [];
+    for (const other of others) {
+      for (let j = 1; j < other.length; j++) {
+        const a = other[j - 1];
+        const b = other[j];
+        if (Math.abs(a.x - b.x) > 0.01 || a.x <= lo || a.x >= hi) continue;
+        if (p.y > Math.min(a.y, b.y) + 0.5 && p.y < Math.max(a.y, b.y) - 0.5) xs.push(a.x);
+      }
+    }
+    if (!xs.length) continue;
+    xs.sort((a, b) => (q.x > p.x ? a - b : b - a));
+    const kept: number[] = [];
+    for (const x of xs) if (!kept.length || Math.abs(x - kept[kept.length - 1]) > JUMP * 2 + 2) kept.push(x);
+    out.set(i - 1, kept);
+  }
+  return out;
+}
+
+/** The path through corners (round ones of `radius`), with a jump over each crossing: `crossings`'. */
+export function jumpedPath(points: Point[], radius: number, jumps: Map<number, number[]>): string {
+  return roundedPath(points, radius, jumps);
+}
+
+function roundedPath(points: Point[], radius: number, jumps?: Map<number, number[]>): string {
   let d = `M${round(points[0].x)},${round(points[0].y)}`;
   for (let i = 1; i < points.length; i++) {
     const p = points[i];
+    const over = jumps?.get(i - 1);
+    if (over) {
+      const dir = Math.sign(p.x - points[i - 1].x);
+      // Over the top: clockwise going right, anticlockwise going left.
+      for (const x of over) d += `L${round(x - dir * JUMP)},${round(p.y)}A${JUMP},${JUMP} 0 0 ${dir > 0 ? 1 : 0} ${round(x + dir * JUMP)},${round(p.y)}`;
+    }
     const next = points[i + 1];
     if (!next || radius === 0) {
       d += `L${round(p.x)},${round(p.y)}`;

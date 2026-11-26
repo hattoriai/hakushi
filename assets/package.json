@@ -11,5 +11,8 @@
     "@types/node": "22.18.0",
     "esbuild": "0.28.2",
     "typescript": "7.0.2"
+  },
+  "dependencies": {
+    "elkjs": "0.9.3"
   }
 }

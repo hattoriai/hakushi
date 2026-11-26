@@ -85,11 +85,11 @@ defmodule Hakushi.Canvas do
   # The colours of the people of a shared canvas with none of their own.
   @palette ~w(#e84a1c #2563eb #059669 #9333ea #d97706 #db2777 #0891b2 #65a30d)
 
-  @algorithms [:layered, :force, :grid]
+  @algorithms [:layered, :force, :grid, :elk]
 
   @doc false
   # A canvas's `layout`, as `{algorithm, direction}`.
-  @spec layout!(term()) :: {:layered | :force | :grid, :right | :down}
+  @spec layout!(term()) :: {:layered | :force | :grid | :elk, :right | :down}
   def layout!(direction) when direction in [:right, :down], do: {:layered, direction}
   def layout!(algorithm) when algorithm in @algorithms, do: {algorithm, :right}
 
@@ -99,7 +99,7 @@ defmodule Hakushi.Canvas do
 
   def layout!(other) do
     raise ArgumentError,
-          "a canvas's layout is :right, :down, :layered, :force, :grid or {:layered, :down}, got: #{inspect(other)}"
+          "a canvas's layout is :right, :down, :layered, :force, :grid, :elk, {:layered, :down} or {:elk, :down}, got: #{inspect(other)}"
   end
 
   @impl true
@@ -1063,10 +1063,14 @@ defmodule Hakushi.Canvas do
 
   # What an arrange-only canvas takes: a move of nodes to other places (not
   # a resize, nor into or out of a group), and the undo and redo of those.
+  # A layout that sizes the groups around their nodes (an engine's, as
+  # ELK's) resizes them too.
   defp arrangement?("hakushi:change", params, _socket) do
+    keys = if params["laid"] == true, do: [:id, :x, :y, :width, :height], else: [:id, :x, :y]
+
     case Change.from_client(params) do
       {:ok, %Change{op: :move, nodes: places}} ->
-        Enum.all?(places, &(Map.keys(&1) -- [:id, :x, :y] == []))
+        Enum.all?(places, &(Map.keys(&1) -- keys == []))
 
       _other ->
         false
@@ -1479,6 +1483,7 @@ defmodule Hakushi.Canvas do
             data-group={node_flag?(@node_slots, @kits, node, :group) && "true"}
             data-opens={node_flag?(@node_slots, @kits, node, :opens) && "true"}
             data-parent={node.parent}
+            data-folded={node.folded && "true"}
             data-mark-status={mark(@marks.nodes, node.id, :status)}
             data-mark-highlight={mark(@marks.nodes, node.id, :highlight) && "true"}
             data-mark-dim={mark(@marks.nodes, node.id, :dim) && "true"}
@@ -1545,6 +1550,7 @@ defmodule Hakushi.Canvas do
             data-mark-color={mark_color_value(@marks.edges, edge.id)}
             data-mark-dim={mark(@marks.edges, edge.id, :dim) && "true"}
             data-mark-title={mark(@marks.edges, edge.id, :title)}
+            data-mark-class={mark(@marks.edges, edge.id, :class)}
             data-lit={lit?(@spotlight, :edges, edge.id) && "true"}
             data-diff={@diff.edges[edge.id]}
           >{if @edge_label_slot != [], do: render_slot(@edge_label_slot, edge)}</i>
@@ -1803,6 +1809,7 @@ defmodule Hakushi.Canvas do
       "newNode" => assigns.new_node != nil or assigns.kits != [],
       "wheel" => Atom.to_string(assigns.wheel),
       "refit" => assigns.refit,
+      "jumps" => assigns.jumps,
       "tidy" => assigns.tidy,
       "layout" => Atom.to_string(elem(assigns.layout, 1)),
       "algorithm" => Atom.to_string(elem(assigns.layout, 0)),

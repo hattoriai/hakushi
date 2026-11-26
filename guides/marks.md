@@ -34,9 +34,10 @@ Hakushi.Live.mark("flow", "check", badge: nil)
 Hakushi.Live.mark("flow", "check", nil)
 ```
 
-An edge's mark is `status`, `highlight`, `dim` and `title`
+An edge's mark is `status`, `highlight`, `dim`, `title` and `class`
 (`Hakushi.Live.mark_edges/3`): a `:running` edge flows, and a status or
-a highlight colours it.
+a highlight colours it. `class` goes on the edge's `<g>`, for a look of
+the app's own (see [Their look](#their-look)).
 
 ## The spotlight
 
@@ -97,6 +98,21 @@ status of the app's own takes its look from the app's styles:
 .hakushi-node[data-mark-status="queued"] {
   --hakushi-mark: #8e4ec6;
   box-shadow: 0 0 0 2px var(--hakushi-mark);
+}
+```
+
+An edge's `class` styles its line, `.hakushi-edge-line`: a protocol of
+its own colour, or a dotted line.
+
+```elixir
+Hakushi.Live.mark_edges("services", amqp_edges, class: "via-amqp")
+```
+
+```css
+.hakushi-edge.via-amqp .hakushi-edge-line {
+  stroke: #f97316;
+  stroke-dasharray: 2 6;
+  stroke-linecap: round;
 }
 ```
 

@@ -32,12 +32,14 @@ export interface Config {
   newNode: boolean;
   wheel: "pan" | "zoom" | "scroll";
   refit: boolean;
+  /** Whether a line along the axes jumps over the lines it crosses (the canvas's `jumps`). */
+  jumps?: boolean;
   /** The way of the layers of a tidy up. */
   layout: "right" | "down";
   /** Whether the canvas lays its nodes out as it opens, before they show (the canvas's `tidy`). */
   tidy?: boolean;
-  /** How a tidy up places the nodes: in layers, by forces, or in a grid. */
-  algorithm?: "layered" | "force" | "grid";
+  /** How a tidy up places the nodes: in layers, by forces, in a grid, or by an engine of the app's (registerLayout), as "elk". */
+  algorithm?: string;
   exportable: boolean;
   /** Whether the app hears what the person selects (the canvas's `on_select`). */
   reportSelect?: boolean;
@@ -182,6 +184,8 @@ export interface EdgeMark {
   color: string | null;
   dim: boolean;
   title: string | null;
+  /** Classes of the app's own, on the edge's `<g>`: a dotted line, a colour of a protocol. */
+  class: string | null;
   lit: boolean;
   /** What it is to an older graph, on a canvas that compares: added, removed or changed. */
   diff: string | null;

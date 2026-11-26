@@ -10,7 +10,7 @@
 // them (the place of a node being dragged, its selection, its culling).
 
 import { editable, el, interactive, isApple, numberAttr, prefersReducedMotion, svg } from "./dom";
-import { contains, cornersPath, edgePath, edgePathThrough, facing, fromCorners, grow, intersects, sidePoint, union } from "./geometry";
+import { contains, cornersPath, crossings, edgePath, edgePathThrough, facing, fromCorners, grow, intersects, jumpedPath, sidePoint, union } from "./geometry";
 import { routeAround } from "./route";
 import { fillTransfer, registerSender } from "./out";
 import { arrange, type Arrangement } from "./arrange";
@@ -18,7 +18,8 @@ import { exportImage, type ExportOptions } from "./export";
 import { icons } from "./icons";
 import { aspectResize, cropOf, dragCrop, fitImage, fullOf, imageAddress, rowAt, type Crop } from "./images";
 import { FLAT, inkBox, inside, outline, simplify, streamline, type InkPoint, type InkStroke } from "./ink";
-import { layout as place, type Algorithm } from "./layout";
+import { layout as place, algorithms, type Algorithm } from "./layout";
+import { engineOf, type EngineInput, type EngineResult, type LayoutEngine } from "./engines";
 import { Messages } from "./messages";
 import { Minimap } from "./minimap";
 import { check } from "./rules";
@@ -213,6 +214,8 @@ export class Canvas {
   private frame = 0;
   private fitted = false;
   private observers: (MutationObserver | ResizeObserver)[] = [];
+  private nodeObserver: MutationObserver | null = null;
+  private edgeObserver: MutationObserver | null = null;
   private cleanups: (() => void)[] = [];
   private nudge: { origin: Map<string, Point>; timer: number } | null = null;
   private people = new Map<string, Person>();
@@ -585,6 +588,10 @@ export class Canvas {
       measured: false,
       el: element,
     };
+    // A place this page's layout gave it, while the server's is the same.
+    const own = this.own.get(id);
+    if (own && own.server === this.serverPlace(element)) Object.assign(node, { x: own.x, y: own.y, width: own.width, height: own.height, fixed: own.fixed });
+    else if (own) this.own.delete(id);
     this.nodes.set(id, node);
     if (!old) {
       this.order.push(id);
@@ -782,6 +789,7 @@ export class Canvas {
         color: element.dataset.markColor ?? null,
         dim: element.dataset.markDim === "true",
         title: element.dataset.markTitle ?? null,
+        class: element.dataset.markClass ?? null,
         lit: element.dataset.lit === "true",
         diff: element.dataset.diff ?? null,
       },
@@ -835,6 +843,8 @@ export class Canvas {
     nodes.observe(this.nodesEl, { childList: true, subtree: true, attributes: true, characterData: true });
     const edges = new MutationObserver((records) => this.edgesChanged(records));
     edges.observe(this.edgeData, { childList: true, subtree: true, attributes: true });
+    this.nodeObserver = nodes;
+    this.edgeObserver = edges;
     const sizes = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const element = entry.target as HTMLElement;
@@ -1143,11 +1153,9 @@ export class Canvas {
       if (around) view.box = union([view.box, around])!;
       this.edgeIndex.set(id, view.box);
       // Written only when they change: a path written again is laid out and painted again.
-      if (view.d !== path.d) {
-        view.d = path.d;
-        view.line.setAttribute("d", path.d);
-        view.hit.setAttribute("d", path.d);
-      }
+      if (path.corners && this.config.jumps) this.lines.set(id, { points: path.corners, radius: path.radius ?? 0 });
+      else this.lines.delete(id);
+      if (view.d !== path.d && !this.lines.has(id)) this.writePath(view, path.d);
       // A selected edge, and the edges of the selected nodes, are drawn
       // above the nodes, in the colour of a selection: where an edge passes
       // under another node, it is seen going to its own end.
@@ -1195,6 +1203,7 @@ export class Canvas {
       }
       if (!viewChanged) this.showEdge(view, all || intersects(view.box, area) || raised);
     }
+    if (this.config.jumps) this.drawJumps(ids);
     if (viewChanged && all) {
       for (const view of this.edgeViews.values()) this.showEdge(view, true);
     } else if (viewChanged) {
@@ -1211,6 +1220,42 @@ export class Canvas {
     }
     this.dirty.clear();
     this.allDirty = false;
+  }
+
+  private writePath(view: EdgeView, d: string) {
+    if (view.d === d) return;
+    view.d = d;
+    view.line.setAttribute("d", d);
+    view.hit.setAttribute("d", d);
+  }
+
+  // -- Jumps (`jumps`) -----------------------------------------------------------
+  //
+  // Where a line along the axes crosses another, its horizontal part jumps
+  // over the vertical one, so that people see which way each goes. The
+  // edges drawn again, and those near them, which they may cross.
+
+  private lines = new Map<string, { points: Point[]; radius: number }>();
+
+  private drawJumps(ids: string[]) {
+    const again = new Set<string>();
+    for (const id of ids) {
+      const view = this.edgeViews.get(id);
+      if (!view) continue;
+      again.add(id);
+      for (const near of this.edgeIndex.query(view.box)) again.add(near);
+    }
+    for (const id of again) {
+      const line = this.lines.get(id);
+      const view = this.edgeViews.get(id);
+      if (!line || !view) continue;
+      const others: Point[][] = [];
+      for (const near of this.edgeIndex.query(view.box)) {
+        const other = near !== id && !this.gone.has(near) ? this.lines.get(near) : undefined;
+        if (other) others.push(other.points);
+      }
+      this.writePath(view, jumpedPath(line.points, line.radius, crossings(line.points, line.radius, others)));
+    }
   }
 
   // What this person sees of a shared canvas, for an agent of the room,
@@ -1300,6 +1345,8 @@ export class Canvas {
     else view.g.removeAttribute("data-diff");
     if (mark.color) view.g.style.setProperty("--hakushi-mark", mark.color);
     else view.g.style.removeProperty("--hakushi-mark");
+    const classes = mark.class ? `hakushi-edge ${mark.class}` : "hakushi-edge";
+    if (view.g.getAttribute("class") !== classes) view.g.setAttribute("class", classes);
     let title = view.g.querySelector(":scope > title");
     if (mark.title) {
       title ??= view.g.appendChild(svg("title", {}));
@@ -1335,6 +1382,7 @@ export class Canvas {
   }
 
   private dropEdgeView(id: string) {
+    this.lines.delete(id);
     const view = this.edgeViews.get(id);
     if (!view) return;
     view.g.remove();
@@ -1362,6 +1410,11 @@ export class Canvas {
   // nodes near its ends, but those it joins (and the groups, drawn under
   // edges): `around` is where a node would be in its way.
   private pathOf(edge: EdgeModel, geometry: { from: Point; fromSide: Side; to: Point; toSide: Side }): { path: EdgeGeometry; corners: Point[]; around: Rect | null } {
+    const route = this.routes.size ? this.routeOf(edge) : null;
+    if (route) {
+      const path = cornersPath(route.points);
+      return { path: route.label ? { ...path, label: route.label } : path, corners: route.points, around: null };
+    }
     if (edge.path !== "routed" || edge.points.length > 0) return { path: edgePathThrough(edge.path, geometry.from, geometry.fromSide, edge.points, geometry.to, geometry.toSide), corners: [], around: null };
     const around = grow(fromCorners(geometry.from, geometry.to), ROUTE_REACH);
     const ends = new Set([...this.ancestors(edge.source), ...this.ancestors(edge.target)]);
@@ -1586,10 +1639,10 @@ export class Canvas {
   // chosen is the person's, for this page: the next tidy up (⇧L, the
   // button) lays out that way too.
 
-  private chosenLayout: { algorithm: Algorithm; direction: "right" | "down" } | null = null;
+  private chosenLayout: { algorithm: string; direction: "right" | "down" } | null = null;
   private layoutMenu: HTMLElement | null = null;
 
-  private static layouts: { key: string; algorithm: Algorithm; direction: "right" | "down" }[] = [
+  private static layouts: { key: string; algorithm: string; direction: "right" | "down" }[] = [
     { key: "layoutRight", algorithm: "layered", direction: "right" },
     { key: "layoutDown", algorithm: "layered", direction: "down" },
     { key: "layoutForce", algorithm: "force", direction: "right" },
@@ -1597,7 +1650,7 @@ export class Canvas {
   ];
 
   /** The way the next tidy up lays the nodes out: the person's choice, else the canvas's. */
-  layoutChoice(): { algorithm: Algorithm; direction: "right" | "down" } {
+  layoutChoice(): { algorithm: string; direction: "right" | "down" } {
     return this.chosenLayout ?? { algorithm: this.config.algorithm ?? "layered", direction: this.config.layout ?? "right" };
   }
 
@@ -1621,7 +1674,9 @@ export class Canvas {
     this.togglePaperMenu(false);
     const choice = this.layoutChoice();
     const menu = el("div", { class: "hakushi-paper-menu hakushi-layout-menu", role: "menu", "aria-label": this.messages.t("layouts") });
-    for (const way of Canvas.layouts) {
+    // ELK, when the app registered it: in layers, groups and all, in the canvas's way.
+    const ways = engineOf("elk") ? [...Canvas.layouts, { key: "layoutNested", algorithm: "elk", direction: this.config.layout ?? "right" }] : Canvas.layouts;
+    for (const way of ways) {
       const checked = way.algorithm === choice.algorithm && (way.algorithm !== "layered" || way.direction === choice.direction);
       const item = el("button", { type: "button", role: "menuitemradio", class: "hakushi-paper-item", "aria-checked": String(checked), tabindex: "-1", "data-layout": way.key }, [
         el("span", {}, [this.messages.t(way.key)]),
@@ -3922,16 +3977,34 @@ export class Canvas {
     else target?.el.removeAttribute("data-ui-drop-target");
   }
 
-  private commitMove(origin: Map<string, Point>, parents: Map<string, string | null> = new Map(), said?: string) {
+  private commitMove(
+    origin: Map<string, Point>,
+    parents: Map<string, string | null> = new Map(),
+    said?: string,
+    sizes: Map<string, { width: number; height: number }> = new Map(),
+    sizesBefore: Map<string, { width: number; height: number; fixed: boolean }> = new Map(),
+  ) {
     const places = [...origin.keys()].map((id) => {
       const node = this.nodes.get(id)!;
-      return parents.has(id) ? { id, x: node.x, y: node.y, parent: parents.get(id) } : { id, x: node.x, y: node.y };
+      const place: { id: string; x: number; y: number; parent?: string | null; width?: number; height?: number } = { id, x: node.x, y: node.y };
+      if (parents.has(id)) place.parent = parents.get(id);
+      const size = sizes.get(id);
+      if (size) Object.assign(place, size);
+      return place;
     });
-    if (!parents.size && places.every((p) => p.x === origin.get(p.id)!.x && p.y === origin.get(p.id)!.y)) return;
+    if (!places.length) return;
+    if (!parents.size && !sizes.size && places.every((p) => p.x === origin.get(p.id)!.x && p.y === origin.get(p.id)!.y)) return;
     const name = this.nodes.get(places[0].id)?.label ?? places[0].id;
-    this.push("hakushi:change", { op: "move", nodes: places }, (reply) => {
-      if (reply.error) this.revert(origin);
-      else this.announce(said ?? (places.length === 1 ? this.messages.t("movedOne", { name }) : this.messages.count("moved", places.length)));
+    this.push("hakushi:change", { op: "move", nodes: places, ...(sizes.size ? { laid: true } : {}) }, (reply) => {
+      if (reply.error) {
+        for (const [id, size] of sizesBefore) {
+          const node = this.nodes.get(id);
+          if (node) Object.assign(node, size);
+        }
+        this.revert(origin);
+      } else {
+        this.announce(said ?? (places.length === 1 ? this.messages.t("movedOne", { name }) : this.messages.count("moved", places.length)));
+      }
     });
   }
 
@@ -4727,20 +4800,218 @@ export class Canvas {
    * it; locked nodes stay. The nodes glide to their places, and the change
    * is one move, which undoes at once.
    */
-  async layout(options: { direction?: "right" | "down"; algorithm?: Algorithm } = {}): Promise<void> {
-    if (!this.arranges || this.gesture) return;
-    const plan = this.planLayout(this.selected.size >= 2 ? [...this.selected] : [...this.order], options);
-    if (!plan) return;
+  async layout(options: { direction?: "right" | "down"; algorithm?: string } = {}, by: "person" | "app" = "person"): Promise<void> {
+    // A canvas people do not arrange is laid out by its app only, for this page.
+    const pageOnly = !this.arranges;
+    if (this.gesture || (pageOnly && by === "person")) return;
+    // What the server patched in the same message (a group folded) is read first.
+    this.flushObservers();
+    const plan = await this.plan(this.selected.size >= 2 ? [...this.selected] : [...this.order], options);
+    if (!plan || this.gesture) return;
+    const sizesBefore = this.resize(plan.sizes);
     await this.glide(plan.origin, plan.target);
-    this.commitMove(plan.origin, new Map(), this.messages.t("laidOut", { n: plan.count }));
+    this.setRoutes(plan.routes);
+    if (pageOnly) return this.keepOwn([...plan.target.keys(), ...plan.sizes.keys()]);
+    this.commitMove(plan.origin, new Map(), this.messages.t("laidOut", { n: plan.count }), plan.sizes, sizesBefore);
+  }
+
+  // A plan of a layout, by the canvas's own layout or by an engine of the
+  // app's (registerLayout).
+  private async plan(chosen: string[], options: { direction?: "right" | "down"; algorithm?: string }): Promise<LayoutPlan | null> {
+    const choice = this.layoutChoice();
+    const algorithm = options.algorithm ?? choice.algorithm;
+    const direction = options.direction ?? choice.direction;
+    const engine = engineOf(algorithm);
+    if (engine) {
+      try {
+        return await this.planEngine(engine, chosen, direction);
+      } catch (error) {
+        console.warn(`hakushi: the layout "${algorithm}" failed, and the canvas lays out in layers`, error);
+        return this.planLayout(chosen, { algorithm: "layered", direction });
+      }
+    }
+    if (!(algorithms as string[]).includes(algorithm)) {
+      if (!this.warnedLayouts.has(algorithm)) console.warn(`hakushi: no layout "${algorithm}"; register it with registerLayout. The canvas lays out in layers.`);
+      this.warnedLayouts.add(algorithm);
+      return this.planLayout(chosen, { algorithm: "layered", direction });
+    }
+    return this.planLayout(chosen, { algorithm: algorithm as Algorithm, direction });
+  }
+
+  private warnedLayouts = new Set<string>();
+
+  // Where an engine puts the chosen nodes and every node in them, the size
+  // of each group around its nodes, and the way of each edge.
+  private async planEngine(engine: LayoutEngine, chosen: string[], direction: "right" | "down"): Promise<LayoutPlan | null> {
+    const ids = this.withDescendants(this.tops(chosen).map((n) => n.id));
+    const nodes = [...ids].map((id) => this.nodes.get(id)!).filter((n) => n && !this.gone.has(n.id));
+    if (nodes.length < 2) return null;
+    const laid = new Set(nodes.map((n) => n.id));
+    const parentOf = (n: NodeModel) => (n.parent && laid.has(n.parent) ? n.parent : null);
+    const groups = new Set(nodes.map(parentOf).filter((p): p is string => p !== null));
+
+    const ports = new Map<string, EngineInput["nodes"][number]["ports"]>();
+    const portOf = (node: NodeModel, handleId: string | null, kind: "source" | "target"): string | null => {
+      if (groups.has(node.id)) return null;
+      const handle = this.handleOf(node, handleId, kind);
+      if (!handle) return null;
+      const id = `${node.id}\u0000${kind}\u0000${handle.id ?? ""}\u0000${handle.side}`;
+      let list = ports.get(node.id);
+      if (!list) ports.set(node.id, (list = []));
+      if (!list.some((p) => p.id === id)) list.push({ id, x: handle.x, y: handle.y, side: handle.side });
+      return id;
+    };
+    const edges: EngineInput["edges"] = [];
+    for (const edge of this.edges.values()) {
+      if (!laid.has(edge.source) || !laid.has(edge.target) || edge.source === edge.target || this.gone.has(edge.id)) continue;
+      const label = this.edgeViews.get(edge.id)?.label;
+      edges.push({
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        sourcePort: portOf(this.nodes.get(edge.source)!, edge.sourceHandle, "source"),
+        targetPort: portOf(this.nodes.get(edge.target)!, edge.targetHandle, "target"),
+        label: label && label.offsetWidth > 0 ? { width: label.offsetWidth, height: label.offsetHeight } : null,
+      });
+    }
+    const input: EngineInput = {
+      nodes: nodes.map((n) => ({
+        id: n.id,
+        width: n.width,
+        height: n.height,
+        parent: parentOf(n),
+        group: groups.has(n.id),
+        padding: groups.has(n.id) ? this.paddingOf(n) : { top: 0, right: 0, bottom: 0, left: 0 },
+        ports: ports.get(n.id) ?? [],
+      })),
+      edges,
+      direction,
+    };
+    const result: EngineResult = await engine(input);
+
+    // In place: the laid out nodes keep the top left corner they had.
+    const tops = nodes.filter((n) => parentOf(n) === null);
+    const sizeOf = (n: NodeModel) => {
+      const r = result.nodes[n.id];
+      return groups.has(n.id) && r?.width && r?.height ? { width: r.width, height: r.height } : { width: n.width, height: n.height };
+    };
+    const before = union(tops.map((n) => this.rect(n)))!;
+    const after = union(tops.filter((n) => result.nodes[n.id]).map((n) => ({ ...result.nodes[n.id], ...sizeOf(n) })));
+    if (!after) return null;
+    const shift = { x: before.x - after.x, y: before.y - after.y };
+
+    const origin = new Map<string, Point>();
+    const target = new Map<string, Point>();
+    const sizes = new Map<string, { width: number; height: number }>();
+    for (const n of nodes) {
+      const r = result.nodes[n.id];
+      if (!r || n.locked) continue;
+      origin.set(n.id, { x: n.x, y: n.y });
+      target.set(n.id, { x: round(r.x + shift.x), y: round(r.y + shift.y) });
+      if (groups.has(n.id)) {
+        const size = sizeOf(n);
+        if (round(size.width) !== n.width || round(size.height) !== n.height) sizes.set(n.id, { width: round(size.width), height: round(size.height) });
+      }
+    }
+    const routes = new Map<string, { points: Point[]; label: Point | null }>();
+    for (const [id, way] of Object.entries(result.edges ?? {})) {
+      if (!this.edges.has(id) || way.points.length < 2) continue;
+      const move = (p: Point) => ({ x: p.x + shift.x, y: p.y + shift.y });
+      routes.set(id, { points: way.points.map(move), label: way.label ? move(way.label) : null });
+    }
+    return { origin, target, sizes, routes, count: tops.length };
+  }
+
+  // The space in a group around its nodes: its title (the part it is
+  // dragged by) at the top.
+  private paddingOf(node: NodeModel): { top: number; right: number; bottom: number; left: number } {
+    const handle = node.el.querySelector<HTMLElement>("[data-hakushi-drag]");
+    let top = 40;
+    if (handle) {
+      const zoom = this.view.zoom || 1;
+      const box = node.el.getBoundingClientRect();
+      const r = handle.getBoundingClientRect();
+      if (r.height > 0) top = Math.round((r.bottom - box.top) / zoom) + 16;
+    }
+    return { top, right: 16, bottom: 16, left: 16 };
+  }
+
+  // Groups to the sizes of a layout, at once; the sizes they had.
+  private resize(sizes: Map<string, { width: number; height: number }>): Map<string, { width: number; height: number; fixed: boolean }> {
+    const before = new Map<string, { width: number; height: number; fixed: boolean }>();
+    for (const [id, size] of sizes) {
+      const node = this.nodes.get(id);
+      if (!node) continue;
+      before.set(id, { width: node.width, height: node.height, fixed: node.fixed });
+      Object.assign(node, { width: size.width, height: size.height, fixed: true });
+      this.decorate(node);
+      this.touchNode(id);
+    }
+    return before;
+  }
+
+  // -- Routes of a layout ------------------------------------------------------
+  //
+  // An engine that routes edges gives their points; an edge goes that way
+  // while its two nodes are where the layout put them (a drag, a resize,
+  // a patch that moves them, and it goes its own way again). Not saved: a
+  // route is this page's.
+
+  private routes = new Map<string, { points: Point[]; label: Point | null; from: Rect; to: Rect }>();
+
+  private setRoutes(routes: Map<string, { points: Point[]; label: Point | null }>) {
+    for (const [id, way] of routes) {
+      const edge = this.edges.get(id);
+      const source = edge && this.nodes.get(edge.source);
+      const target = edge && this.nodes.get(edge.target);
+      if (!edge || !source || !target) continue;
+      this.routes.set(id, { ...way, from: this.rect(source), to: this.rect(target) });
+      this.dirty.add(id);
+    }
+    // The edges of the nodes laid out that the engine did not route go their own way.
+    this.schedule();
+  }
+
+  private routeOf(edge: EdgeModel): { points: Point[]; label: Point | null } | null {
+    const route = this.routes.get(edge.id);
+    if (!route) return null;
+    const source = this.nodes.get(edge.source);
+    const target = this.nodes.get(edge.target);
+    if (edge.points.length === 0 && source && target && sameRect(route.from, this.rect(source)) && sameRect(route.to, this.rect(target))) return route;
+    this.routes.delete(edge.id);
+    return null;
+  }
+
+  // -- Places of this page -----------------------------------------------------
+  //
+  // On a canvas that does not save its places (read-only, not arranged),
+  // a layout is this page's: the nodes keep the places it gave them when
+  // the server patches them (a mark, a title), until the server gives one
+  // another place or size.
+
+  private own = new Map<string, { x: number; y: number; width: number; height: number; fixed: boolean; server: string }>();
+
+  private serverPlace(element: HTMLElement): string {
+    return ["data-x", "data-y", "data-width", "data-height", "data-folded"].map((a) => element.getAttribute(a) ?? "").join(" ");
+  }
+
+  private keepOwn(ids: Iterable<string>) {
+    for (const id of ids) {
+      const node = this.nodes.get(id);
+      if (node) this.own.set(id, { x: node.x, y: node.y, width: node.width, height: node.height, fixed: node.fixed, server: this.serverPlace(node.el) });
+    }
+  }
+
+  private flushObservers() {
+    const nodes = this.nodeObserver?.takeRecords() ?? [];
+    if (nodes.length) this.nodesChanged(nodes);
+    const edges = this.edgeObserver?.takeRecords() ?? [];
+    if (edges.length) this.edgesChanged(edges);
   }
 
   // Where a layout puts the chosen nodes: those of no group among them (a
   // group moves with what is in it), and not the locked ones.
-  private planLayout(
-    chosen: string[],
-    options: { direction?: "right" | "down"; algorithm?: Algorithm },
-  ): { origin: Map<string, Point>; target: Map<string, Point>; count: number } | null {
+  private planLayout(chosen: string[], options: { direction?: "right" | "down"; algorithm?: Algorithm }): LayoutPlan | null {
     const top = this.topOf(chosen);
     const boxes = this.tops(chosen).map((n) => ({ id: n.id, width: n.width, height: n.height }));
     if (boxes.length < 2) return null;
@@ -4751,7 +5022,7 @@ export class Canvas {
 
     const choice = this.layoutChoice();
     const places = place(boxes, edges, {
-      algorithm: options.algorithm ?? choice.algorithm,
+      algorithm: options.algorithm ?? (choice.algorithm as Algorithm),
       direction: options.direction ?? choice.direction,
       aspect: this.size.width > 0 && this.size.height > 0 ? this.size.width / this.size.height : 1.6,
     });
@@ -4765,7 +5036,7 @@ export class Canvas {
       const p = places.get(b.id)!;
       moves.set(b.id, { x: p.x + shift.x, y: p.y + shift.y });
     }
-    return { ...this.withInside(moves), count: boxes.length };
+    return { ...this.withInside(moves), sizes: new Map(), routes: new Map(), count: boxes.length };
   }
 
   // Of the chosen nodes, the ones in no group among them (a group moves
@@ -4839,26 +5110,27 @@ export class Canvas {
     // A frame for the spinner to show, then the work.
     requestAnimationFrame(() =>
       setTimeout(() => {
-        try {
-          this.tidyNow();
-        } finally {
-          this.tidying = false;
-          this.root.setAttribute("data-ui-tidied", "");
-          this.schedule();
-        }
+        void this.tidyNow()
+          .catch((error) => console.warn("hakushi: the tidy up failed", error))
+          .finally(() => {
+            this.tidying = false;
+            this.root.setAttribute("data-ui-tidied", "");
+            this.schedule();
+          });
       }),
     );
   }
 
-  private tidyNow() {
+  private async tidyNow() {
     // Their sizes now, as drawn: the canvas may have been hidden when it read them.
     for (const node of this.nodes.values()) {
       if (node.fixed) continue;
       node.width = node.el.offsetWidth || node.width;
       node.height = node.el.offsetHeight || node.height;
     }
-    const plan = this.planLayout([...this.order], {});
+    const plan = await this.plan([...this.order], {});
     if (!plan) return;
+    this.resize(plan.sizes);
     for (const [id, to] of plan.target) {
       const node = this.nodes.get(id);
       if (!node) continue;
@@ -4868,11 +5140,18 @@ export class Canvas {
       this.decorate(node);
       this.touchNode(id);
     }
+    this.setRoutes(plan.routes);
     // Not undone, nor taken back if the server refuses it: the pile it
     // opened as is no place to go back to.
     if (this.arranges) {
-      const nodes = [...plan.target].map(([id, p]) => ({ id, x: p.x, y: p.y }));
-      this.push("hakushi:change", { op: "move", nodes, opened: true });
+      const nodes = [...new Set([...plan.target.keys(), ...plan.sizes.keys()])].map((id) => {
+        const node = this.nodes.get(id)!;
+        const size = plan.sizes.get(id);
+        return size ? { id, x: node.x, y: node.y, width: size.width, height: size.height } : { id, x: node.x, y: node.y };
+      });
+      this.push("hakushi:change", { op: "move", nodes, opened: true, ...(plan.sizes.size ? { laid: true } : {}) });
+    } else {
+      this.keepOwn([...plan.target.keys(), ...plan.sizes.keys()]);
     }
   }
 
@@ -5114,4 +5393,18 @@ function followIn(room: string, key: string | null): void {
   if (Object.keys(all).length > 0) document.documentElement.dataset.isshoFollowing = JSON.stringify(all);
   else delete document.documentElement.dataset.isshoFollowing;
   document.dispatchEvent(new CustomEvent("issho:following", { detail: { room, key } }));
+}
+
+// What a layout does: the nodes from their places to others, the groups
+// to their sizes, and the edges an engine routed.
+interface LayoutPlan {
+  origin: Map<string, Point>;
+  target: Map<string, Point>;
+  sizes: Map<string, { width: number; height: number }>;
+  routes: Map<string, { points: Point[]; label: Point | null }>;
+  count: number;
+}
+
+function sameRect(a: Rect, b: Rect): boolean {
+  return Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5 && Math.abs(a.width - b.width) < 0.5 && Math.abs(a.height - b.height) < 0.5;
 }

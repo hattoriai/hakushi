@@ -95,6 +95,8 @@ defmodule Hakushi.MixProject do
         lib
         priv/static/hakushi.esm.js
         priv/static/hakushi.cjs.js
+        priv/static/hakushi-elk.esm.js
+        priv/static/hakushi-elk.cjs.js
         priv/static/hakushi.css
         priv/static/hakushi-sumi.css
         package.json

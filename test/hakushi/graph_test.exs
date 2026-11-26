@@ -408,4 +408,83 @@ defmodule Hakushi.GraphTest do
             )
     end
   end
+
+  describe "fold/2" do
+    # A cluster with a service in it, two workloads in the service, a
+    # database in the cluster, and a client outside.
+    defp nested do
+      Graph.new(
+        nodes: [
+          %{id: "cluster", width: 900, height: 600},
+          %{id: "service", parent: "cluster", width: 400, height: 300},
+          %{id: "web", parent: "service"},
+          %{id: "jobs", parent: "service"},
+          %{id: "db", parent: "cluster"},
+          %{id: "client"}
+        ],
+        edges: [
+          %{id: "in", source: "client", target: "web", target_handle: "http", points: [[1, 2]]},
+          %{id: "q", source: "web", target: "jobs"},
+          %{id: "w", source: "web", target: "db", source_handle: "out"},
+          %{id: "j", source: "jobs", target: "db"}
+        ]
+      )
+    end
+
+    defp ids(graph), do: Enum.map(Graph.nodes(graph), & &1.id)
+    defp ends(graph), do: Enum.map(Graph.edges(graph), &{&1.id, &1.source, &1.target})
+
+    test "a folded group hides its nodes, and their edges go to it" do
+      folded = Graph.fold(nested(), ["service"])
+      assert ids(folded) == ["cluster", "service", "db", "client"]
+
+      assert ends(folded) == [
+               {"in", "client", "service"},
+               {"w", "service", "db"},
+               {"j", "service", "db"}
+             ]
+
+      service = Graph.node(folded, "service")
+      assert {service.width, service.height, service.folded} == {nil, nil, true}
+      refute Graph.node(folded, "cluster").folded
+      refute Map.has_key?(hd(Graph.dump(folded)["nodes"]), "folded")
+      assert Graph.node(folded, "cluster").width == 900
+
+      # The end that moved has no handle, and the edge no points.
+      assert %{target_handle: nil, points: []} = Graph.edge(folded, "in")
+      assert %{source_handle: nil} = Graph.edge(folded, "w")
+    end
+
+    test "the outermost folded group wins" do
+      folded = Graph.fold(nested(), ["service", "cluster"])
+      assert ids(folded) == ["cluster", "client"]
+      assert ends(folded) == [{"in", "client", "cluster"}]
+    end
+
+    test "an edge keeps its handles when its ends stay" do
+      graph =
+        Graph.new(
+          nodes: [%{id: "g"}, %{id: "a", parent: "g"}, %{id: "b"}, %{id: "c"}],
+          edges: [%{id: "bc", source: "b", target: "c", source_handle: "s", points: [[5, 5]]}]
+        )
+
+      assert Graph.edge(Graph.fold(graph, ["g"]), "bc") == Graph.edge(graph, "bc")
+    end
+
+    test "no folded group, or ids of no node, change nothing" do
+      assert Graph.fold(nested(), []) == nested()
+      assert Graph.fold(nested(), ["nothing"]) == nested()
+      assert Graph.fold(nested(), MapSet.new(["web"])) |> ids() == ids(nested())
+    end
+
+    test "a change applied to the whole graph moves the folded nodes with their group" do
+      graph = nested()
+
+      {:ok, moved, _applied, _undo} =
+        Graph.apply(graph, Hakushi.Change.move([%{id: "service", x: 50, y: 60}]))
+
+      assert %{x: 50, y: 60} = Graph.node(moved, "service")
+      assert ids(Graph.fold(moved, ["service"])) == ids(Graph.fold(graph, ["service"]))
+    end
+  end
 end

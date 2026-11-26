@@ -8,7 +8,6 @@ Known gaps in Hakushi, each to become an issue. None is planned yet.
 
 ## Nodes
 
-- A group folded to its title: its nodes hidden, its edges drawn to it.
 - A node that shows a node of another canvas, kept as that one changes.
 - A part of a node dragged out onto the page by the keyboard, not only
   by a pointer.
@@ -27,10 +26,6 @@ Known gaps in Hakushi, each to become an issue. None is planned yet.
 ## Pages without LiveView
 
 `mountHakushi()` for a read-only canvas in a controller's template.
-
-## Layout
-
-- A layout of the nodes in a group, within it.
 
 ## Together with the family
 

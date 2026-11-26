@@ -65,7 +65,7 @@ test("the menu by tidy up lays out another way, and the next tidy up goes that w
   await expect(menuButton).toHaveAttribute("aria-haspopup", "menu");
   await menuButton.click();
   const menu = page.locator("#workflow .hakushi-layout-menu");
-  await expect(menu.getByRole("menuitemradio")).toHaveText(["Layers, left to right", "Layers, top to bottom", "Spread out", "Grid"]);
+  await expect(menu.getByRole("menuitemradio")).toHaveText(["Layers, left to right", "Layers, top to bottom", "Spread out", "Grid", "Nested"]);
   await expect(menu.getByRole("menuitemradio", { name: "Layers, left to right" })).toHaveAttribute("aria-checked", "true");
 
   await menu.getByRole("menuitemradio", { name: "Grid" }).click();

@@ -1051,6 +1051,13 @@ defmodule HakushiDev.Layouts do
           .way-label button { border: 0; background: none; color: inherit; cursor: pointer; font: inherit; padding: 0 2px; }
           .ruler-line { stroke: var(--atelier-accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
           .ruler-text { fill: var(--atelier-accent); font: 600 13px system-ui; text-anchor: middle; }
+          .nest-group { width: 100%; height: 100%; min-width: 11rem; border: 1px solid var(--atelier-line); border-radius: 10px; background: color-mix(in srgb, var(--atelier-card) 55%, transparent); }
+          .nest-group header { display: flex; align-items: center; gap: 0.4rem; padding: 0.45rem 0.6rem; font-size: 0.8125rem; font-weight: 600; }
+          .nest-group header button { border: 0; background: none; color: inherit; cursor: pointer; font: inherit; padding: 0 0.2rem; }
+          .nest-group header small { margin-left: auto; font-weight: 400; opacity: 0.6; }
+          .nest-node { padding: 0.5rem 0.75rem; border: 1px solid var(--atelier-line); border-radius: 8px; background: var(--atelier-card); font-size: 0.8125rem; width: 9.5rem; position: relative; }
+          .nest-node small { display: block; opacity: 0.6; }
+          .hakushi-edge.via-queue .hakushi-edge-line { stroke: #d97706; stroke-dasharray: 2 6; stroke-linecap: round; }
           .scale-node { padding: 0.5rem 0.75rem; border: 1px solid var(--atelier-line); border-radius: 8px; background: var(--atelier-card); font-size: 0.8125rem; width: 9rem; position: relative; }
         </style>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -1061,7 +1068,8 @@ defmodule HakushiDev.Layouts do
               "phoenix": "/vendor/phoenix/phoenix.mjs",
               "phoenix_live_view": "/vendor/phoenix_live_view/phoenix_live_view.esm.js",
               "issho": "/vendor/issho/issho.esm.js",
-              "hakushi": "/assets/hakushi.esm.js"
+              "hakushi": "/assets/hakushi.esm.js",
+              "hakushi/elk": "/assets/hakushi-elk.esm.js"
             }
           }
         </script>
@@ -1069,7 +1077,11 @@ defmodule HakushiDev.Layouts do
           import { Socket } from "phoenix"
           import { LiveSocket } from "phoenix_live_view"
           import { Hooks as Issho } from "issho"
-          import { Hakushi, canvasOf, registerTool } from "hakushi"
+          import { Hakushi, canvasOf, registerTool, registerLayout } from "hakushi"
+          import { elk } from "hakushi/elk"
+
+          // ELK, for the canvases whose layout is :elk (/nested).
+          registerLayout("elk", elk())
 
           // Tools of the app's own (registerTool), on the canvases whose
           // client_tools name them: a ruler, which changes nothing, and a
@@ -1196,7 +1208,8 @@ defmodule HakushiDev.Layouts do
       {:spec, "/spec", "Design spec", "spec"},
       {:scale, "/scale", "Two thousand nodes", "scale"},
       {:database, "/database", "A database", "schema"},
-      {:colours, "/colours", "Every colour", "board"}
+      {:colours, "/colours", "Every colour", "board"},
+      {:nested, "/nested", "Nested groups", "workflow"}
     ]
   end
 
@@ -2162,6 +2175,165 @@ defmodule HakushiDev.DatabaseLive do
   end
 end
 
+defmodule HakushiDev.NestedLive do
+  @moduledoc """
+  Groups in groups, laid out by ELK (`layout={:elk}`), folded and unfolded
+  in place (`Hakushi.Graph.fold/2`), with edges that jump over each other
+  (`jumps`) and a path traced with marks.
+  """
+  use Phoenix.LiveView
+
+  import Hakushi.Components
+  import HakushiDev.Layouts, only: [app: 1]
+
+  alias Hakushi.Graph
+
+  @path ~w(browser-cdn cdn-gateway gateway-orders-api orders-api-queue queue-billing-worker billing-worker-ledger)
+
+  @impl true
+  def mount(_params, _session, socket) do
+    graph = graph()
+    {:ok, assign(socket, graph: graph, folded: MapSet.new(["search"]), traced: false)}
+  end
+
+  @impl true
+  def handle_event("fold", %{"id" => id}, socket) do
+    folded = socket.assigns.folded
+    folded = if id in folded, do: MapSet.delete(folded, id), else: MapSet.put(folded, id)
+    Hakushi.Live.layout("nested")
+    {:noreply, assign(socket, folded: folded)}
+  end
+
+  def handle_event("trace", _params, socket) do
+    if socket.assigns.traced do
+      Hakushi.Live.clear_marks("nested")
+    else
+      shown = Graph.fold(socket.assigns.graph, socket.assigns.folded)
+      edges = Enum.filter(@path, &Graph.edge(shown, &1))
+      nodes = Enum.flat_map(edges, &[Graph.edge(shown, &1).source, Graph.edge(shown, &1).target])
+      Hakushi.Live.spotlight("nested", nodes: Enum.uniq(nodes), edges: edges)
+      Hakushi.Live.mark_edges("nested", edges, status: :running)
+    end
+
+    {:noreply, update(socket, :traced, &(!&1))}
+  end
+
+  @impl true
+  def render(assigns) do
+    assigns = assign(assigns, :shown, Graph.fold(assigns.graph, assigns.folded))
+
+    ~H"""
+    <.app page={:nested} me={@me} query={@query} title="Nested groups" crumb={"#{map_size(@shown.nodes)} nodes · #{map_size(@shown.edges)} edges"}>
+      <:actions>
+        <button type="button" class="button" id="trace" phx-click="trace">{if @traced, do: "Clear the trace", else: "Trace an order"}</button>
+        <span class="hint">Fold and unfold the groups by their titles. The queue's edges are dotted (a mark's class).</span>
+      </:actions>
+      <.canvas id="nested" graph={@shown} layout={:elk} readonly tidy jumps fit label="A system of nested groups">
+        <:node type="group" group :let={node}>
+          <div class="nest-group">
+            <header data-hakushi-drag>
+              <button
+                type="button"
+                phx-click="fold"
+                phx-value-id={node.id}
+                aria-expanded={to_string(!node.folded)}
+                data-fold={node.id}
+              >
+                {if node.folded, do: "▸", else: "▾"} {node.data.name}
+              </button>
+              <small :if={node.folded}>{length(Graph.descendants(@graph, node.id))} inside</small>
+            </header>
+          </div>
+        </:node>
+        <:node :let={node}>
+          <div class="nest-node">
+            <.handle kind={:target} side={:left} />
+            {node.data.name}
+            <small>{node.data.kind}</small>
+            <.handle kind={:source} side={:right} />
+          </div>
+        </:node>
+      </.canvas>
+    </.app>
+    """
+  end
+
+  @impl true
+  def handle_info(_message, socket), do: {:noreply, socket}
+
+  # Every edge to or from the queue is dotted, by a class of its mark.
+  @impl true
+  def handle_params(_params, _uri, socket) do
+    if connected?(socket) do
+      queue =
+        for edge <- Graph.edges(socket.assigns.graph),
+            "queue" in [edge.source, edge.target],
+            do: edge.id
+
+      Hakushi.Live.mark_edges("nested", queue, class: "via-queue")
+    end
+
+    {:noreply, socket}
+  end
+
+  defp graph do
+    group = fn id, name, parent ->
+      %{id: id, type: "group", parent: parent, data: %{name: name}}
+    end
+
+    node = fn id, name, kind, parent ->
+      %{id: id, parent: parent, data: %{name: name, kind: kind}}
+    end
+
+    edge = fn source, target ->
+      %{id: "#{source}-#{target}", source: source, target: target, path: "smooth"}
+    end
+
+    Graph.new(
+      nodes: [
+        node.("browser", "Browser", "client", nil),
+        node.("partner", "Partner API", "client", nil),
+        group.("edge", "Edge", nil),
+        node.("cdn", "CDN", "cache", "edge"),
+        node.("gateway", "Gateway", "load balancer", "edge"),
+        group.("cluster", "Cluster", nil),
+        group.("orders", "Orders", "cluster"),
+        node.("orders-api", "orders-api", "workload", "orders"),
+        node.("orders-admin", "orders-admin", "workload", "orders"),
+        group.("billing", "Billing", "cluster"),
+        node.("billing-api", "billing-api", "workload", "billing"),
+        node.("billing-worker", "billing-worker", "workload", "billing"),
+        group.("search", "Search", "cluster"),
+        node.("search-api", "search-api", "workload", "search"),
+        node.("indexer", "indexer", "workload", "search"),
+        node.("queue", "Queue", "broker", "cluster"),
+        group.("data", "Data", nil),
+        node.("orders-db", "orders-db", "database", "data"),
+        node.("ledger", "ledger", "database", "data"),
+        node.("index", "index", "search engine", "data")
+      ],
+      edges: [
+        edge.("browser", "cdn"),
+        edge.("cdn", "gateway"),
+        edge.("partner", "gateway"),
+        edge.("gateway", "orders-api"),
+        edge.("gateway", "billing-api"),
+        edge.("gateway", "search-api"),
+        edge.("orders-api", "orders-db"),
+        edge.("orders-admin", "orders-db"),
+        edge.("orders-api", "queue"),
+        edge.("queue", "billing-worker"),
+        edge.("queue", "indexer"),
+        edge.("billing-api", "ledger"),
+        edge.("billing-worker", "ledger"),
+        edge.("indexer", "index"),
+        edge.("search-api", "index"),
+        edge.("billing-api", "orders-api")
+      ]
+    )
+  end
+end
+
 defmodule HakushiDev.ScaleLive do
   @moduledoc "Two thousand nodes (or `?n=`), and an edge to each from its parent."
   use Phoenix.LiveView
@@ -2380,6 +2552,7 @@ defmodule HakushiDev.Router do
       live("/scale", HakushiDev.ScaleLive)
       live("/database", HakushiDev.DatabaseLive)
       live("/colours", HakushiDev.ColoursLive)
+      live("/nested", HakushiDev.NestedLive)
     end
   end
 end

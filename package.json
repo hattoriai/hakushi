@@ -8,6 +8,10 @@
     ".": {
       "import": "./priv/static/hakushi.esm.js",
       "require": "./priv/static/hakushi.cjs.js"
+    },
+    "./elk": {
+      "import": "./priv/static/hakushi-elk.esm.js",
+      "require": "./priv/static/hakushi-elk.cjs.js"
     }
   },
   "files": [

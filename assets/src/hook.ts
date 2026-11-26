@@ -53,7 +53,7 @@ export const Hakushi = {
     });
     hook.handleEvent("hakushi:layout", (payload) => {
       if (payload.canvas === canvas.id)
-        void canvas.layout({ direction: payload.direction as "right" | "down" | undefined, algorithm: payload.algorithm as "layered" | "force" | "grid" | undefined });
+        void canvas.layout({ direction: payload.direction as "right" | "down" | undefined, algorithm: payload.algorithm as string | undefined }, "app");
     });
     hook.handleEvent("hakushi:view", (payload) => {
       if (payload.canvas === canvas.id) canvas.moveView(payload);

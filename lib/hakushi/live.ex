@@ -59,16 +59,24 @@ defmodule Hakushi.Live do
   Tidies up the canvas `canvas` of this LiveView, as its tidy up button
   does: `algorithm: :layered` (in layers along the edges, `direction:
   :right` or `:down`), `:force` (by forces) or `:grid`; the canvas's
-  `layout` (or the way the person chose in its menu) unless given. The
-  person's browser lays the nodes out, and the new places are a change as
-  any: checked, shared, and undone with ⌘Z.
+  `layout` (or the way the person chose in its menu) unless given;
+  `:elk` for ELK, once the app registers it (see [Layout and
+  export](layout.md#elk)). The person's browser lays the nodes out, and
+  the new places are a change as any: checked, shared, and undone with ⌘Z.
+
+  On a read-only canvas (not `readonly={:arrange}`), the places are this
+  page's only, as `tidy`'s are: after a new graph (a group folded with
+  `Hakushi.Graph.fold/2`), the app lays it out again.
 
       Hakushi.Live.layout("schema", algorithm: :force)
   """
   @spec layout(String.t(), keyword()) :: :ok
   def layout(canvas, opts \\ []) when is_binary(canvas) do
     payload =
-      for {key, values} <- [direction: [:right, :down], algorithm: [:layered, :force, :grid]],
+      for {key, values} <- [
+            direction: [:right, :down],
+            algorithm: [:layered, :force, :grid, :elk]
+          ],
           value = opts[key],
           value != nil,
           into: %{} do
@@ -263,16 +271,19 @@ defmodule Hakushi.Live do
 
   @doc """
   Marks edges of the canvas `canvas` of this LiveView, as `mark/3` marks
-  nodes: `status`, `highlight`, `dim` and `title` (an edge has no badge,
-  no progress and no classes). A `:running` edge flows.
+  nodes: `status`, `highlight`, `dim`, `title` and `class` (an edge has
+  no badge and no progress). A `:running` edge flows. `class` goes on the
+  edge's `<g>`, for a look of the app's own: a dotted line, the colour of
+  a protocol.
 
       Hakushi.Live.mark_edges("flow", ["e1", "e2"], status: :running)
+      Hakushi.Live.mark_edges("services", ["e3"], class: "via-amqp", highlight: "#f97316")
   """
   @spec mark_edges(String.t(), String.t() | [String.t()], keyword() | map() | nil) :: :ok
   def mark_edges(canvas, ids, mark) when is_binary(canvas) do
     mark = mark!(mark)
 
-    case mark && Map.keys(mark) -- [:status, :highlight, :dim, :title] do
+    case mark && Map.keys(mark) -- [:status, :highlight, :dim, :title, :class] do
       bad when bad in [nil, []] -> :ok
       bad -> raise ArgumentError, "an edge's mark has no #{inspect(bad)}"
     end

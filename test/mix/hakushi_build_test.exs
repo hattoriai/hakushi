@@ -6,8 +6,8 @@ defmodule Mix.Tasks.Hakushi.BuildTest do
 
   @root Path.expand("../..", __DIR__)
   @static Path.join(@root, "priv/static")
-  @files ~w(hakushi.esm.js hakushi.cjs.js hakushi.css hakushi-sumi.css)
-  @exports ~w(Hakushi canvasOf registerTool)
+  @files ~w(hakushi.esm.js hakushi.cjs.js hakushi-elk.esm.js hakushi-elk.cjs.js hakushi.css hakushi-sumi.css)
+  @exports ~w(Hakushi canvasOf registerLayout registerTool)
 
   @moduletag :build
   @moduletag timeout: 600_000
@@ -48,7 +48,7 @@ defmodule Mix.Tasks.Hakushi.BuildTest do
     end
   end
 
-  test "priv/static holds only the four files of the package" do
+  test "priv/static holds only the six files of the package" do
     assert @static |> File.ls!() |> Enum.sort() == Enum.sort(@files)
   end
 
@@ -122,6 +122,23 @@ defmodule Mix.Tasks.Hakushi.BuildTest do
 
       assert status == 0, "node could not require hakushi.cjs.js:\n" <> output
       assert JSON.decode!(output) == @exports
+    end
+
+    test "require() of hakushi/elk gives elk and its defaults, and ELK lays out" do
+      script = """
+      const { elk, defaults } = require("./priv/static/hakushi-elk.cjs.js");
+      elk()({
+        direction: "right",
+        nodes: ["a", "b"].map((id) => ({ id, width: 10, height: 10, parent: null, group: false,
+          padding: { top: 0, right: 0, bottom: 0, left: 0 }, ports: [] })),
+        edges: [{ id: "e", source: "a", target: "b", sourcePort: null, targetPort: null, label: null }]
+      }).then((r) => process.stdout.write(JSON.stringify([typeof defaults, r.nodes.a.x < r.nodes.b.x])));
+      """
+
+      {output, status} = System.cmd("node", ["-e", script], cd: @root, stderr_to_stdout: true)
+
+      assert status == 0, "node could not require hakushi-elk.cjs.js:\n" <> output
+      assert JSON.decode!(output) == ["object", true]
     end
   end
 end

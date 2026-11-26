@@ -235,6 +235,14 @@ defmodule Hakushi.Components do
     that goes full screen and back\
     """
 
+  attr :jumps, :boolean,
+    default: false,
+    doc: """
+    when `true`, an edge along the axes (`"step"`, `"smooth"`, `"routed"`, or routed by ELK) \
+    jumps over the edges it crosses, with a small arc on its horizontal part, so that people \
+    see which way each goes; see [Edges](edges.md#jumps)\
+    """
+
   attr :min_zoom, :float, default: 0.1, doc: "the smallest zoom"
   attr :max_zoom, :float, default: 4.0, doc: "the largest zoom"
 
@@ -250,8 +258,10 @@ defmodule Hakushi.Components do
     default: nil,
     doc: """
     the way the tidy up (⇧L, the controls) lays the nodes out: in layers from left to right \
-    (`:right`) or from top to bottom (`:down`), by forces (`:force`), or in a grid (`:grid`); \
-    `:layered` is `:right`, and `{:layered, :down}` is `:down`. The default is a kit's, else \
+    (`:right`) or from top to bottom (`:down`), by forces (`:force`), in a grid (`:grid`), or \
+    by ELK (`:elk` or `{:elk, :down}`: groups and all, with routed edges, once the app \
+    registers `hakushi/elk`); `:layered` is `:right`, and `{:layered, :down}` is `:down`. \
+    The default is a kit's, else \
     `:right`. People choose another in the menu by the tidy up button; see \
     [Layout and export](layout.md)\
     """
@@ -356,6 +366,7 @@ defmodule Hakushi.Components do
       wheel={@wheel}
       fit={@fit}
       refit={@refit}
+      jumps={@jumps}
       min_zoom={@min_zoom}
       max_zoom={@max_zoom}
       minimap={@minimap}

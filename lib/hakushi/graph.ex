@@ -780,6 +780,98 @@ defmodule Hakushi.Graph do
   end
 
   @doc """
+  The graph as it shows with the groups `ids` folded: the nodes in a
+  folded group go, and each edge of one of them goes to the outermost
+  folded group it is in. An edge between two nodes of one folded group
+  goes too. A folded group has `folded: true`, for its slot, and no size
+  of its own (`width` and `height` are `nil`): it is as large as its slot
+  draws it, folded.
+
+  The edges keep their ids, so two edges into one folded group are two
+  lines (and `Hakushi.Live.mark_edges/3` marks them); the end that moved
+  has no handle, and the edge no points. Ids that are not of a node are
+  left out.
+
+  For a group that people fold and unfold in place: keep the whole graph
+  and the folded ids in the socket's assigns, show `fold(graph, folded)`,
+  and apply each change to the whole graph (a folded group that moves
+  moves its nodes with it). See the Groups guide.
+
+      iex> graph = Hakushi.Graph.new(nodes: [%{id: "api", width: 300, height: 200}, %{id: "web", parent: "api"}, %{id: "jobs", parent: "api"}, %{id: "db"}], edges: [%{id: "e1", source: "web", target: "db"}, %{id: "e2", source: "jobs", target: "db"}, %{id: "e3", source: "web", target: "jobs"}])
+      iex> folded = Hakushi.Graph.fold(graph, ["api"])
+      iex> Enum.map(Hakushi.Graph.nodes(folded), &{&1.id, &1.folded, &1.width})
+      [{"api", true, nil}, {"db", false, nil}]
+      iex> Enum.map(Hakushi.Graph.edges(folded), &{&1.id, &1.source, &1.target})
+      [{"e1", "api", "db"}, {"e2", "api", "db"}]
+  """
+  @spec fold(t(), Enumerable.t()) :: t()
+  def fold(%__MODULE__{} = graph, ids) do
+    folded = ids |> Enum.filter(&Map.has_key?(graph.nodes, &1)) |> MapSet.new()
+    if MapSet.size(folded) == 0, do: graph, else: fold_shown(graph, folded)
+  end
+
+  defp fold_shown(graph, folded) do
+    shown = Map.new(graph.nodes, fn {id, _node} -> {id, shown_as(graph, id, folded)} end)
+
+    nodes =
+      for node <- nodes(graph),
+          shown[node.id] == node.id,
+          do: fold_node(node, MapSet.member?(folded, node.id))
+
+    edges =
+      for edge <- edges(graph),
+          shown[edge.source] != shown[edge.target],
+          do: lift_edge(edge, shown[edge.source], shown[edge.target])
+
+    %{
+      graph
+      | nodes: Map.new(nodes, &{&1.id, &1}),
+        node_order: Enum.map(nodes, & &1.id),
+        edges: Map.new(edges, &{&1.id, &1}),
+        edge_order: Enum.map(edges, & &1.id)
+    }
+  end
+
+  defp fold_node(node, true), do: %{node | width: nil, height: nil, folded: true}
+  defp fold_node(node, false), do: node
+
+  # An edge to the nodes its ends show as: the end that moved has no
+  # handle, and a moved edge no points.
+  defp lift_edge(%Edge{source: source, target: target} = edge, source, target), do: edge
+
+  defp lift_edge(edge, source, target) do
+    %{
+      edge
+      | source: source,
+        target: target,
+        source_handle: if(source == edge.source, do: edge.source_handle),
+        target_handle: if(target == edge.target, do: edge.target_handle),
+        points: []
+    }
+  end
+
+  # The node a node shows as: the outermost folded group it is in, or itself.
+  defp shown_as(graph, id, folded),
+    do: shown_as(graph, Map.fetch!(graph.nodes, id).parent, folded, id, MapSet.new([id]))
+
+  defp shown_as(_graph, nil, _folded, shown, _seen), do: shown
+
+  defp shown_as(graph, parent, folded, shown, seen) do
+    node = Map.get(graph.nodes, parent)
+
+    cond do
+      node == nil or MapSet.member?(seen, parent) ->
+        shown
+
+      MapSet.member?(folded, parent) ->
+        shown_as(graph, node.parent, folded, parent, MapSet.put(seen, parent))
+
+      true ->
+        shown_as(graph, node.parent, folded, shown, MapSet.put(seen, parent))
+    end
+  end
+
+  @doc """
   The inside of a group, as a graph of its own: the nodes in the node
   `id` (`descendants/2`), those directly in it in no group, and the edges
   between them. The places are the group's: its top left corner is the
@@ -944,6 +1036,7 @@ defmodule Hakushi.Graph do
         Enum.map(nodes(graph), fn node ->
           node
           |> Map.from_struct()
+          |> Map.delete(:folded)
           |> Map.reject(fn {k, v} -> k in [:width, :height, :parent] and is_nil(v) end)
           |> stringify()
         end),

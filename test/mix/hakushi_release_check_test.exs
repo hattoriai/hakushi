@@ -3,7 +3,7 @@ defmodule Mix.Tasks.Hakushi.ReleaseCheckTest do
 
   alias Mix.Tasks.Hakushi.ReleaseCheck
 
-  @files ~w(hakushi.esm.js hakushi.cjs.js hakushi.css hakushi-sumi.css)
+  @files ~w(hakushi.esm.js hakushi.cjs.js hakushi-elk.esm.js hakushi-elk.cjs.js hakushi.css hakushi-sumi.css)
 
   @moduletag :tmp_dir
 
@@ -16,7 +16,7 @@ defmodule Mix.Tasks.Hakushi.ReleaseCheckTest do
     %{static: static, package: package}
   end
 
-  test "passes with the four built files and the same version", %{
+  test "passes with the six built files and the same version", %{
     static: static,
     package: package
   } do

@@ -17,12 +17,12 @@ defmodule Mix.Tasks.Hakushi.Build do
        `assets/package-lock.json` changed since the last install.
     2. Empties `priv/static`, so that it holds only the files of this
        build.
-    3. Runs esbuild (the `esbuild` Mix package) with the `:hakushi_esm` and
-       `:hakushi_cjs` profiles.
+    3. Runs esbuild (the `esbuild` Mix package) with the `:hakushi_esm`,
+       `:hakushi_cjs`, `:hakushi_elk_esm` and `:hakushi_elk_cjs` profiles.
     4. Copies `assets/css/hakushi.css` and `assets/css/hakushi-sumi.css` to
        `priv/static/`.
 
-  After the task, `priv/static` holds exactly these four files, which are
+  After the task, `priv/static` holds exactly these six files, which are
   the files of the Hex package.
 
   It needs `npm` on the path and the `:esbuild` dependency, which is
@@ -36,7 +36,7 @@ defmodule Mix.Tasks.Hakushi.Build do
   @assets "assets"
   @static "priv/static"
   @lock_hash "node_modules/.hakushi-lock-sha256"
-  @profiles [:hakushi_esm, :hakushi_cjs]
+  @profiles [:hakushi_esm, :hakushi_cjs, :hakushi_elk_esm, :hakushi_elk_cjs]
   @stylesheets ["hakushi.css", "hakushi-sumi.css"]
 
   @impl Mix.Task

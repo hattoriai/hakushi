@@ -14,7 +14,7 @@ const edge = (source: string, target: string, sourceHandle: string | null = null
   marker: "arrow",
   animated: false,
   points: [],
-  mark: { status: null, highlight: false, color: null, dim: false, title: null, lit: false, diff: null },
+  mark: { status: null, highlight: false, color: null, dim: false, title: null, class: null, lit: false, diff: null },
 });
 
 const handle = (fields: Partial<Handle>): Handle =>

@@ -23,6 +23,20 @@ if config_env() == :dev do
       args: esbuild_args ++ ~w(--format=cjs --outfile=../priv/static/hakushi.cjs.js),
       cd: Path.expand("../assets", __DIR__),
       env: %{"NODE_PATH" => nil}
+    ],
+    # ELK (hakushi/elk), a bundle of its own: only the apps that import it
+    # take its size.
+    hakushi_elk_esm: [
+      args:
+        ~w(src/elk.ts --bundle --minify --target=es2020 --format=esm --outfile=../priv/static/hakushi-elk.esm.js),
+      cd: Path.expand("../assets", __DIR__),
+      env: %{"NODE_PATH" => nil}
+    ],
+    hakushi_elk_cjs: [
+      args:
+        ~w(src/elk.ts --bundle --minify --target=es2020 --format=cjs --outfile=../priv/static/hakushi-elk.cjs.js),
+      cd: Path.expand("../assets", __DIR__),
+      env: %{"NODE_PATH" => nil}
     ]
 end
 

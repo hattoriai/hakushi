@@ -7,6 +7,36 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- ELK, as a module of its own (`hakushi/elk`, about 450 KB gzipped, which
+  only an app that imports it takes): `registerLayout("elk", elk())`, then
+  `layout={:elk}` or `Hakushi.Live.layout(id, algorithm: :elk)`. It lays
+  out groups in groups, each inside, sizes each group around its nodes,
+  and routes the edges along the axes, apart from each other, through
+  their handles. Before, a tidy up laid out a group as one box, without
+  arranging what was in it. `registerLayout/2` takes an engine of the
+  app's too.
+- `Hakushi.Graph.fold/2`: the graph with some groups folded, their nodes
+  gone and their edges drawn to the outermost folded group. For a large
+  diagram that people open a part of at a time; see "Folding a group" in
+  the Groups guide.
+- `jumps` on a canvas: an edge along the axes jumps over the edges it
+  crosses, with a small arc, so that people see which way each goes.
+  Before, two edges that crossed looked like two that turned.
+- `Hakushi.Live.layout/2` lays out a read-only canvas, for the page only.
+  Before, it did nothing there, and a read-only canvas could lay out only
+  as it opened (`tidy`).
+- An edge's mark takes a `class` (`Hakushi.Live.mark_edges/3`), on the
+  edge's `<g>`: a look of the app's own, as a dotted line or the colour
+  of a protocol. Before, only a node's mark took one.
+
+### Fixed
+
+- A read-only canvas that tidied as it opened keeps its places when the
+  server patches a node (a mark, a title). Before, the node went back to
+  the place in the graph.
+
 ## [0.8.0] - 2026-10-29
 
 The app hears and steers the canvas (the selection, the view, a change
