@@ -1545,6 +1545,7 @@ defmodule Hakushi.Canvas do
             data-mark-color={mark_color_value(@marks.edges, edge.id)}
             data-mark-dim={mark(@marks.edges, edge.id, :dim) && "true"}
             data-mark-title={mark(@marks.edges, edge.id, :title)}
+            data-mark-class={mark(@marks.edges, edge.id, :class)}
             data-lit={lit?(@spotlight, :edges, edge.id) && "true"}
             data-diff={@diff.edges[edge.id]}
           >{if @edge_label_slot != [], do: render_slot(@edge_label_slot, edge)}</i>

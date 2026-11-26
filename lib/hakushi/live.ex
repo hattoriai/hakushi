@@ -263,16 +263,19 @@ defmodule Hakushi.Live do
 
   @doc """
   Marks edges of the canvas `canvas` of this LiveView, as `mark/3` marks
-  nodes: `status`, `highlight`, `dim` and `title` (an edge has no badge,
-  no progress and no classes). A `:running` edge flows.
+  nodes: `status`, `highlight`, `dim`, `title` and `class` (an edge has
+  no badge and no progress). A `:running` edge flows. `class` goes on the
+  edge's `<g>`, for a look of the app's own: a dotted line, the colour of
+  a protocol.
 
       Hakushi.Live.mark_edges("flow", ["e1", "e2"], status: :running)
+      Hakushi.Live.mark_edges("services", ["e3"], class: "via-amqp", highlight: "#f97316")
   """
   @spec mark_edges(String.t(), String.t() | [String.t()], keyword() | map() | nil) :: :ok
   def mark_edges(canvas, ids, mark) when is_binary(canvas) do
     mark = mark!(mark)
 
-    case mark && Map.keys(mark) -- [:status, :highlight, :dim, :title] do
+    case mark && Map.keys(mark) -- [:status, :highlight, :dim, :title, :class] do
       bad when bad in [nil, []] -> :ok
       bad -> raise ArgumentError, "an edge's mark has no #{inspect(bad)}"
     end

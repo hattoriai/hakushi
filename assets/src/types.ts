@@ -182,6 +182,8 @@ export interface EdgeMark {
   color: string | null;
   dim: boolean;
   title: string | null;
+  /** Classes of the app's own, on the edge's `<g>`: a dotted line, a colour of a protocol. */
+  class: string | null;
   lit: boolean;
   /** What it is to an older graph, on a canvas that compares: added, removed or changed. */
   diff: string | null;

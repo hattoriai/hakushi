@@ -782,6 +782,7 @@ export class Canvas {
         color: element.dataset.markColor ?? null,
         dim: element.dataset.markDim === "true",
         title: element.dataset.markTitle ?? null,
+        class: element.dataset.markClass ?? null,
         lit: element.dataset.lit === "true",
         diff: element.dataset.diff ?? null,
       },
@@ -1300,6 +1301,8 @@ export class Canvas {
     else view.g.removeAttribute("data-diff");
     if (mark.color) view.g.style.setProperty("--hakushi-mark", mark.color);
     else view.g.style.removeProperty("--hakushi-mark");
+    const classes = mark.class ? `hakushi-edge ${mark.class}` : "hakushi-edge";
+    if (view.g.getAttribute("class") !== classes) view.g.setAttribute("class", classes);
     let title = view.g.querySelector(":scope > title");
     if (mark.title) {
       title ??= view.g.appendChild(svg("title", {}));

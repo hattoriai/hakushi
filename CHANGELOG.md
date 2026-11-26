@@ -7,6 +7,12 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- An edge's mark takes a `class` (`Hakushi.Live.mark_edges/3`), on the
+  edge's `<g>`: a look of the app's own, as a dotted line or the colour
+  of a protocol. Before, only a node's mark took one.
+
 ## [0.8.0] - 2026-10-29
 
 The app hears and steers the canvas (the selection, the view, a change

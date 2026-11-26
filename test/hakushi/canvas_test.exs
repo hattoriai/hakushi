@@ -656,6 +656,8 @@ defmodule Hakushi.CanvasTest do
       {view, _html} = open("?notify=true")
       mark(view, "edges", "fk", %{"status" => "running", "highlight" => true})
       assert %{edges: %{"fk" => %{status: "running", highlight: true}}} = marks(view, "schema")
+      mark(view, "edges", "fk", %{"class" => "via-amqp"})
+      assert render(view) =~ ~s(data-mark-class="via-amqp")
       # Not a change: on_change and notify hear nothing of it.
       refute_receive {:on_change, _change, _context}
       refute_receive {Hakushi, "schema", {:changed, _change, _graph}}
@@ -707,6 +709,8 @@ defmodule Hakushi.CanvasTest do
       assert_raise ArgumentError, ~r/no \[:badge\]/, fn ->
         Hakushi.Live.mark_edges("c", "e", badge: 1)
       end
+
+      assert :ok = Hakushi.Live.mark_edges("c", "e", class: "dotted")
 
       assert :ok = Hakushi.Live.mark("c", "a", highlight: "oklch(70% 0.1 200)")
     end
