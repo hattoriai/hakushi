@@ -39,7 +39,8 @@ and the next tidy up (⇧L) goes that way too, while the page is open.
 
 The new places are one `:move` change, as a drag's: the server checks it,
 `on_change` saves it, everyone on a shared canvas sees it, and ⌘Z undoes
-it in one step.
+it in one step. On a read-only canvas, only the app lays out
+(`Hakushi.Live.layout/2`), and the places are the page's.
 
 The app can tidy up too, from the canvas's LiveView:
 
@@ -51,6 +52,62 @@ Hakushi.Live.layout("schema", algorithm: :force)
 The layout runs in the person's browser, which knows the size of each
 node as it is drawn. Two thousand nodes lay out in about a second
 spread out, and in a fraction of that in layers or a grid.
+
+## ELK
+
+[ELK](https://eclipse.dev/elk/) (the Eclipse Layout Kernel) lays out
+what the canvas's own layers do not: groups in groups, each laid out
+inside, and edges routed along the axes, apart from each other, through
+the handles they meet. For a system's map, a cluster of services, a
+diagram of nested parts.
+
+It is a module of its own, `hakushi/elk`, because it is large (about
+450 KB gzipped, eight times the canvas): only an app that imports it
+takes its size. Register it once, before the `LiveSocket` connects:
+
+```js
+import { Hakushi, registerLayout } from "hakushi"
+import { elk } from "hakushi/elk"
+
+registerLayout("elk", elk())
+```
+
+Then name it, as a canvas's `layout` or the app's tidy up:
+
+```heex
+<.canvas id="system" graph={@graph} layout={:elk} readonly tidy fit={:readable}>
+```
+
+```elixir
+Hakushi.Live.layout("system", algorithm: :elk, direction: :down)
+```
+
+The tidy up's menu has it too ("Nested") once it is registered.
+
+* Every node in a group is laid out in the group, and each group gets a
+  size around its nodes, with its title (the part it is dragged by,
+  `data-hakushi-drag`) above them. The sizes are part of the move, as a
+  resize's.
+* The edges go the way ELK routed them while their two nodes stay where
+  ELK put them; moved, they go their own way again. The routes are this
+  page's, not the graph's.
+* An edge's handle is a port: it starts and ends there, square to its
+  side.
+* `elk(options)` takes ELK's options
+  ([the reference](https://eclipse.dev/elk/reference/options.html)) over
+  `defaults`: `elk({"elk.spacing.nodeNode": "48"})`.
+* A layout that fails (an error of ELK's) is a layout in layers, with a
+  warning in the console. So is `layout={:elk}` before the app registers
+  it.
+
+ELK is under the Eclipse Public License 2.0; `hakushi/elk` has it as it
+is (see `NOTICE`).
+
+`registerLayout(name, engine)` takes an engine of the app's too: a
+function of the nodes (their sizes and groups), the edges (and their
+ports) and the way, to the places, the sizes of the groups and the
+points of the edges (see `EngineInput` and `EngineResult` in the
+types). The server names ELK only (`:elk`).
 
 ## A graph with no places of its own
 
@@ -76,7 +133,8 @@ it a diagram people read and arrange, and do not edit:
   shows them in place. Give the nodes any place (`x: 0, y: 0`). The places
   go to the server as the person's move, which no undo takes back to the
   pile the canvas opened as; on a read-only canvas they are the page's
-  only, and a shared canvas keeps the room's places and does not tidy.
+  only (a patch of a node, as a mark, keeps them), and a shared canvas
+  keeps the room's places and does not tidy.
 * `fit={:readable}` opens on all of the nodes when they fit at 60% or
   more, else at a zoom people read, on the most joined node and its
   neighbours (the heart of the graph). The minimap shows where that is in

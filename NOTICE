@@ -1,2 +1,10 @@
 Hakushi
 Copyright (c) 2026 Rui Freitas. Licensed under the MIT License (see LICENSE).
+
+priv/static/hakushi-elk.esm.js and priv/static/hakushi-elk.cjs.js (the
+optional `hakushi/elk` module) include elkjs 0.9.3, the Eclipse Layout
+Kernel for JavaScript, unmodified: Copyright (c) Kiel University and
+others, licensed under the Eclipse Public License 2.0
+(https://www.eclipse.org/legal/epl-2.0/). Its source is at
+https://github.com/kieler/elkjs. Hakushi's own code in these files is
+MIT-licensed.

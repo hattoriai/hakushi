@@ -70,7 +70,9 @@ pixels a side: a larger canvas is drawn at a smaller scale.
 
 The tidy up is a layered layout, for graphs that flow (workflows,
 schemas, trees). It does not route edges around nodes, and it lays out a
-group as one box without arranging what is in it.
+group as one box without arranging what is in it. ELK (`hakushi/elk`,
+[Layout and export](layout.md#elk)) does both, and is large: it lays out
+a few hundred nodes in about a second, in the page's own thread.
 
 ## Not yet
 

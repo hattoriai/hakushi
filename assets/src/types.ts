@@ -36,8 +36,8 @@ export interface Config {
   layout: "right" | "down";
   /** Whether the canvas lays its nodes out as it opens, before they show (the canvas's `tidy`). */
   tidy?: boolean;
-  /** How a tidy up places the nodes: in layers, by forces, or in a grid. */
-  algorithm?: "layered" | "force" | "grid";
+  /** How a tidy up places the nodes: in layers, by forces, in a grid, or by an engine of the app's (registerLayout), as "elk". */
+  algorithm?: string;
   exportable: boolean;
   /** Whether the app hears what the person selects (the canvas's `on_select`). */
   reportSelect?: boolean;

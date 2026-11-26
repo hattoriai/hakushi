@@ -59,16 +59,24 @@ defmodule Hakushi.Live do
   Tidies up the canvas `canvas` of this LiveView, as its tidy up button
   does: `algorithm: :layered` (in layers along the edges, `direction:
   :right` or `:down`), `:force` (by forces) or `:grid`; the canvas's
-  `layout` (or the way the person chose in its menu) unless given. The
-  person's browser lays the nodes out, and the new places are a change as
-  any: checked, shared, and undone with ⌘Z.
+  `layout` (or the way the person chose in its menu) unless given;
+  `:elk` for ELK, once the app registers it (see [Layout and
+  export](layout.md#elk)). The person's browser lays the nodes out, and
+  the new places are a change as any: checked, shared, and undone with ⌘Z.
+
+  On a read-only canvas (not `readonly={:arrange}`), the places are this
+  page's only, as `tidy`'s are: after a new graph (a group folded with
+  `Hakushi.Graph.fold/2`), the app lays it out again.
 
       Hakushi.Live.layout("schema", algorithm: :force)
   """
   @spec layout(String.t(), keyword()) :: :ok
   def layout(canvas, opts \\ []) when is_binary(canvas) do
     payload =
-      for {key, values} <- [direction: [:right, :down], algorithm: [:layered, :force, :grid]],
+      for {key, values} <- [
+            direction: [:right, :down],
+            algorithm: [:layered, :force, :grid, :elk]
+          ],
           value = opts[key],
           value != nil,
           into: %{} do

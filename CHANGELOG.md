@@ -9,9 +9,26 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- ELK, as a module of its own (`hakushi/elk`, about 450 KB gzipped, which
+  only an app that imports it takes): `registerLayout("elk", elk())`, then
+  `layout={:elk}` or `Hakushi.Live.layout(id, algorithm: :elk)`. It lays
+  out groups in groups, each inside, sizes each group around its nodes,
+  and routes the edges along the axes, apart from each other, through
+  their handles. Before, a tidy up laid out a group as one box, without
+  arranging what was in it. `registerLayout/2` takes an engine of the
+  app's too.
+- `Hakushi.Live.layout/2` lays out a read-only canvas, for the page only.
+  Before, it did nothing there, and a read-only canvas could lay out only
+  as it opened (`tidy`).
 - An edge's mark takes a `class` (`Hakushi.Live.mark_edges/3`), on the
   edge's `<g>`: a look of the app's own, as a dotted line or the colour
   of a protocol. Before, only a node's mark took one.
+
+### Fixed
+
+- A read-only canvas that tidied as it opened keeps its places when the
+  server patches a node (a mark, a title). Before, the node went back to
+  the place in the graph.
 
 ## [0.8.0] - 2026-10-29
 

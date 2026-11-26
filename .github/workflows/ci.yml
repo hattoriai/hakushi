@@ -45,7 +45,7 @@ jobs:
       - name: Seed fake assets
         run: |
           mkdir -p priv/static
-          touch priv/static/hakushi.esm.js priv/static/hakushi.cjs.js priv/static/hakushi.css priv/static/hakushi-sumi.css
+          touch priv/static/hakushi.esm.js priv/static/hakushi.cjs.js priv/static/hakushi-elk.esm.js priv/static/hakushi-elk.cjs.js priv/static/hakushi.css priv/static/hakushi-sumi.css
 
       - run: mix format --check-formatted
 
@@ -104,7 +104,7 @@ jobs:
       - name: Seed fake assets
         run: |
           mkdir -p priv/static
-          touch priv/static/hakushi.esm.js priv/static/hakushi.cjs.js priv/static/hakushi.css priv/static/hakushi-sumi.css
+          touch priv/static/hakushi.esm.js priv/static/hakushi.cjs.js priv/static/hakushi-elk.esm.js priv/static/hakushi-elk.cjs.js priv/static/hakushi.css priv/static/hakushi-sumi.css
 
       # mix.lock has the newest Phoenix and LiveView: resolve the oldest.
       - run: mix deps.update phoenix phoenix_live_view

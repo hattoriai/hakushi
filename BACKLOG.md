@@ -28,10 +28,6 @@ Known gaps in Hakushi, each to become an issue. None is planned yet.
 
 `mountHakushi()` for a read-only canvas in a controller's template.
 
-## Layout
-
-- A layout of the nodes in a group, within it.
-
 ## Together with the family
 
 - Jumon: actions of the canvas in the palette ("Add a node", "Fit",

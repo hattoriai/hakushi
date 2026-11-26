@@ -209,6 +209,28 @@ defmodule Hakushi.CanvasTest do
       assert ^readonly = label(view, "schema", "fk", "owns")
     end
 
+    test "takes the sizes of the groups from a layout's move" do
+      {view, _html} = open("?readonly=arrange")
+
+      laid = %{
+        "op" => "move",
+        "laid" => true,
+        "nodes" => [%{"id" => "note", "x" => 3, "y" => 4, "width" => 220, "height" => 90}]
+      }
+
+      view |> element("#schema-hook") |> render_hook("hakushi:change", laid)
+      assert_reply(view, %{"ok" => true})
+
+      assert %{x: 3, y: 4, width: 220, height: 90} =
+               Enum.find(nodes(view, "schema"), &(&1.id == "note"))
+
+      view
+      |> element("#schema-hook")
+      |> render_hook("hakushi:change", Map.delete(laid, "laid"))
+
+      assert_reply(view, %{"error" => "This canvas is read-only."})
+    end
+
     test "a read-only canvas does not arrange" do
       {view, html} = open("?readonly=true")
       assert html =~ ~s(&quot;arrange&quot;:false)
@@ -246,6 +268,8 @@ defmodule Hakushi.CanvasTest do
       assert Hakushi.Canvas.layout!(:down) == {:layered, :down}
       assert Hakushi.Canvas.layout!(:grid) == {:grid, :right}
       assert Hakushi.Canvas.layout!({:layered, :down}) == {:layered, :down}
+      assert Hakushi.Canvas.layout!(:elk) == {:elk, :right}
+      assert Hakushi.Canvas.layout!({:elk, :down}) == {:elk, :down}
       assert_raise ArgumentError, fn -> Hakushi.Canvas.layout!(:spiral) end
       assert_raise ArgumentError, fn -> Hakushi.Canvas.layout!({:force, :up}) end
     end

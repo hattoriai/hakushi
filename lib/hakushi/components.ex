@@ -250,8 +250,10 @@ defmodule Hakushi.Components do
     default: nil,
     doc: """
     the way the tidy up (⇧L, the controls) lays the nodes out: in layers from left to right \
-    (`:right`) or from top to bottom (`:down`), by forces (`:force`), or in a grid (`:grid`); \
-    `:layered` is `:right`, and `{:layered, :down}` is `:down`. The default is a kit's, else \
+    (`:right`) or from top to bottom (`:down`), by forces (`:force`), in a grid (`:grid`), or \
+    by ELK (`:elk` or `{:elk, :down}`: groups and all, with routed edges, once the app \
+    registers `hakushi/elk`); `:layered` is `:right`, and `{:layered, :down}` is `:down`. \
+    The default is a kit's, else \
     `:right`. People choose another in the menu by the tidy up button; see \
     [Layout and export](layout.md)\
     """
