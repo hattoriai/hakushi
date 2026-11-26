@@ -8,7 +8,6 @@ Known gaps in Hakushi, each to become an issue. None is planned yet.
 
 ## Nodes
 
-- A group folded to its title: its nodes hidden, its edges drawn to it.
 - A node that shows a node of another canvas, kept as that one changes.
 - A part of a node dragged out onto the page by the keyboard, not only
   by a pointer.

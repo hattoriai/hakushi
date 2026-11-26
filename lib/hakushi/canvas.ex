@@ -1483,6 +1483,7 @@ defmodule Hakushi.Canvas do
             data-group={node_flag?(@node_slots, @kits, node, :group) && "true"}
             data-opens={node_flag?(@node_slots, @kits, node, :opens) && "true"}
             data-parent={node.parent}
+            data-folded={node.folded && "true"}
             data-mark-status={mark(@marks.nodes, node.id, :status)}
             data-mark-highlight={mark(@marks.nodes, node.id, :highlight) && "true"}
             data-mark-dim={mark(@marks.nodes, node.id, :dim) && "true"}

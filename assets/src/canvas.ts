@@ -4956,7 +4956,7 @@ export class Canvas {
   private own = new Map<string, { x: number; y: number; width: number; height: number; fixed: boolean; server: string }>();
 
   private serverPlace(element: HTMLElement): string {
-    return ["data-x", "data-y", "data-width", "data-height"].map((a) => element.getAttribute(a) ?? "").join(" ");
+    return ["data-x", "data-y", "data-width", "data-height", "data-folded"].map((a) => element.getAttribute(a) ?? "").join(" ");
   }
 
   private keepOwn(ids: Iterable<string>) {

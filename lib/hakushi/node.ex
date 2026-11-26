@@ -21,6 +21,8 @@ defmodule Hakushi.Node do
       A node moves with its parent and goes with it; people put a node in
       a group by dropping it there, and take it out by dragging it out.
       See [Groups](groups.md).
+    * `folded` - whether it shows folded: `Hakushi.Graph.fold/2` sets it
+      on the groups it folds, for their slot (`node.folded`). Not saved.
   """
 
   @enforce_keys [:id]
@@ -32,7 +34,8 @@ defmodule Hakushi.Node do
             height: nil,
             data: %{},
             locked: false,
-            parent: nil
+            parent: nil,
+            folded: false
 
   @type id :: String.t()
 
@@ -45,7 +48,8 @@ defmodule Hakushi.Node do
           height: number() | nil,
           data: term(),
           locked: boolean(),
-          parent: id() | nil
+          parent: id() | nil,
+          folded: boolean()
         }
 
   @doc """

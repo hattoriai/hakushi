@@ -17,6 +17,10 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   their handles. Before, a tidy up laid out a group as one box, without
   arranging what was in it. `registerLayout/2` takes an engine of the
   app's too.
+- `Hakushi.Graph.fold/2`: the graph with some groups folded, their nodes
+  gone and their edges drawn to the outermost folded group. For a large
+  diagram that people open a part of at a time; see "Folding a group" in
+  the Groups guide.
 - `Hakushi.Live.layout/2` lays out a read-only canvas, for the page only.
   Before, it did nothing there, and a read-only canvas could lay out only
   as it opened (`tidy`).
