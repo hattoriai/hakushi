@@ -32,6 +32,8 @@ export interface Config {
   newNode: boolean;
   wheel: "pan" | "zoom" | "scroll";
   refit: boolean;
+  /** Whether a line along the axes jumps over the lines it crosses (the canvas's `jumps`). */
+  jumps?: boolean;
   /** The way of the layers of a tidy up. */
   layout: "right" | "down";
   /** Whether the canvas lays its nodes out as it opens, before they show (the canvas's `tidy`). */

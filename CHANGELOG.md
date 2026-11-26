@@ -21,6 +21,9 @@ and Hakushi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   gone and their edges drawn to the outermost folded group. For a large
   diagram that people open a part of at a time; see "Folding a group" in
   the Groups guide.
+- `jumps` on a canvas: an edge along the axes jumps over the edges it
+  crosses, with a small arc, so that people see which way each goes.
+  Before, two edges that crossed looked like two that turned.
 - `Hakushi.Live.layout/2` lays out a read-only canvas, for the page only.
   Before, it did nothing there, and a read-only canvas could lay out only
   as it opened (`tidy`).

@@ -1809,6 +1809,7 @@ defmodule Hakushi.Canvas do
       "newNode" => assigns.new_node != nil or assigns.kits != [],
       "wheel" => Atom.to_string(assigns.wheel),
       "refit" => assigns.refit,
+      "jumps" => assigns.jumps,
       "tidy" => assigns.tidy,
       "layout" => Atom.to_string(elem(assigns.layout, 1)),
       "algorithm" => Atom.to_string(elem(assigns.layout, 0)),

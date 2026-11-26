@@ -141,6 +141,24 @@ way around them, it goes as a `"smooth"` edge. When people bend it (its
 are theirs to place. Its way is the browser's: the server keeps no
 corners, and two browsers draw the same way for the same nodes.
 
+
+## Jumps
+
+Where many edges go along the axes, two that cross look like two that
+turn. With `jumps`, an edge along the axes (`"step"`, `"smooth"`,
+`"routed"`, or routed by ELK) jumps over the edges it crosses: its
+horizontal part makes a small arc over their vertical part.
+
+```heex
+<.canvas id="system" graph={@graph} layout={:elk} jumps>
+```
+
+* Only edges along the axes jump, and only over edges along the axes;
+  a bezier or a straight edge neither jumps nor is jumped over.
+* Not at a corner, nor where an edge only touches another at its end.
+* The jumps are drawn again when an edge, or one near it, moves; they
+  are in an exported image too.
+
 ## Selecting and deleting
 
 A click on an edge or its label selects it; Shift adds it. Delete

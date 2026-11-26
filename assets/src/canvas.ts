@@ -10,7 +10,7 @@
 // them (the place of a node being dragged, its selection, its culling).
 
 import { editable, el, interactive, isApple, numberAttr, prefersReducedMotion, svg } from "./dom";
-import { contains, cornersPath, edgePath, edgePathThrough, facing, fromCorners, grow, intersects, sidePoint, union } from "./geometry";
+import { contains, cornersPath, crossings, edgePath, edgePathThrough, facing, fromCorners, grow, intersects, jumpedPath, sidePoint, union } from "./geometry";
 import { routeAround } from "./route";
 import { fillTransfer, registerSender } from "./out";
 import { arrange, type Arrangement } from "./arrange";
@@ -1153,11 +1153,9 @@ export class Canvas {
       if (around) view.box = union([view.box, around])!;
       this.edgeIndex.set(id, view.box);
       // Written only when they change: a path written again is laid out and painted again.
-      if (view.d !== path.d) {
-        view.d = path.d;
-        view.line.setAttribute("d", path.d);
-        view.hit.setAttribute("d", path.d);
-      }
+      if (path.corners && this.config.jumps) this.lines.set(id, { points: path.corners, radius: path.radius ?? 0 });
+      else this.lines.delete(id);
+      if (view.d !== path.d && !this.lines.has(id)) this.writePath(view, path.d);
       // A selected edge, and the edges of the selected nodes, are drawn
       // above the nodes, in the colour of a selection: where an edge passes
       // under another node, it is seen going to its own end.
@@ -1205,6 +1203,7 @@ export class Canvas {
       }
       if (!viewChanged) this.showEdge(view, all || intersects(view.box, area) || raised);
     }
+    if (this.config.jumps) this.drawJumps(ids);
     if (viewChanged && all) {
       for (const view of this.edgeViews.values()) this.showEdge(view, true);
     } else if (viewChanged) {
@@ -1221,6 +1220,42 @@ export class Canvas {
     }
     this.dirty.clear();
     this.allDirty = false;
+  }
+
+  private writePath(view: EdgeView, d: string) {
+    if (view.d === d) return;
+    view.d = d;
+    view.line.setAttribute("d", d);
+    view.hit.setAttribute("d", d);
+  }
+
+  // -- Jumps (`jumps`) -----------------------------------------------------------
+  //
+  // Where a line along the axes crosses another, its horizontal part jumps
+  // over the vertical one, so that people see which way each goes. The
+  // edges drawn again, and those near them, which they may cross.
+
+  private lines = new Map<string, { points: Point[]; radius: number }>();
+
+  private drawJumps(ids: string[]) {
+    const again = new Set<string>();
+    for (const id of ids) {
+      const view = this.edgeViews.get(id);
+      if (!view) continue;
+      again.add(id);
+      for (const near of this.edgeIndex.query(view.box)) again.add(near);
+    }
+    for (const id of again) {
+      const line = this.lines.get(id);
+      const view = this.edgeViews.get(id);
+      if (!line || !view) continue;
+      const others: Point[][] = [];
+      for (const near of this.edgeIndex.query(view.box)) {
+        const other = near !== id && !this.gone.has(near) ? this.lines.get(near) : undefined;
+        if (other) others.push(other.points);
+      }
+      this.writePath(view, jumpedPath(line.points, line.radius, crossings(line.points, line.radius, others)));
+    }
   }
 
   // What this person sees of a shared canvas, for an agent of the room,
@@ -1347,6 +1382,7 @@ export class Canvas {
   }
 
   private dropEdgeView(id: string) {
+    this.lines.delete(id);
     const view = this.edgeViews.get(id);
     if (!view) return;
     view.g.remove();
