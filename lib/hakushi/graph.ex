@@ -807,40 +807,47 @@ defmodule Hakushi.Graph do
   @spec fold(t(), Enumerable.t()) :: t()
   def fold(%__MODULE__{} = graph, ids) do
     folded = ids |> Enum.filter(&Map.has_key?(graph.nodes, &1)) |> MapSet.new()
+    if MapSet.size(folded) == 0, do: graph, else: fold_shown(graph, folded)
+  end
 
-    if MapSet.size(folded) == 0 do
+  defp fold_shown(graph, folded) do
+    shown = Map.new(graph.nodes, fn {id, _node} -> {id, shown_as(graph, id, folded)} end)
+
+    nodes =
+      for node <- nodes(graph),
+          shown[node.id] == node.id,
+          do: fold_node(node, MapSet.member?(folded, node.id))
+
+    edges =
+      for edge <- edges(graph),
+          shown[edge.source] != shown[edge.target],
+          do: lift_edge(edge, shown[edge.source], shown[edge.target])
+
+    %{
       graph
-    else
-      shown = Map.new(graph.nodes, fn {id, _node} -> {id, shown_as(graph, id, folded)} end)
+      | nodes: Map.new(nodes, &{&1.id, &1}),
+        node_order: Enum.map(nodes, & &1.id),
+        edges: Map.new(edges, &{&1.id, &1}),
+        edge_order: Enum.map(edges, & &1.id)
+    }
+  end
 
-      nodes =
-        for node <- nodes(graph), shown[node.id] == node.id do
-          if MapSet.member?(folded, node.id),
-            do: %{node | width: nil, height: nil, folded: true},
-            else: node
-        end
+  defp fold_node(node, true), do: %{node | width: nil, height: nil, folded: true}
+  defp fold_node(node, false), do: node
 
-      edges =
-        for edge <- edges(graph),
-            source = shown[edge.source],
-            target = shown[edge.target],
-            source != target do
-          moved = source != edge.source or target != edge.target
+  # An edge to the nodes its ends show as: the end that moved has no
+  # handle, and a moved edge no points.
+  defp lift_edge(%Edge{source: source, target: target} = edge, source, target), do: edge
 
-          %{
-            edge
-            | source: source,
-              target: target,
-              source_handle: if(source == edge.source, do: edge.source_handle),
-              target_handle: if(target == edge.target, do: edge.target_handle),
-              points: if(moved, do: [], else: edge.points)
-          }
-        end
-
-      %{graph | nodes: Map.new(nodes, &{&1.id, &1}), node_order: Enum.map(nodes, & &1.id)}
-      |> Map.put(:edges, Map.new(edges, &{&1.id, &1}))
-      |> Map.put(:edge_order, Enum.map(edges, & &1.id))
-    end
+  defp lift_edge(edge, source, target) do
+    %{
+      edge
+      | source: source,
+        target: target,
+        source_handle: if(source == edge.source, do: edge.source_handle),
+        target_handle: if(target == edge.target, do: edge.target_handle),
+        points: []
+    }
   end
 
   # The node a node shows as: the outermost folded group it is in, or itself.
@@ -850,17 +857,17 @@ defmodule Hakushi.Graph do
   defp shown_as(_graph, nil, _folded, shown, _seen), do: shown
 
   defp shown_as(graph, parent, folded, shown, seen) do
-    case Map.fetch(graph.nodes, parent) do
-      {:ok, node} ->
-        if MapSet.member?(seen, parent) do
-          shown
-        else
-          shown = if MapSet.member?(folded, parent), do: parent, else: shown
-          shown_as(graph, node.parent, folded, shown, MapSet.put(seen, parent))
-        end
+    node = Map.get(graph.nodes, parent)
 
-      :error ->
+    cond do
+      node == nil or MapSet.member?(seen, parent) ->
         shown
+
+      MapSet.member?(folded, parent) ->
+        shown_as(graph, node.parent, folded, parent, MapSet.put(seen, parent))
+
+      true ->
+        shown_as(graph, node.parent, folded, shown, MapSet.put(seen, parent))
     end
   end
 
